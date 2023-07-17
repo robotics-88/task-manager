@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>task_manager_88</name>
+  <version>1.0.0</version>
+  <license>commercial</license>
+
+  <description>Monarch product main: Handles which tasks and capabilities to start, and when, based on UI connection and drone status.</description>
+
+  <author email="erin@robotics88.com">Erin Linebarger</author>
+  <maintainer email="erin@robotics88.com">Erin Linebarger</maintainer>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>actionlib</depend>
+  <depend>geometry_msgs</depend>
+  <depend>messages_88</depend>
+  <depend>roscpp</depend>
+  <depend>roslib</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+
+  <test_depend>roslaunch</test_depend>
+</package>
