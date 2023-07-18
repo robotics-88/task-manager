@@ -67,9 +67,10 @@ void TaskManager::startNav2PointTask() {
 void TaskManager::receivedExploreTask() {
     messages_88::ExploreGoalConstPtr goal = explore_action_server_.acceptNewGoal();
     current_explore_goal_ = *goal;
+    std::string uuid = current_explore_goal_.uuid.data; // If no transit, uuid=NO_TRANSIT, otherwise should match transit uuid
     // TODO Add validation. Eg: Check if inside, and if no, check if nav goal received, if no, reject
 
-    if (current_status_ == CurrentStatus::WAITING_TO_EXPLORE) {
+    if (uuid == "NO_TRANSIT" || current_status_ == CurrentStatus::WAITING_TO_EXPLORE) {
         startExploreTask();
     }
     else {
