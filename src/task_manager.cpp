@@ -6,6 +6,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "task_manager/task_manager.h"
 
 #include <float.h>
+#include <geometry_msgs/Twist.h>
 
 inline static bool operator==(const geometry_msgs::Point& one,
                               const geometry_msgs::Point& two)
@@ -41,6 +42,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     // MAVROS
     mavros_local_pos_subscriber_ = nh_.subscribe<geometry_msgs::PoseStamped>("/mavros/local_position/pose", 10, &TaskManager::localPositionCallback, this);
     local_pos_pub_ = nh_.advertise<geometry_msgs::PoseStamped>(goal_topic, 10);
+    local_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("/mavros/setpoint_velocity/cmd_vel_unstamped", 10);
 }
 
 TaskManager::~TaskManager(){}
@@ -88,6 +90,13 @@ void TaskManager::readyToExplore() {
 }
 
 void TaskManager::startExploreTask() {
+    // Start with a rotation command in case no frontiers immediately processed, will be overridden with first exploration goal
+    geometry_msgs::Twist vel;
+    vel.angular.x = 0;
+    vel.angular.y = 0;
+    vel.angular.z = M_PI_2; // PI/2 rad/s
+    local_vel_pub_.publish(vel);
+
     current_status_ = CurrentStatus::EXPLORING;
     explore_action_client_.sendGoal(current_explore_goal_);
 }

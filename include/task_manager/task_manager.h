@@ -54,6 +54,7 @@ class TaskManager {
         actionlib::SimpleActionClient<messages_88::ExploreAction> explore_action_client_;
 
         ros::Publisher local_pos_pub_;
+        ros::Publisher local_vel_pub_;
         ros::Subscriber mavros_local_pos_subscriber_;
 
         // Goal details
