@@ -11,10 +11,17 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <actionlib/client/simple_action_client.h>
 #include <actionlib/server/simple_action_server.h>
 #include <actionlib/client/terminal_state.h>
+#include <geometry_msgs/Polygon.h>
 #include <geometry_msgs/PoseStamped.h>
 
+#include "messages_88/Emergency.h"
 #include "messages_88/ExploreAction.h"
+#include "messages_88/InitDroneState.h"
+#include "messages_88/GetPosition.h"
+#include "messages_88/PrepareDroneAction.h"
+#include "messages_88/PrepareExplore.h"
 #include "messages_88/NavToPointAction.h"
+#include "task_manager/drone_state_manager.h"
 
 namespace task_manager {
 /**
@@ -26,6 +33,12 @@ class TaskManager {
     public:
         TaskManager(ros::NodeHandle& node);
         ~TaskManager();
+
+        bool initDroneStateManager(messages_88::InitDroneState::Request& req, messages_88::InitDroneState::Response& resp);
+        bool getReadyForAction(messages_88::PrepareDroneAction::Request& req, messages_88::PrepareDroneAction::Response& resp);
+        bool getReadyForExplore(messages_88::PrepareExplore::Request& req, messages_88::PrepareExplore::Response& resp);
+        bool getDronePosition(messages_88::GetPosition::Request& req, messages_88::GetPosition::Response& resp);
+        bool emergencyResponse(messages_88::Emergency::Request& req, messages_88::Emergency::Response& resp);
 
         void startNav2PointTask();
         void receivedExploreTask();
@@ -49,6 +62,17 @@ class TaskManager {
         ros::NodeHandle private_nh_;
         ros::NodeHandle nh_;
 
+        // Drone state and services
+        drone_state_manager::DroneStateManager drone_state_manager_;
+        ros::ServiceServer drone_state_service_;
+        ros::ServiceServer drone_ready_service_;
+        ros::ServiceServer drone_explore_service_;
+        ros::ServiceServer drone_position_service_;
+        ros::ServiceServer emergency_service_;
+
+        // Drone state params
+        double max_dist_to_polygon_;
+
         actionlib::SimpleActionServer<messages_88::NavToPointAction> nav2point_action_server_;
         actionlib::SimpleActionServer<messages_88::ExploreAction> explore_action_server_;
         actionlib::SimpleActionClient<messages_88::ExploreAction> explore_action_client_;
@@ -61,11 +85,18 @@ class TaskManager {
         geometry_msgs::Point current_target_;
         messages_88::ExploreGoal current_explore_goal_;
 
+        // Mavros modes
+        std::string land_mode_;
+        std::string loiter_mode_;
+        std::string guided_mode_;
+        std::string rtl_mode_;
+
         CurrentStatus current_status_ = CurrentStatus::ON_START;
         ros::Timer status_timer_;
 
         void readyToExplore();
         bool isInside(const geometry_msgs::Polygon& polygon, const geometry_msgs::Point& point);
+        bool polygonDistanceOk(double &min_dist, geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region);
 
 };
 
