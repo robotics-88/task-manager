@@ -1,7 +1,11 @@
 <launch>
     <arg name="goal_topic" default="/mavros/setpoint_position/local"/> <!-- for mavros without OA, use /mavros/setpoint_position/local. default is /goal.-->
+
+     <!-- Record -->
+    <arg name="do_record" default="true"/>
     
     <node pkg="task_manager_88" type="task_manager" name="task_manager" output="screen">
         <param name="goal_topic" value="$(arg goal_topic)"/>
+        <param name="do_record" value="$(arg do_record)"/>
     </node>
 </launch>

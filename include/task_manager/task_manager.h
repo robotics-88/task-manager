@@ -70,6 +70,11 @@ class TaskManager {
         ros::ServiceServer drone_position_service_;
         ros::ServiceServer emergency_service_;
 
+        // Record
+        bool do_record_;
+        ros::Publisher start_record_pub_;
+        ros::Publisher stop_record_pub_;
+
         // Drone state params
         double max_dist_to_polygon_;
 

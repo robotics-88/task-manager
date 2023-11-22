@@ -5,6 +5,7 @@ project(task_manager_88)
 find_package(catkin REQUIRED COMPONENTS
   actionlib
   actionlib_msgs
+  bag_recorder
   geometry_msgs
   mavros_msgs
   messages_88

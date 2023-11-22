@@ -4,6 +4,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 */
 
 #include "task_manager/task_manager.h"
+#include "bag_recorder/Rosbag.h"
 
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
@@ -25,6 +26,7 @@ namespace task_manager
 TaskManager::TaskManager(ros::NodeHandle& node)
     : private_nh_("~")
     , nh_(node)
+    , do_record_(true)
     , drone_state_manager_(node)
     , max_dist_to_polygon_(300.0)
     , nav2point_action_server_(private_nh_, "nav2point", false)
@@ -33,6 +35,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
 {
     std::string goal_topic = "/mavros/setpoint_position/local";
     private_nh_.param<std::string>("goal_topic", goal_topic, goal_topic);
+    private_nh_.param<bool>("do_record", do_record_, do_record_);
 
     // Drone state services
     drone_state_service_ = nh_.advertiseService("/init_drone_state", &TaskManager::initDroneStateManager, this);
@@ -55,6 +58,10 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     mavros_local_pos_subscriber_ = nh_.subscribe<geometry_msgs::PoseStamped>("/mavros/local_position/pose", 10, &TaskManager::localPositionCallback, this);
     local_pos_pub_ = nh_.advertise<geometry_msgs::PoseStamped>(goal_topic, 10);
     local_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("/mavros/setpoint_velocity/cmd_vel_unstamped", 10);
+
+    // Recording
+    start_record_pub_ = nh_.advertise<bag_recorder::Rosbag>("/record/start", 5);
+    stop_record_pub_ = nh_.advertise<std_msgs::String>("/record/stop", 5);
 }
 
 TaskManager::~TaskManager(){}
@@ -117,6 +124,13 @@ bool TaskManager::initDroneStateManager(messages_88::InitDroneState::Request& re
 
 bool TaskManager::getReadyForAction(messages_88::PrepareDroneAction::Request& req, messages_88::PrepareDroneAction::Response& resp) {
     ROS_INFO("getting ready for action");
+    if (do_record_) {
+        bag_recorder::Rosbag start_bag_msg;
+        start_bag_msg.bag_name = "decco";
+        start_bag_msg.config = "r88_default";
+        start_bag_msg.header.stamp = ros::Time::now();
+        start_record_pub_.publish(start_bag_msg);
+    }
     if (!drone_state_manager_.readyForAction()) {
         drone_state_manager_.getReadyForAction();
     }
