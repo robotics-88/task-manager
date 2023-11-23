@@ -42,6 +42,8 @@ class DroneStateManager {
         geometry_msgs::Point getCurrentLocalPosition();
         sensor_msgs::NavSatFix getCurrentGlobalPosition();
         double getAltitudeAGL();
+        std::string getFlightMode();
+        bool getIsInAir();
 
         // Mavros subscriber callbacks
         void globalPositionCallback(const sensor_msgs::NavSatFix::ConstPtr &msg);
@@ -115,6 +117,7 @@ class DroneStateManager {
         sensor_msgs::NavSatFix current_ll_;
         geometry_msgs::PoseStamped current_pose_;
         double current_altitude_;
+        std::string current_mode_;
         bool altitude_set_;
         bool connected_;
         bool armed_;

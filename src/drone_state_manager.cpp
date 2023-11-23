@@ -126,6 +126,14 @@ double DroneStateManager::getAltitudeAGL() {
     }
 }
 
+std::string DroneStateManager::getFlightMode() {
+    return current_mode_;
+}
+
+bool DroneStateManager::getIsInAir() {
+    return in_air_;
+}
+
 void DroneStateManager::globalPositionCallback(const sensor_msgs::NavSatFix::ConstPtr &msg) {
     current_ll_ = *msg;
 }
@@ -138,11 +146,13 @@ void DroneStateManager::statusCallback(const mavros_msgs::State::ConstPtr & msg)
     // TODO add system status with enum matching MAV_STATE defined by Mavlink
     connected_ = msg->connected;
     armed_ = msg->armed;
-    in_guided_mode_ = msg->mode == guided_mode_;
+    current_mode_ = msg->mode;
+    in_guided_mode_ = current_mode_ == guided_mode_;
 }
 
 void DroneStateManager::altitudeCallback(const std_msgs::Float64::ConstPtr & msg) {
     in_air_ = msg->data > 0.2;
+    current_altitude_ = msg->data;
     if (!altitude_set_) {
         altitude_set_ = true;
     }

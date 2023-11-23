@@ -44,6 +44,7 @@ class TaskManager {
         void receivedExploreTask();
         void startExploreTask();
         void stop();
+        void modeMonitor();
 
         void localPositionCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
 
@@ -72,11 +73,14 @@ class TaskManager {
 
         // Record
         bool do_record_;
+        bool bag_active_;
+        std::string record_config_name_;
         ros::Publisher start_record_pub_;
         ros::Publisher stop_record_pub_;
 
         // Drone state params
         double max_dist_to_polygon_;
+        ros::Timer mode_monitor_timer_;
 
         actionlib::SimpleActionServer<messages_88::NavToPointAction> nav2point_action_server_;
         actionlib::SimpleActionServer<messages_88::ExploreAction> explore_action_server_;
@@ -99,6 +103,9 @@ class TaskManager {
         CurrentStatus current_status_ = CurrentStatus::ON_START;
         ros::Timer status_timer_;
 
+        void startBag();
+        void stopBag();
+        void getDroneReady();
         void readyToExplore();
         bool isInside(const geometry_msgs::Polygon& polygon, const geometry_msgs::Point& point);
         bool polygonDistanceOk(double &min_dist, geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region);

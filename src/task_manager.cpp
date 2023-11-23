@@ -27,6 +27,8 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     : private_nh_("~")
     , nh_(node)
     , do_record_(true)
+    , bag_active_(false)
+    , record_config_name_("r88_default")
     , drone_state_manager_(node)
     , max_dist_to_polygon_(300.0)
     , nav2point_action_server_(private_nh_, "nav2point", false)
@@ -36,6 +38,9 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     std::string goal_topic = "/mavros/setpoint_position/local";
     private_nh_.param<std::string>("goal_topic", goal_topic, goal_topic);
     private_nh_.param<bool>("do_record", do_record_, do_record_);
+
+    mode_monitor_timer_ = private_nh_.createTimer(ros::Duration(1.0),
+                               [this](const ros::TimerEvent&) { modeMonitor(); });
 
     // Drone state services
     drone_state_service_ = nh_.advertiseService("/init_drone_state", &TaskManager::initDroneStateManager, this);
@@ -123,17 +128,7 @@ bool TaskManager::initDroneStateManager(messages_88::InitDroneState::Request& re
 }
 
 bool TaskManager::getReadyForAction(messages_88::PrepareDroneAction::Request& req, messages_88::PrepareDroneAction::Response& resp) {
-    ROS_INFO("getting ready for action");
-    if (do_record_) {
-        bag_recorder::Rosbag start_bag_msg;
-        start_bag_msg.bag_name = "decco";
-        start_bag_msg.config = "r88_default";
-        start_bag_msg.header.stamp = ros::Time::now();
-        start_record_pub_.publish(start_bag_msg);
-    }
-    if (!drone_state_manager_.readyForAction()) {
-        drone_state_manager_.getReadyForAction();
-    }
+    getDroneReady();
     return true;
 }
 
@@ -158,9 +153,7 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
         target_position.pose.position.z = req.altitude;
     }
 
-    if (!drone_state_manager_.readyForAction()) {
-        drone_state_manager_.getReadyForAction();
-    }
+    getDroneReady();
 
     drone_state_manager_.actionClientsAvailable();
     boost::uuids::random_generator generator;
@@ -204,8 +197,8 @@ void TaskManager::startNav2PointTask() {
 void TaskManager::receivedExploreTask() {
     messages_88::ExploreGoalConstPtr goal = explore_action_server_.acceptNewGoal();
     current_explore_goal_ = *goal;
+    // TODO inspect uuid/waiting logic now that drone state mgr lives here instead of monarch
     std::string uuid = current_explore_goal_.uuid.data; // If no transit, uuid=NO_TRANSIT, otherwise should match transit uuid
-    // TODO Add validation. Eg: Check if inside, and if no, check if nav goal received, if no, reject
 
     if (uuid == "NO_TRANSIT" || current_status_ == CurrentStatus::WAITING_TO_EXPLORE) {
         startExploreTask();
@@ -237,13 +230,54 @@ void TaskManager::startExploreTask() {
 }
 
 void TaskManager::stop() {
+    stopBag();
+    // TODO stop any active goals
+}
 
+void TaskManager::modeMonitor() {
+    std::string mode = drone_state_manager_.getFlightMode();
+    bool in_air = drone_state_manager_.getIsInAir();
+    if (in_air && !bag_active_ && mode != land_mode_) {
+        // Handle recording during manual take off
+        startBag();
+    }
+    if (bag_active_ && mode == land_mode_) {
+        // Handle save bag during manual land
+        stopBag();
+    }
+}
+
+void TaskManager::startBag() {
+    if (bag_active_) {
+        return;
+    }
+    bag_recorder::Rosbag start_bag_msg;
+    start_bag_msg.bag_name = "decco";
+    start_bag_msg.config = record_config_name_;
+    start_bag_msg.header.stamp = ros::Time::now();
+    start_record_pub_.publish(start_bag_msg);
+    bag_active_ = true;
+}
+
+void TaskManager::stopBag() {
+    std_msgs::String stop_msg;
+    stop_msg.data = record_config_name_;
+    stop_record_pub_.publish(stop_msg);
+    bag_active_ = false;
+}
+
+void TaskManager::getDroneReady() {
+    ROS_INFO("getting ready for action");
+    if (do_record_) {
+        startBag();
+    }
+    if (!drone_state_manager_.readyForAction()) {
+        drone_state_manager_.getReadyForAction();
+    }
 }
 
 bool TaskManager::isInside(const geometry_msgs::Polygon& polygon, const geometry_msgs::Point& point)
 {
-  // TODO should make a map_util class to copy into packages that need it (eg, monarch)
-
   // Determine if the given point is inside the polygon using the number of crossings method
   // https://wrf.ecse.rpi.edu//Research/Short_Notes/pnpoly.html
   int n = polygon.points.size();
