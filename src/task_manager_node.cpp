@@ -16,7 +16,9 @@ int main(int argc, char** argv)
   ros::NodeHandle node;
   task_manager::TaskManager task_manager(node);
 
-  ros::spin();
+  ros::AsyncSpinner spinner(3);
+  spinner.start();
+  ros::waitForShutdown();
 
   return 0;
 }

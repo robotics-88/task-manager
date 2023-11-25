@@ -260,6 +260,9 @@ void TaskManager::startBag() {
 }
 
 void TaskManager::stopBag() {
+    if (~bag_active_) {
+        return;
+    }
     std_msgs::String stop_msg;
     stop_msg.data = record_config_name_;
     stop_record_pub_.publish(stop_msg);
