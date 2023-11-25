@@ -31,6 +31,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , record_config_name_("r88_default")
     , drone_state_manager_(node)
     , max_dist_to_polygon_(300.0)
+    , cmd_history_("")
     , nav2point_action_server_(private_nh_, "nav2point", false)
     , explore_action_server_(private_nh_, "explore", false)
     , explore_action_client_("explore", true)
@@ -67,6 +68,8 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     // Recording
     start_record_pub_ = nh_.advertise<bag_recorder::Rosbag>("/record/start", 5);
     stop_record_pub_ = nh_.advertise<std_msgs::String>("/record/stop", 5);
+
+    task_pub_ = nh_.advertise<messages_88::TaskStatus>("task_status", 10);
 }
 
 TaskManager::~TaskManager(){}
@@ -84,6 +87,7 @@ bool TaskManager::emergencyResponse(messages_88::Emergency::Request& req, messag
     ROS_WARN("Emergency response initiated, level %d.", req.status.severity);
     // Immediately set to hover
     drone_state_manager_.setMode(loiter_mode_);
+    cmd_history_.append("Emergency init with severity " + std::to_string(req.status.severity) + "\n");
 
     // Then respond based on severity 
     // (message definitions at http://docs.ros.org/en/noetic/api/mavros_msgs/html/msg/StatusText.html)
@@ -108,6 +112,8 @@ bool TaskManager::emergencyResponse(messages_88::Emergency::Request& req, messag
 bool TaskManager::initDroneStateManager(messages_88::InitDroneState::Request& req, messages_88::InitDroneState::Response& resp) {
     // Drone state manager setup
     drone_state_manager_.setAutonomyEnabled(req.enable_autonomy);
+    task_msg_.enable_autonomy = req.enable_autonomy;
+    task_msg_.enable_exploration = req.enable_exploration;
 
     drone_state_manager_.setSafetyArea();
 
@@ -128,15 +134,17 @@ bool TaskManager::initDroneStateManager(messages_88::InitDroneState::Request& re
 }
 
 bool TaskManager::getReadyForAction(messages_88::PrepareDrone::Request& req, messages_88::PrepareDrone::Response& resp) {
+    cmd_history_.append("Get ready command received.\n ");
     getDroneReady();
     return true;
 }
 
 bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, messages_88::PrepareExplore::Response& resp) {
-
+    cmd_history_.append("Get ready to explore command received.\n ");
     bool needs_transit = false;
     geometry_msgs::PoseStamped target_position;
     if (!isInside(req.polygon, drone_state_manager_.getCurrentLocalPosition())) {
+        cmd_history_.append("Transit to explore required.\n ");
         needs_transit = true;
         // Find nearest point on the polygon
         // Check polygon area and distance
@@ -174,6 +182,7 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
     explore_goal.min_altitude = req.min_altitude;
     explore_goal.max_altitude = req.max_altitude;
     drone_state_manager_.setExploreGoal(explore_goal);
+    cmd_history_.append("Sent explore goal.\n");
     resp.success = true;
     return true;
 }
@@ -238,6 +247,7 @@ void TaskManager::modeMonitor() {
     std::string mode = drone_state_manager_.getFlightMode();
     bool in_air = drone_state_manager_.getIsInAir();
     if (in_air && !bag_active_ && mode != land_mode_) {
+        cmd_history_.append("Checking start bag record due to manual takeoff detected. In air: " + std::to_string(in_air) + ", flight mode: " + mode + "\n");
         // Handle recording during manual take off
         startBag();
     }
@@ -245,12 +255,17 @@ void TaskManager::modeMonitor() {
         // Handle save bag during manual land
         stopBag();
     }
+    task_msg_.header.stamp = ros::Time::now();
+    task_msg_.cmd_history.data = cmd_history_.c_str();
+    task_msg_.current_status.data = getStatusString();
+    task_pub_.publish(task_msg_);
 }
 
 void TaskManager::startBag() {
     if (bag_active_) {
         return;
     }
+    cmd_history_.append("Bag starting.\n ");
     bag_recorder::Rosbag start_bag_msg;
     start_bag_msg.bag_name = "decco";
     start_bag_msg.config = record_config_name_;
@@ -263,6 +278,7 @@ void TaskManager::stopBag() {
     if (~bag_active_) {
         return;
     }
+    cmd_history_.append("Stopping bag.\n");
     std_msgs::String stop_msg;
     stop_msg.data = record_config_name_;
     stop_record_pub_.publish(stop_msg);
@@ -275,7 +291,8 @@ void TaskManager::getDroneReady() {
         startBag();
     }
     if (!drone_state_manager_.readyForAction()) {
-        drone_state_manager_.getReadyForAction();
+        bool ready = drone_state_manager_.getReadyForAction();
+        cmd_history_.append("Drone ready for action result: " + std::to_string(ready) + "\n");
     }
 }
 
@@ -400,6 +417,27 @@ bool TaskManager::polygonDistanceOk(double &min_dist, geometry_msgs::PoseStamped
         return false;
     }
     return true;
+}
+
+std::string TaskManager::getStatusString() {
+    switch (current_status_) {
+        case 0:
+            return "ON_START";
+        case 1:
+            return "EXPLORING";
+        case 2:
+            return "WAITING_TO_EXPLORE";
+        case 3:
+            return "HOVERING";
+        case 4:
+            return "NAVIGATING";
+        case 5:
+            return "TAKING_OFF";
+        case 6:
+            return "LANDING";
+        default:
+            return "unknown";
+    }
 }
 
 }

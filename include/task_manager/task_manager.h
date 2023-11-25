@@ -21,6 +21,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "messages_88/PrepareDrone.h"
 #include "messages_88/PrepareExplore.h"
 #include "messages_88/NavToPointAction.h"
+#include "messages_88/TaskStatus.h"
 #include "task_manager/drone_state_manager.h"
 
 namespace task_manager {
@@ -81,6 +82,9 @@ class TaskManager {
         // Drone state params
         double max_dist_to_polygon_;
         ros::Timer mode_monitor_timer_;
+        std::string cmd_history_;
+        messages_88::TaskStatus task_msg_;
+        ros::Publisher task_pub_;
 
         actionlib::SimpleActionServer<messages_88::NavToPointAction> nav2point_action_server_;
         actionlib::SimpleActionServer<messages_88::ExploreAction> explore_action_server_;
@@ -109,6 +113,7 @@ class TaskManager {
         void readyToExplore();
         bool isInside(const geometry_msgs::Polygon& polygon, const geometry_msgs::Point& point);
         bool polygonDistanceOk(double &min_dist, geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region);
+        std::string getStatusString();
 
 };
 
