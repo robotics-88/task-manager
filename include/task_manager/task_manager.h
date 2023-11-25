@@ -18,7 +18,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "messages_88/ExploreAction.h"
 #include "messages_88/InitDroneState.h"
 #include "messages_88/GetPosition.h"
-#include "messages_88/PrepareDroneAction.h"
+#include "messages_88/PrepareDrone.h"
 #include "messages_88/PrepareExplore.h"
 #include "messages_88/NavToPointAction.h"
 #include "task_manager/drone_state_manager.h"
@@ -35,7 +35,7 @@ class TaskManager {
         ~TaskManager();
 
         bool initDroneStateManager(messages_88::InitDroneState::Request& req, messages_88::InitDroneState::Response& resp);
-        bool getReadyForAction(messages_88::PrepareDroneAction::Request& req, messages_88::PrepareDroneAction::Response& resp);
+        bool getReadyForAction(messages_88::PrepareDrone::Request& req, messages_88::PrepareDrone::Response& resp);
         bool getReadyForExplore(messages_88::PrepareExplore::Request& req, messages_88::PrepareExplore::Response& resp);
         bool getDronePosition(messages_88::GetPosition::Request& req, messages_88::GetPosition::Response& resp);
         bool emergencyResponse(messages_88::Emergency::Request& req, messages_88::Emergency::Response& resp);

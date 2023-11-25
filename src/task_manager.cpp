@@ -127,7 +127,7 @@ bool TaskManager::initDroneStateManager(messages_88::InitDroneState::Request& re
     return true;
 }
 
-bool TaskManager::getReadyForAction(messages_88::PrepareDroneAction::Request& req, messages_88::PrepareDroneAction::Response& resp) {
+bool TaskManager::getReadyForAction(messages_88::PrepareDrone::Request& req, messages_88::PrepareDrone::Response& resp) {
     getDroneReady();
     return true;
 }
