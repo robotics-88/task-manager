@@ -25,6 +25,7 @@ namespace drone_state_manager
 DroneStateManager::DroneStateManager(ros::NodeHandle& node)
   : private_nh_("~")
   , nh_(node)
+  , autonomy_active_(false)
   , enable_autonomy_(false)
   , enable_exploration_(false)
   , target_altitude_(2.0)
@@ -134,6 +135,10 @@ bool DroneStateManager::getIsInAir() {
     return in_air_;
 }
 
+bool DroneStateManager::getAutonomyActive() {
+    return autonomy_active_;
+}
+
 void DroneStateManager::globalPositionCallback(const sensor_msgs::NavSatFix::ConstPtr &msg) {
     current_ll_ = *msg;
 }
@@ -151,7 +156,7 @@ void DroneStateManager::statusCallback(const mavros_msgs::State::ConstPtr & msg)
 }
 
 void DroneStateManager::altitudeCallback(const std_msgs::Float64::ConstPtr & msg) {
-    in_air_ = msg->data > 0.2;
+    in_air_ = msg->data > 1.0 && armed_;
     current_altitude_ = msg->data;
     if (!altitude_set_) {
         altitude_set_ = true;
@@ -186,6 +191,7 @@ bool DroneStateManager::setGuided() {
     set_mode_client_.waitForExistence(service_wait_duration_);
     if( set_mode_client_.call(offb_set_mode) && offb_set_mode.response.mode_sent){
         ROS_INFO("Offboard enabled");
+        autonomy_active_ = true;
         return true;
     }
     else {

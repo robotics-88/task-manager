@@ -246,7 +246,7 @@ void TaskManager::stop() {
 void TaskManager::modeMonitor() {
     std::string mode = drone_state_manager_.getFlightMode();
     bool in_air = drone_state_manager_.getIsInAir();
-    if (in_air && !bag_active_ && mode != land_mode_) {
+    if (in_air && !bag_active_ && mode != land_mode_ && !drone_state_manager_.getAutonomyActive()) {
         cmd_history_.append("Checking start bag record due to manual takeoff detected. In air: " + std::to_string(in_air) + ", flight mode: " + mode + "\n");
         // Handle recording during manual take off
         startBag();

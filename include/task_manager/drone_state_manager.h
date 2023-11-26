@@ -44,6 +44,7 @@ class DroneStateManager {
         double getAltitudeAGL();
         std::string getFlightMode();
         bool getIsInAir();
+        bool getAutonomyActive();
 
         // Mavros subscriber callbacks
         void globalPositionCallback(const sensor_msgs::NavSatFix::ConstPtr &msg);
@@ -71,6 +72,8 @@ class DroneStateManager {
     private:
         ros::NodeHandle private_nh_;
         ros::NodeHandle nh_;
+
+        bool autonomy_active_;
 
         // Safety for enabling control
         bool enable_autonomy_;
