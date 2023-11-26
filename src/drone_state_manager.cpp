@@ -196,6 +196,7 @@ bool DroneStateManager::setGuided() {
     }
     else {
         ROS_WARN("Guided mode failed.");
+        autonomy_active_ = false;
         return false;
     }
 
