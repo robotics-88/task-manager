@@ -9,7 +9,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <ros/ros.h>
 
 #include <actionlib/client/simple_action_client.h>
-#include <actionlib/server/simple_action_server.h>
 #include <actionlib/client/terminal_state.h>
 #include <geometry_msgs/Polygon.h>
 #include <geometry_msgs/PoseStamped.h>
@@ -41,13 +40,14 @@ class TaskManager {
         bool getDronePosition(messages_88::GetPosition::Request& req, messages_88::GetPosition::Response& resp);
         bool emergencyResponse(messages_88::Emergency::Request& req, messages_88::Emergency::Response& resp);
 
-        void startNav2PointTask();
-        void receivedExploreTask();
+        void startNav2PointTask(messages_88::NavToPointGoal &nav_goal);
+        void sendExploreTask(messages_88::ExploreGoal &goal);
         void startExploreTask();
         void stop();
         void modeMonitor();
 
         void localPositionCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
+        bool pauseOperations();
 
     private:
         enum CurrentStatus
@@ -81,13 +81,12 @@ class TaskManager {
 
         // Drone state params
         double max_dist_to_polygon_;
+        geometry_msgs::Polygon current_polygon_;
         ros::Timer mode_monitor_timer_;
         std::string cmd_history_;
         messages_88::TaskStatus task_msg_;
         ros::Publisher task_pub_;
 
-        actionlib::SimpleActionServer<messages_88::NavToPointAction> nav2point_action_server_;
-        actionlib::SimpleActionServer<messages_88::ExploreAction> explore_action_server_;
         actionlib::SimpleActionClient<messages_88::ExploreAction> explore_action_client_;
 
         ros::Publisher local_pos_pub_;

@@ -21,4 +21,6 @@ To run the tests, launch the respective test file with, e.g.,
 
 Note that the drone state tests require ArduPilot to first be running in SITL. This can either be through Unreal/AirSim, or the simpler ArduPilot SITL. For the latter, in the ArduCopter directory run
 
-`../Tools/autotest/sim_vehicle.py -v ArduCopter --console`
+`../Tools/autotest/sim_vehicle.py -v ArduCopter`
+
+This must be restarted between tests. Wait for the message to print, ~"EKF using GPS", before launching the rostest.

@@ -32,8 +32,6 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , drone_state_manager_(node)
     , max_dist_to_polygon_(300.0)
     , cmd_history_("")
-    , nav2point_action_server_(private_nh_, "nav2point", false)
-    , explore_action_server_(private_nh_, "explore", false)
     , explore_action_client_("explore", true)
 {
     std::string goal_topic = "/mavros/setpoint_position/local";
@@ -49,16 +47,6 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     drone_explore_service_ = nh_.advertiseService("/prep_drone_explore", &TaskManager::getReadyForExplore, this);
     drone_position_service_ = nh_.advertiseService("/get_drone_position", &TaskManager::getDronePosition, this);
     emergency_service_ = nh_.advertiseService("/emergency_response", &TaskManager::emergencyResponse, this);
-
-    // Create action server (called by UI/Monarch)
-    nav2point_action_server_.registerGoalCallback(boost::bind(&TaskManager::startNav2PointTask, this));
-    nav2point_action_server_.registerPreemptCallback(boost::bind(&TaskManager::stop, this));
-    nav2point_action_server_.start();
-
-    // Create action server (called by UI/Monarch)
-    explore_action_server_.registerGoalCallback(boost::bind(&TaskManager::receivedExploreTask, this));
-    explore_action_server_.registerPreemptCallback(boost::bind(&TaskManager::stop, this));
-    explore_action_server_.start();
 
     // MAVROS
     mavros_local_pos_subscriber_ = nh_.subscribe<geometry_msgs::PoseStamped>("/mavros/local_position/pose", 10, &TaskManager::localPositionCallback, this);
@@ -76,8 +64,8 @@ TaskManager::~TaskManager(){}
 
 void TaskManager::localPositionCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
     if (current_status_ == CurrentStatus::NAVIGATING) {
-        if (msg->pose.position == current_target_) {
-            // Within a meter of target (TODO, add or already inside polygon: || isInside(current_explore_goal_.polygon, msg->pose.position)
+        if (msg->pose.position == current_target_ || isInside(current_explore_goal_.polygon, msg->pose.position)) {
+            // Within a meter of target or inside polygon
             current_status_ = CurrentStatus::WAITING_TO_EXPLORE;
         }
     }
@@ -94,17 +82,28 @@ bool TaskManager::emergencyResponse(messages_88::Emergency::Request& req, messag
     int level = req.status.severity;
     if (level == 5) {
         // NOTICE = PAUSE
-        drone_state_manager_.pauseOperations();
+        pauseOperations();
     }
     else if (level == 0) {
         // EMERGENCY = LAND IMMEDIATELY
-        drone_state_manager_.pauseOperations();
+        pauseOperations();
         drone_state_manager_.setMode(land_mode_);
     }
     else if (level == 2) {
         // CRITICAL = RTL
-        drone_state_manager_.pauseOperations();
+        pauseOperations();
         drone_state_manager_.setMode(rtl_mode_);
+    }
+    return true;
+}
+
+bool TaskManager::pauseOperations() {
+    actionlib::SimpleClientGoalState goal_state = explore_action_client_.getState();
+    if (goal_state == actionlib::SimpleClientGoalState::ACTIVE) {
+        explore_action_client_.cancelAllGoals();
+    }
+    if (explore_action_client_.getState() == actionlib::SimpleClientGoalState::ACTIVE) {
+        return false;
     }
     return true;
 }
@@ -143,7 +142,8 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
     cmd_history_.append("Get ready to explore command received.\n ");
     bool needs_transit = false;
     geometry_msgs::PoseStamped target_position;
-    if (!isInside(req.polygon, drone_state_manager_.getCurrentLocalPosition())) {
+    current_polygon_ = req.polygon;
+    if (!isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition())) {
         cmd_history_.append("Transit to explore required.\n ");
         needs_transit = true;
         // Find nearest point on the polygon
@@ -163,7 +163,6 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
 
     getDroneReady();
 
-    drone_state_manager_.actionClientsAvailable();
     boost::uuids::random_generator generator;
     boost::uuids::uuid u = generator();
     messages_88::ExploreGoal explore_goal;
@@ -172,7 +171,7 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
         nav_goal.point = target_position.pose.position;
         nav_goal.uuid.data = boost::uuids::to_string(u);
         explore_goal.uuid.data = boost::uuids::to_string(u);
-        drone_state_manager_.setTransitGoal(nav_goal);
+        startNav2PointTask(nav_goal);
     }
     else {
         explore_goal.uuid.data = "NO_TRANSIT";
@@ -181,7 +180,7 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
     explore_goal.altitude = req.altitude;
     explore_goal.min_altitude = req.min_altitude;
     explore_goal.max_altitude = req.max_altitude;
-    drone_state_manager_.setExploreGoal(explore_goal);
+    sendExploreTask(explore_goal);
     cmd_history_.append("Sent explore goal.\n");
     resp.success = true;
     return true;
@@ -193,19 +192,22 @@ bool TaskManager::getDronePosition(messages_88::GetPosition::Request& req, messa
     return true;
 }
 
-void TaskManager::startNav2PointTask() {
-    messages_88::NavToPointGoalConstPtr goal = nav2point_action_server_.acceptNewGoal();
+void TaskManager::startNav2PointTask(messages_88::NavToPointGoal &nav_goal) {
+    messages_88::NavToPointGoal goal = nav_goal;
     current_status_ = CurrentStatus::NAVIGATING;
-    geometry_msgs::Point point = goal->point;
+    geometry_msgs::Point point = goal.point;
     current_target_ = point;
     geometry_msgs::PoseStamped target;
     target.pose.position = point;
     local_pos_pub_.publish(target);
+    while (!isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition())) {
+        ros::Duration(1.0).sleep();    
+    }
 }
 
-void TaskManager::receivedExploreTask() {
-    messages_88::ExploreGoalConstPtr goal = explore_action_server_.acceptNewGoal();
-    current_explore_goal_ = *goal;
+void TaskManager::sendExploreTask(messages_88::ExploreGoal &goal) {
+    cmd_history_.append("Sending explore goal.\n");
+    current_explore_goal_ = goal;
     // TODO inspect uuid/waiting logic now that drone state mgr lives here instead of monarch
     std::string uuid = current_explore_goal_.uuid.data; // If no transit, uuid=NO_TRANSIT, otherwise should match transit uuid
 

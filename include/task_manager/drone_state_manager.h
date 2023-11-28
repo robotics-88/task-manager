@@ -8,7 +8,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 #include <ros/ros.h>
 
-#include <actionlib/client/simple_action_client.h>
 #include <actionlib/client/terminal_state.h>
 #include <geometry_msgs/Polygon.h>
 #include <geometry_msgs/PoseStamped.h>
@@ -57,14 +56,8 @@ class DroneStateManager {
         bool setMode(std::string mode);
         bool arm();
         bool takeOff();
-        bool pauseOperations();
-
-        // Custom actions
-        bool setTransitGoal(messages_88::NavToPointGoal nav_goal);
-        bool setExploreGoal(messages_88::ExploreGoal explore_goal);
 
         // safety/validity checking
-        bool actionClientsAvailable();
         bool readyForAction();
         bool getReadyForAction();
         bool setSafetyArea();
@@ -86,10 +79,6 @@ class DroneStateManager {
         float max_distance_;
         ros::Publisher safety_area_viz_;
         bool ardupilot_;
-
-        // 88 action clients
-        actionlib::SimpleActionClient<messages_88::ExploreAction> explore_action_client_;
-        actionlib::SimpleActionClient<messages_88::NavToPointAction> navigate_action_client_;
 
         // Mavros subscribers and topics
         std::string mavros_global_pos_topic_;

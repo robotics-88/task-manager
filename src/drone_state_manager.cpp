@@ -33,8 +33,6 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
   , max_altitude_(10.0)
   , max_distance_(2.0)
   , ardupilot_(true)
-  , explore_action_client_("/task_manager/explore", true)
-  , navigate_action_client_("/task_manager/nav2point", true)
   , mavros_global_pos_topic_("/mavros/global_position/global")
   , mavros_state_topic_("/mavros/state")
   , mavros_alt_topic_("/mavros/global_position/rel_alt")
@@ -268,38 +266,6 @@ bool DroneStateManager::takeOff() {
         return false;
     }
     return true;
-}
-
-bool DroneStateManager::pauseOperations() {
-    actionlib::SimpleClientGoalState goal_state = explore_action_client_.getState();
-    if (goal_state == actionlib::SimpleClientGoalState::ACTIVE) {
-        explore_action_client_.cancelAllGoals();
-    }
-    if (explore_action_client_.getState() == actionlib::SimpleClientGoalState::ACTIVE) {
-        return false;
-    }
-    return true;
-}
-
-bool DroneStateManager::setTransitGoal(messages_88::NavToPointGoal nav_goal) {
-    // TODO add valid checking
-    navigate_action_client_.sendGoal(nav_goal);
-    return true;
-}
-
-bool DroneStateManager::setExploreGoal(messages_88::ExploreGoal explore_goal) {
-    // TODO add valid checking
-    explore_action_client_.sendGoal(explore_goal);
-    return true;
-}
-
-bool DroneStateManager::actionClientsAvailable() {
-    explore_action_client_.waitForServer(ros::Duration(10.0));
-    navigate_action_client_.waitForServer(ros::Duration(10.0));
-    if (explore_action_client_.isServerConnected() && navigate_action_client_.isServerConnected()) {
-        return true;
-    }
-    return false;
 }
 
 bool DroneStateManager::readyForAction() {

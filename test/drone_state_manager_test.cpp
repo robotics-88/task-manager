@@ -134,66 +134,6 @@ TEST(MavrosStateControl, arm)
     ASSERT_TRUE(drone_state_manager.arm());
 }
 
-TEST(MavrosStateControl, pauseOps)
-{
-    ros::NodeHandle node;
-    drone_state_manager::DroneStateManager drone_state_manager(node);
-
-    actionlib::SimpleActionServer<messages_88::ExploreAction> explore_action_server(node, "/task_manager/explore", false);
-    explore_action_server.start();
-
-    ASSERT_TRUE(drone_state_manager.pauseOperations());
-}
-
-TEST(SetGoal, explore)
-{
-    ros::NodeHandle node;
-    drone_state_manager::DroneStateManager drone_state_manager(node);
-
-    actionlib::SimpleActionServer<messages_88::ExploreAction> explore_action_server(node, "/task_manager/explore", false);
-    explore_action_server.start();
-
-    messages_88::ExploreGoal explore_goal;
-    boost::uuids::random_generator generator;
-    boost::uuids::uuid u = generator();
-    explore_goal.uuid.data = boost::uuids::to_string(u);
-
-    ASSERT_TRUE(drone_state_manager.setExploreGoal(explore_goal));
-}
-
-TEST(SetGoal, navToPoint)
-{
-    ros::NodeHandle node;
-    drone_state_manager::DroneStateManager drone_state_manager(node);
-
-    actionlib::SimpleActionServer<messages_88::NavToPointAction> nav2point_action_server(node, "/task_manager/nav2point", false);
-    nav2point_action_server.start();
-
-    geometry_msgs::Point target_position;
-    boost::uuids::random_generator generator;
-    boost::uuids::uuid u = generator();
-
-    messages_88::NavToPointGoal nav_goal;
-    nav_goal.point = target_position;
-    nav_goal.uuid.data = boost::uuids::to_string(u);
-
-    ASSERT_TRUE(drone_state_manager.setTransitGoal(nav_goal));
-}
-
-TEST(Safety, actionClients)
-{
-    ros::NodeHandle node;
-    drone_state_manager::DroneStateManager drone_state_manager(node);
-
-    ASSERT_FALSE(drone_state_manager.actionClientsAvailable());
-
-    actionlib::SimpleActionServer<messages_88::ExploreAction> explore_action_server(node, "/task_manager/explore", false);
-    actionlib::SimpleActionServer<messages_88::NavToPointAction> nav2point_action_server(node, "/task_manager/nav2point", false);
-    explore_action_server.start();
-    nav2point_action_server.start();
-    ASSERT_TRUE(drone_state_manager.actionClientsAvailable());
-}
-
 TEST(Safety, readiness)
 {
     // isReady and getReady tests are combined by necessity
