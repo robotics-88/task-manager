@@ -6,11 +6,14 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "task_manager/task_manager.h"
 #include "bag_recorder/Rosbag.h"
 
+#include <boost/date_time/local_time/local_time.hpp>
+#include <boost/filesystem.hpp>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>  
 #include <float.h>
 #include <geometry_msgs/Twist.h>
+#include <ros/package.h>
 
 inline static bool operator==(const geometry_msgs::Point& one,
                               const geometry_msgs::Point& two)
@@ -33,6 +36,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , max_dist_to_polygon_(300.0)
     , cmd_history_("")
     , explore_action_client_("explore", true)
+    , did_save_(false)
 {
     std::string goal_topic = "/mavros/setpoint_position/local";
     private_nh_.param<std::string>("goal_topic", goal_topic, goal_topic);
@@ -60,6 +64,15 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     task_pub_ = nh_.advertise<messages_88::TaskStatus>("task_status", 10);
 
     vegetation_save_client_ = private_nh_.serviceClient<messages_88::Save>("/vegetation/save");
+    tree_save_client_ = private_nh_.serviceClient<messages_88::Save>("/species_mapper/save");
+    std::string data_folder = ros::package::getPath("task_manager_88") + "/logs/";
+    std::string time_local = boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time());
+    time_local.replace(time_local.find(" "), 1, "_");
+    directory_ = data_folder + time_local + "/";
+    if (!boost::filesystem::exists(directory_)) {
+        ROS_INFO("Folder did not exist, creating directory: %s", directory_.c_str());
+        boost::filesystem::create_directories(directory_);
+    }
 }
 
 TaskManager::~TaskManager(){}
@@ -240,13 +253,19 @@ void TaskManager::startExploreTask() {
 
     current_status_ = CurrentStatus::EXPLORING;
     explore_action_client_.sendGoal(current_explore_goal_);
+    did_save_ = false;
 }
 
 void TaskManager::stop() {
-    ROS_INFO("called stop tsk mgr procs");
     stopBag();
-    messages_88::Save save_msg;
-    vegetation_save_client_.call(save_msg);
+    if (!did_save_) {
+        messages_88::Save save_msg;
+        save_msg.request.directory.data = directory_;
+        vegetation_save_client_.call(save_msg);
+        tree_save_client_.call(save_msg);
+        did_save_ = true;
+    }
+
     // TODO stop any active goals
 }
 
@@ -257,8 +276,9 @@ void TaskManager::modeMonitor() {
         cmd_history_.append("Checking start bag record due to manual takeoff detected. In air: " + std::to_string(in_air) + ", flight mode: " + mode + "\n");
         // Handle recording during manual take off
         startBag();
+        did_save_ = false;
     }
-    if (bag_active_ && mode == land_mode_) {
+    if (mode == land_mode_) {
         // Handle save bag during land (manual or auton)
         stop();
     }

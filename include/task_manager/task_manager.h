@@ -89,7 +89,12 @@ class TaskManager {
         ros::Publisher task_pub_;
 
         actionlib::SimpleActionClient<messages_88::ExploreAction> explore_action_client_;
+
+        // Saving
+        std::string directory_;
         ros::ServiceClient vegetation_save_client_;
+        ros::ServiceClient tree_save_client_;
+        bool did_save_;
 
         ros::Publisher local_pos_pub_;
         ros::Publisher local_vel_pub_;
