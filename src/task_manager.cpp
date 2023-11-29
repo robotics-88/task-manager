@@ -200,7 +200,7 @@ void TaskManager::startNav2PointTask(messages_88::NavToPointGoal &nav_goal) {
     geometry_msgs::PoseStamped target;
     target.pose.position = point;
     local_pos_pub_.publish(target);
-    while (!isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition())) {
+    while (!(isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition()) || current_status_ == CurrentStatus::WAITING_TO_EXPLORE)) {
         ros::Duration(1.0).sleep();    
     }
 }
