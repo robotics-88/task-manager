@@ -20,6 +20,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "messages_88/PrepareDrone.h"
 #include "messages_88/PrepareExplore.h"
 #include "messages_88/NavToPointAction.h"
+#include "messages_88/Save.h"
 #include "messages_88/TaskStatus.h"
 #include "task_manager/drone_state_manager.h"
 
@@ -88,6 +89,7 @@ class TaskManager {
         ros::Publisher task_pub_;
 
         actionlib::SimpleActionClient<messages_88::ExploreAction> explore_action_client_;
+        ros::ServiceClient vegetation_save_client_;
 
         ros::Publisher local_pos_pub_;
         ros::Publisher local_vel_pub_;

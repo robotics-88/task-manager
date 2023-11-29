@@ -58,6 +58,8 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     stop_record_pub_ = nh_.advertise<std_msgs::String>("/record/stop", 5);
 
     task_pub_ = nh_.advertise<messages_88::TaskStatus>("task_status", 10);
+
+    vegetation_save_client_ = private_nh_.serviceClient<messages_88::Save>("/vegetation/save");
 }
 
 TaskManager::~TaskManager(){}
@@ -241,7 +243,10 @@ void TaskManager::startExploreTask() {
 }
 
 void TaskManager::stop() {
+    ROS_INFO("called stop tsk mgr procs");
     stopBag();
+    messages_88::Save save_msg;
+    vegetation_save_client_.call(save_msg);
     // TODO stop any active goals
 }
 
@@ -254,8 +259,8 @@ void TaskManager::modeMonitor() {
         startBag();
     }
     if (bag_active_ && mode == land_mode_) {
-        // Handle save bag during manual land
-        stopBag();
+        // Handle save bag during land (manual or auton)
+        stop();
     }
     task_msg_.header.stamp = ros::Time::now();
     task_msg_.cmd_history.data = cmd_history_.c_str();
@@ -277,7 +282,7 @@ void TaskManager::startBag() {
 }
 
 void TaskManager::stopBag() {
-    if (~bag_active_) {
+    if (!bag_active_) {
         return;
     }
     cmd_history_.append("Stopping bag.\n");
