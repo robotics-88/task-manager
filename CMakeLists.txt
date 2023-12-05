@@ -5,6 +5,7 @@ project(task_manager_88)
 find_package(catkin REQUIRED COMPONENTS
   actionlib
   actionlib_msgs
+  bag_recorder
   geometry_msgs
   mavros_msgs
   messages_88
@@ -46,6 +47,7 @@ include_directories(
 )
 
 add_executable(task_manager
+  src/drone_state_manager.cpp
   src/task_manager.cpp
   src/task_manager_node.cpp
 )
@@ -82,4 +84,24 @@ if(CATKIN_ENABLE_TESTING)
 
   # test all launch files
   roslaunch_add_file_check(launch)
+
+  find_package(rostest REQUIRED)
+
+  add_rostest_gtest(tests_drone_state
+    launch/test/tests_drone_state.launch 
+    src/drone_state_manager.cpp 
+    test/drone_state_manager_test.cpp
+  )
+  target_link_libraries(tests_drone_state 
+    ${catkin_LIBRARIES}
+  )
+
+  add_rostest_gtest(tests_takeoff
+    launch/test/tests_takeoff.launch 
+    src/drone_state_manager.cpp 
+    test/drone_takeoff_test.cpp
+  )
+  target_link_libraries(tests_takeoff 
+    ${catkin_LIBRARIES}
+  )
 endif()
