@@ -137,6 +137,10 @@ bool DroneStateManager::getAutonomyActive() {
     return autonomy_active_;
 }
 
+bool DroneStateManager::getIsArmed() {
+    return armed_;
+}
+
 void DroneStateManager::globalPositionCallback(const sensor_msgs::NavSatFix::ConstPtr &msg) {
     current_ll_ = *msg;
 }

@@ -95,6 +95,7 @@ class TaskManager {
         ros::ServiceClient vegetation_save_client_;
         ros::ServiceClient tree_save_client_;
         bool did_save_;
+        bool did_takeoff_;
 
         ros::Publisher local_pos_pub_;
         ros::Publisher local_vel_pub_;

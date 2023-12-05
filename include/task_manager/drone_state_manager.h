@@ -44,6 +44,7 @@ class DroneStateManager {
         std::string getFlightMode();
         bool getIsInAir();
         bool getAutonomyActive();
+        bool getIsArmed();
 
         // Mavros subscriber callbacks
         void globalPositionCallback(const sensor_msgs::NavSatFix::ConstPtr &msg);

@@ -37,6 +37,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , cmd_history_("")
     , explore_action_client_("explore", true)
     , did_save_(false)
+    , did_takeoff_(false)
 {
     std::string goal_topic = "/mavros/setpoint_position/local";
     private_nh_.param<std::string>("goal_topic", goal_topic, goal_topic);
@@ -272,15 +273,20 @@ void TaskManager::stop() {
 void TaskManager::modeMonitor() {
     std::string mode = drone_state_manager_.getFlightMode();
     bool in_air = drone_state_manager_.getIsInAir();
+    if (!did_takeoff_ && in_air) {
+        // Should have been set to true during takeoff, but just in case
+        did_takeoff_ = true;
+    }
     if (in_air && !bag_active_ && mode != land_mode_ && !drone_state_manager_.getAutonomyActive()) {
         cmd_history_.append("Checking start bag record due to manual takeoff detected. In air: " + std::to_string(in_air) + ", flight mode: " + mode + "\n");
         // Handle recording during manual take off
         startBag();
         did_save_ = false;
     }
-    if (mode == land_mode_) {
+    if (did_takeoff_ && !drone_state_manager_.getIsArmed()) {
         // Handle save bag during land (manual or auton)
         stop();
+        did_takeoff_ = false; // Reset so can restart if another takeoff
     }
     task_msg_.header.stamp = ros::Time::now();
     task_msg_.cmd_history.data = cmd_history_.c_str();
@@ -318,8 +324,8 @@ void TaskManager::getDroneReady() {
         startBag();
     }
     if (!drone_state_manager_.readyForAction()) {
-        bool ready = drone_state_manager_.getReadyForAction();
-        cmd_history_.append("Drone ready for action result: " + std::to_string(ready) + "\n");
+        did_takeoff_ = drone_state_manager_.getReadyForAction();
+        cmd_history_.append("Drone ready for action result: " + std::to_string(did_takeoff_) + "\n");
     }
 }
 
