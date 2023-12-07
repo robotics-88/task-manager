@@ -12,8 +12,11 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <actionlib/client/terminal_state.h>
 #include <geometry_msgs/Polygon.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <message_filters/subscriber.h>
+#include <message_filters/sync_policies/approximate_time.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf2_ros/static_transform_broadcaster.h>
+#include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/transform_listener.h>
 
 #include "messages_88/Emergency.h"
@@ -50,7 +53,7 @@ class TaskManager {
         void stop();
         void modeMonitor();
 
-        void localPositionCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
+        void syncedPoseCallback(const geometry_msgs::PoseStampedConstPtr &mavros_pose, const geometry_msgs::PoseStampedConstPtr &slam_pose);
         bool pauseOperations();
 
     private:
@@ -69,6 +72,7 @@ class TaskManager {
         ros::NodeHandle nh_;
 
         tf2_ros::StaticTransformBroadcaster static_tf_broadcaster_;
+        tf2_ros::TransformBroadcaster tf_broadcaster_;
         bool map_tf_init_;
         tf2_ros::Buffer tf_buffer_;
         tf2_ros::TransformListener tf_listener_;
@@ -77,9 +81,13 @@ class TaskManager {
         std::string mavros_map_frame_;
         std::string slam_map_frame_;
 
-        // Pose republisher
+        // TF publisher
+        typedef message_filters::sync_policies::ApproximateTime<geometry_msgs::PoseStamped, geometry_msgs::PoseStamped> MySyncPolicy;
+        typedef message_filters::Synchronizer<MySyncPolicy> Sync;
+        boost::shared_ptr<Sync> sync_;
         std::string slam_pose_topic_;
-        ros::Publisher slam_pose_pub_;
+        message_filters::Subscriber<geometry_msgs::PoseStamped> mavros_pose_sub_;
+        message_filters::Subscriber<geometry_msgs::PoseStamped> slam_pose_sub_;
 
         // Drone state and services
         drone_state_manager::DroneStateManager drone_state_manager_;
@@ -115,7 +123,6 @@ class TaskManager {
 
         ros::Publisher local_pos_pub_;
         ros::Publisher local_vel_pub_;
-        ros::Subscriber mavros_local_pos_subscriber_;
 
         // Goal details
         geometry_msgs::Point current_target_;
