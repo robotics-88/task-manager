@@ -70,6 +70,10 @@ class TaskManager {
         tf2_ros::StaticTransformBroadcaster static_tf_broadcaster_;
         bool map_tf_init_;
 
+        // Frames
+        std::string mavros_map_frame_;
+        std::string slam_map_frame_;
+
         // Drone state and services
         drone_state_manager::DroneStateManager drone_state_manager_;
         ros::ServiceServer drone_state_service_;

@@ -30,6 +30,8 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     : private_nh_("~")
     , nh_(node)
     , map_tf_init_(false)
+    , mavros_map_frame_("map")
+    , slam_map_frame_("slam_map")
     , do_record_(true)
     , bag_active_(false)
     , record_config_name_("r88_default")
@@ -43,6 +45,8 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     std::string goal_topic = "/mavros/setpoint_position/local";
     private_nh_.param<std::string>("goal_topic", goal_topic, goal_topic);
     private_nh_.param<bool>("do_record", do_record_, do_record_);
+    private_nh_.param<std::string>("mavros_map_frame", mavros_map_frame_, mavros_map_frame_);
+    private_nh_.param<std::string>("slam_map_frame", slam_map_frame_, slam_map_frame_);
 
     mode_monitor_timer_ = private_nh_.createTimer(ros::Duration(1.0),
                                [this](const ros::TimerEvent&) { modeMonitor(); });
@@ -90,9 +94,9 @@ void TaskManager::localPositionCallback(const geometry_msgs::PoseStamped::ConstP
         return;
     }
     geometry_msgs::TransformStamped map_to_slam_tf;
-    map_to_slam_tf.header.frame_id = "map";
+    map_to_slam_tf.header.frame_id = mavros_map_frame_;
     map_to_slam_tf.header.stamp = ros::Time(0);
-    map_to_slam_tf.child_frame_id = "slam_map";
+    map_to_slam_tf.child_frame_id = slam_map_frame_;
 
     map_to_slam_tf.transform.translation.x = msg->pose.position.x;
     map_to_slam_tf.transform.translation.y = msg->pose.position.y;
