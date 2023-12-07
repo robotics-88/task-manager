@@ -29,6 +29,7 @@ namespace task_manager
 TaskManager::TaskManager(ros::NodeHandle& node)
     : private_nh_("~")
     , nh_(node)
+    , map_tf_init_(false)
     , do_record_(true)
     , bag_active_(false)
     , record_config_name_("r88_default")
@@ -85,6 +86,23 @@ void TaskManager::localPositionCallback(const geometry_msgs::PoseStamped::ConstP
             current_status_ = CurrentStatus::WAITING_TO_EXPLORE;
         }
     }
+    if (map_tf_init_) {
+        return;
+    }
+    geometry_msgs::TransformStamped map_to_slam_tf;
+    map_to_slam_tf.header.frame_id = "map";
+    map_to_slam_tf.header.stamp = ros::Time(0);
+    map_to_slam_tf.child_frame_id = "slam_map";
+
+    map_to_slam_tf.transform.translation.x = msg->pose.position.x;
+    map_to_slam_tf.transform.translation.y = msg->pose.position.y;
+    map_to_slam_tf.transform.translation.z = msg->pose.position.z;
+
+    geometry_msgs::Quaternion quat = msg->pose.orientation;
+    map_to_slam_tf.transform.rotation = quat;
+    static_tf_broadcaster_.sendTransform(map_to_slam_tf);
+
+    map_tf_init_ = true;
 }
 
 bool TaskManager::emergencyResponse(messages_88::Emergency::Request& req, messages_88::Emergency::Response& resp) {

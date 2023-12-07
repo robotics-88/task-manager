@@ -12,6 +12,8 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <actionlib/client/terminal_state.h>
 #include <geometry_msgs/Polygon.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_ros/static_transform_broadcaster.h>
 
 #include "messages_88/Emergency.h"
 #include "messages_88/ExploreAction.h"
@@ -64,6 +66,9 @@ class TaskManager {
 
         ros::NodeHandle private_nh_;
         ros::NodeHandle nh_;
+
+        tf2_ros::StaticTransformBroadcaster static_tf_broadcaster_;
+        bool map_tf_init_;
 
         // Drone state and services
         drone_state_manager::DroneStateManager drone_state_manager_;
