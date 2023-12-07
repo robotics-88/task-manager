@@ -30,8 +30,10 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     : private_nh_("~")
     , nh_(node)
     , map_tf_init_(false)
+    , tf_listener_(tf_buffer_)
     , mavros_map_frame_("map")
     , slam_map_frame_("slam_map")
+    , slam_pose_topic_("decco/pose")
     , do_record_(true)
     , bag_active_(false)
     , record_config_name_("r88_default")
@@ -47,6 +49,8 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<bool>("do_record", do_record_, do_record_);
     private_nh_.param<std::string>("mavros_map_frame", mavros_map_frame_, mavros_map_frame_);
     private_nh_.param<std::string>("slam_map_frame", slam_map_frame_, slam_map_frame_);
+
+    slam_pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>(slam_pose_topic_, 10);
 
     mode_monitor_timer_ = private_nh_.createTimer(ros::Duration(1.0),
                                [this](const ros::TimerEvent&) { modeMonitor(); });
@@ -91,6 +95,16 @@ void TaskManager::localPositionCallback(const geometry_msgs::PoseStamped::ConstP
         }
     }
     if (map_tf_init_) {
+        // TODO this pose should eventually be used to compare with the SLAM produced pose and generate a dynamically updated slam <> mavros map transform
+        geometry_msgs::PoseStamped slam_pose;
+        std::string tf_error;
+        if (tf_buffer_.canTransform(slam_map_frame_, mavros_map_frame_, ros::Time(0), &tf_error)) {
+            tf_buffer_.transform(*msg, slam_pose, slam_map_frame_);
+            slam_pose_pub_.publish(slam_pose);
+        }
+        else {
+            ROS_WARN("TF error for slam pose: %s", tf_error.c_str());
+        }
         return;
     }
     geometry_msgs::TransformStamped map_to_slam_tf;

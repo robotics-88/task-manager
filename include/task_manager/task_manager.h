@@ -14,6 +14,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <geometry_msgs/PoseStamped.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf2_ros/static_transform_broadcaster.h>
+#include <tf2_ros/transform_listener.h>
 
 #include "messages_88/Emergency.h"
 #include "messages_88/ExploreAction.h"
@@ -69,10 +70,16 @@ class TaskManager {
 
         tf2_ros::StaticTransformBroadcaster static_tf_broadcaster_;
         bool map_tf_init_;
+        tf2_ros::Buffer tf_buffer_;
+        tf2_ros::TransformListener tf_listener_;
 
         // Frames
         std::string mavros_map_frame_;
         std::string slam_map_frame_;
+
+        // Pose republisher
+        std::string slam_pose_topic_;
+        ros::Publisher slam_pose_pub_;
 
         // Drone state and services
         drone_state_manager::DroneStateManager drone_state_manager_;
