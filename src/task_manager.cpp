@@ -110,6 +110,7 @@ void TaskManager::syncedPoseCallback(const geometry_msgs::PoseStampedConstPtr &m
     slam_quat_inv = slam_quat;
     slam_quat_inv.setW(-1 * slam_quat.getW());
     map_quat = mavros_quat * slam_quat_inv;
+    map_quat.normalize();
     geometry_msgs::Quaternion tf_quat;
     tf2::convert(map_quat, tf_quat);
 
