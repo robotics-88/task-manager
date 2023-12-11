@@ -1,4 +1,7 @@
 <launch>
+    <arg name="mavros_map_frame" default="map"/>
+    <arg name="slam_map_frame" default="slam_map"/>
+    <arg name="slam_pose_topic" default="/decco/pose"/>
     <arg name="goal_topic" default="/mavros/setpoint_position/local"/> <!-- for mavros without OA, use /mavros/setpoint_position/local. default is /goal.-->
 
      <!-- Record -->
@@ -7,5 +10,8 @@
     <node pkg="task_manager_88" type="task_manager" name="task_manager" output="screen">
         <param name="goal_topic" value="$(arg goal_topic)"/>
         <param name="do_record" value="$(arg do_record)"/>
+        <param name="mavros_map_frame" value="$(arg mavros_map_frame)"/>
+        <param name="slam_map_frame" value="$(arg slam_map_frame)"/>
+        <param name="slam_pose_topic" value="$(arg slam_pose_topic)"/>
     </node>
 </launch>

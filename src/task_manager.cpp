@@ -29,6 +29,11 @@ namespace task_manager
 TaskManager::TaskManager(ros::NodeHandle& node)
     : private_nh_("~")
     , nh_(node)
+    , map_tf_init_(false)
+    , tf_listener_(tf_buffer_)
+    , mavros_map_frame_("map")
+    , slam_map_frame_("slam_map")
+    , slam_pose_topic_("decco/pose")
     , do_record_(true)
     , bag_active_(false)
     , record_config_name_("r88_default")
@@ -42,6 +47,15 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     std::string goal_topic = "/mavros/setpoint_position/local";
     private_nh_.param<std::string>("goal_topic", goal_topic, goal_topic);
     private_nh_.param<bool>("do_record", do_record_, do_record_);
+    private_nh_.param<std::string>("mavros_map_frame", mavros_map_frame_, mavros_map_frame_);
+    private_nh_.param<std::string>("slam_map_frame", slam_map_frame_, slam_map_frame_);
+    private_nh_.param<std::string>("slam_pose_topic", slam_pose_topic_, slam_pose_topic_);
+
+    // Subscribe to MAVROS and SLAM pose topics to 
+    slam_pose_sub_.subscribe(nh_, slam_pose_topic_, 10);
+    mavros_pose_sub_.subscribe(nh_, "/mavros/local_position/pose", 10);
+    sync_.reset(new Sync(MySyncPolicy(10), mavros_pose_sub_, slam_pose_sub_));
+    sync_->registerCallback(boost::bind(&TaskManager::syncedPoseCallback, this, _1, _2));
 
     mode_monitor_timer_ = private_nh_.createTimer(ros::Duration(1.0),
                                [this](const ros::TimerEvent&) { modeMonitor(); });
@@ -54,7 +68,6 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     emergency_service_ = nh_.advertiseService("/emergency_response", &TaskManager::emergencyResponse, this);
 
     // MAVROS
-    mavros_local_pos_subscriber_ = nh_.subscribe<geometry_msgs::PoseStamped>("/mavros/local_position/pose", 10, &TaskManager::localPositionCallback, this);
     local_pos_pub_ = nh_.advertise<geometry_msgs::PoseStamped>(goal_topic, 10);
     local_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("/mavros/setpoint_velocity/cmd_vel_unstamped", 10);
 
@@ -78,13 +91,57 @@ TaskManager::TaskManager(ros::NodeHandle& node)
 
 TaskManager::~TaskManager(){}
 
-void TaskManager::localPositionCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
+void TaskManager::syncedPoseCallback(const geometry_msgs::PoseStampedConstPtr &mavros_pose, const geometry_msgs::PoseStampedConstPtr &slam_pose) {
     if (current_status_ == CurrentStatus::NAVIGATING) {
-        if (msg->pose.position == current_target_ || isInside(current_explore_goal_.polygon, msg->pose.position)) {
+        if (mavros_pose->pose.position == current_target_ || isInside(current_explore_goal_.polygon, mavros_pose->pose.position)) {
             // Within a meter of target or inside polygon
             current_status_ = CurrentStatus::WAITING_TO_EXPLORE;
         }
     }
+    // Attempt at dynamic tf: FROM mavros TO slam
+    // Compute the rotation and translation between the mavros and slam base_link estimates
+    // double xdif, ydif, zdif;
+    // xdif = mavros_pose->pose.position.x - slam_pose->pose.position.x;
+    // ydif = mavros_pose->pose.position.y - slam_pose->pose.position.y;
+    // zdif = mavros_pose->pose.position.z - slam_pose->pose.position.z;
+    // tf2::Quaternion mavros_quat, slam_quat_inv, slam_quat, map_quat;
+    // tf2::convert(mavros_pose->pose.orientation, mavros_quat);
+    // tf2::convert(slam_pose->pose.orientation, slam_quat);
+    // slam_quat_inv = slam_quat;
+    // slam_quat_inv.setW(-1 * slam_quat.getW());
+    // map_quat = mavros_quat * slam_quat_inv;
+    // map_quat.normalize();
+    // geometry_msgs::Quaternion tf_quat;
+    // tf2::convert(map_quat, tf_quat);
+
+    // geometry_msgs::TransformStamped map_to_slam_tf;
+    // map_to_slam_tf.header.frame_id = mavros_map_frame_;
+    // map_to_slam_tf.header.stamp = slam_pose->header.stamp;
+    // map_to_slam_tf.child_frame_id = slam_map_frame_;
+    // map_to_slam_tf.transform.translation.x = xdif;
+    // map_to_slam_tf.transform.translation.y = ydif;
+    // map_to_slam_tf.transform.translation.z = zdif;
+    // map_to_slam_tf.transform.rotation = tf_quat;
+    // tf_broadcaster_.sendTransform(map_to_slam_tf);
+
+    // Below assumes static tf
+    if (map_tf_init_) {
+        return;
+    }
+    geometry_msgs::TransformStamped map_to_slam_tf;
+    map_to_slam_tf.header.frame_id = mavros_map_frame_;
+    map_to_slam_tf.header.stamp = ros::Time::now();
+    map_to_slam_tf.child_frame_id = slam_map_frame_;
+
+    map_to_slam_tf.transform.translation.x = mavros_pose->pose.position.x;
+    map_to_slam_tf.transform.translation.y = mavros_pose->pose.position.y;
+    map_to_slam_tf.transform.translation.z = mavros_pose->pose.position.z;
+
+    geometry_msgs::Quaternion quat = mavros_pose->pose.orientation;
+    map_to_slam_tf.transform.rotation = quat;
+    static_tf_broadcaster_.sendTransform(map_to_slam_tf);
+
+    map_tf_init_ = true;
 }
 
 bool TaskManager::emergencyResponse(messages_88::Emergency::Request& req, messages_88::Emergency::Response& resp) {
