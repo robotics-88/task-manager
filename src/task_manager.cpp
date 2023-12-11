@@ -126,19 +126,11 @@ void TaskManager::syncedPoseCallback(const geometry_msgs::PoseStampedConstPtr &m
 
     // Below assumes static tf
     if (map_tf_init_) {
-        geometry_msgs::PoseStamped mavros2slam_pose;
-        std::string tf_error;
-        if (tf_buffer_.canTransform(slam_map_frame_, mavros_map_frame_, ros::Time(0), &tf_error)) {
-            tf_buffer_.transform(*mavros_pose, mavros2slam_pose, slam_map_frame_);
-        }
-        else {
-            ROS_WARN("TF error for slam pose: %s", tf_error.c_str());
-        }
         return;
     }
     geometry_msgs::TransformStamped map_to_slam_tf;
     map_to_slam_tf.header.frame_id = mavros_map_frame_;
-    map_to_slam_tf.header.stamp = ros::Time(0);
+    map_to_slam_tf.header.stamp = ros::Time::now();
     map_to_slam_tf.child_frame_id = slam_map_frame_;
 
     map_to_slam_tf.transform.translation.x = mavros_pose->pose.position.x;
