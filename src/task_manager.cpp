@@ -41,6 +41,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , max_dist_to_polygon_(300.0)
     , cmd_history_("")
     , explore_action_client_("explore", true)
+    , health_check_s_(5.0)
     , did_save_(false)
     , did_takeoff_(false)
 {
@@ -59,6 +60,10 @@ TaskManager::TaskManager(ros::NodeHandle& node)
 
     mode_monitor_timer_ = private_nh_.createTimer(ros::Duration(1.0),
                                [this](const ros::TimerEvent&) { modeMonitor(); });
+
+    // Health pubs/subs
+    health_pub_timer_ = private_nh_.createTimer(health_check_s_,
+                               [this](const ros::TimerEvent&) { publishHealth(); });
 
     // Drone state services
     drone_state_service_ = nh_.advertiseService("/init_drone_state", &TaskManager::initDroneStateManager, this);
@@ -253,6 +258,7 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
     explore_goal.altitude = req.altitude;
     explore_goal.min_altitude = req.min_altitude;
     explore_goal.max_altitude = req.max_altitude;
+    explore_action_client_.waitForServer();
     sendExploreTask(explore_goal);
     cmd_history_.append("Sent explore goal.\n");
     resp.success = true;
@@ -531,6 +537,24 @@ std::string TaskManager::getStatusString() {
         default:
             return "unknown";
     }
+}
+
+void TaskManager::publishHealth() {
+    // TODO fill in json string and publish
+    ros::Duration half_dur = ros::Duration(0.5 * health_check_s_.toSec() );
+    bool explore_healthy_ = explore_action_client_.waitForServer(half_dur);
+}
+
+void TaskManager::costmapCallback(const nav_msgs::OccupancyGrid::ConstPtr &msg) {
+    last_costmap_stamp_ = msg->header.stamp;
+}
+
+void TaskManager::lidarCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
+    last_lidar_stamp_ = msg->header.stamp;
+}
+
+void TaskManager::mapirCallback(const sensor_msgs::ImageConstPtr &msg) {
+    last_mapir_stamp_ = msg->header.stamp;
 }
 
 }
