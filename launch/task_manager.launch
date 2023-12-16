@@ -4,6 +4,11 @@
     <arg name="slam_pose_topic" default="/decco/pose"/>
     <arg name="goal_topic" default="/mavros/setpoint_position/local"/> <!-- for mavros without OA, use /mavros/setpoint_position/local. default is /goal.-->
 
+    <!-- Health topics -->
+    <arg name="costmap_topic" default="/costmap_node/costmap/costmap_updates"/>
+    <arg name="lidar_topic" default="/livox/lidar"/>
+    <arg name="mapir_topic" default="/mapir_rgn/image_rect"/>
+
      <!-- Record -->
     <arg name="do_record" default="true"/>
     
@@ -13,5 +18,8 @@
         <param name="mavros_map_frame" value="$(arg mavros_map_frame)"/>
         <param name="slam_map_frame" value="$(arg slam_map_frame)"/>
         <param name="slam_pose_topic" value="$(arg slam_pose_topic)"/>
+        <param name="costmap_topic" value="$(arg costmap_topic)"/>
+        <param name="lidar_topic" value="$(arg lidar_topic)"/>
+        <param name="mapir_topic" value="$(arg mapir_topic)"/>
     </node>
 </launch>

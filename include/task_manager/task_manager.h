@@ -15,7 +15,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <geometry_msgs/PoseStamped.h>
 #include <message_filters/subscriber.h>
 #include <message_filters/sync_policies/approximate_time.h>
-#include <nav_msgs/OccupancyGrid.h>
+#include <map_msgs/OccupancyGridUpdate.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
@@ -61,7 +61,7 @@ class TaskManager {
         bool pauseOperations();
 
         // Health subscribers, unused except to verify publishing
-        void costmapCallback(const nav_msgs::OccupancyGrid::ConstPtr &msg);
+        void costmapCallback(const map_msgs::OccupancyGridUpdate::ConstPtr &msg);
         void lidarCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
         void mapirCallback(const sensor_msgs::ImageConstPtr &msg);
 
@@ -134,6 +134,9 @@ class TaskManager {
         ros::Subscriber lidar_sub_;
         ros::Subscriber mapir_sub_;
         ros::Publisher health_pub_;
+        std::string costmap_topic_;
+        std::string lidar_topic_;
+        std::string mapir_topic_;
         ros::Timer health_pub_timer_;
 
         // Saving
