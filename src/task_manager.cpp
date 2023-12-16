@@ -15,6 +15,9 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <geometry_msgs/Twist.h>
 #include <ros/package.h>
 
+#include <task_manager/json.hpp>
+using json = nlohmann::json;
+
 inline static bool operator==(const geometry_msgs::Point& one,
                               const geometry_msgs::Point& two)
 {
@@ -41,6 +44,10 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , max_dist_to_polygon_(300.0)
     , cmd_history_("")
     , explore_action_client_("explore", true)
+    , health_check_s_(5.0)
+    , costmap_topic_("/costmap_node/costmap/costmap")
+    , lidar_topic_("/livox/lidar")
+    , mapir_topic_("/mapir_rgn/image_rect")
     , did_save_(false)
     , did_takeoff_(false)
 {
@@ -50,6 +57,9 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<std::string>("mavros_map_frame", mavros_map_frame_, mavros_map_frame_);
     private_nh_.param<std::string>("slam_map_frame", slam_map_frame_, slam_map_frame_);
     private_nh_.param<std::string>("slam_pose_topic", slam_pose_topic_, slam_pose_topic_);
+    private_nh_.param<std::string>("costmap_topic", costmap_topic_, costmap_topic_);
+    private_nh_.param<std::string>("lidar_topic", lidar_topic_, lidar_topic_);
+    private_nh_.param<std::string>("mapir_topic", mapir_topic_, mapir_topic_);
 
     // Subscribe to MAVROS and SLAM pose topics to 
     slam_pose_sub_.subscribe(nh_, slam_pose_topic_, 10);
@@ -59,6 +69,14 @@ TaskManager::TaskManager(ros::NodeHandle& node)
 
     mode_monitor_timer_ = private_nh_.createTimer(ros::Duration(1.0),
                                [this](const ros::TimerEvent&) { modeMonitor(); });
+
+    // Health pubs/subs
+    health_pub_ = nh_.advertise<std_msgs::String>("/mapversation/health_report", 10);
+    costmap_sub_ = nh_.subscribe<map_msgs::OccupancyGridUpdate>(costmap_topic_, 10, &TaskManager::costmapCallback, this);
+    lidar_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(lidar_topic_, 10, &TaskManager::lidarCallback, this);
+    mapir_sub_ = nh_.subscribe<sensor_msgs::Image>(mapir_topic_, 10, &TaskManager::mapirCallback, this);
+    health_pub_timer_ = private_nh_.createTimer(health_check_s_,
+                               [this](const ros::TimerEvent&) { publishHealth(); });
 
     // Drone state services
     drone_state_service_ = nh_.advertiseService("/init_drone_state", &TaskManager::initDroneStateManager, this);
@@ -92,6 +110,8 @@ TaskManager::TaskManager(ros::NodeHandle& node)
 TaskManager::~TaskManager(){}
 
 void TaskManager::syncedPoseCallback(const geometry_msgs::PoseStampedConstPtr &mavros_pose, const geometry_msgs::PoseStampedConstPtr &slam_pose) {
+    last_mavros_pos_stamp_ = mavros_pose->header.stamp;
+    last_slam_pos_stamp_ = slam_pose->header.stamp;
     if (current_status_ == CurrentStatus::NAVIGATING) {
         if (mavros_pose->pose.position == current_target_ || isInside(current_explore_goal_.polygon, mavros_pose->pose.position)) {
             // Within a meter of target or inside polygon
@@ -253,6 +273,7 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
     explore_goal.altitude = req.altitude;
     explore_goal.min_altitude = req.min_altitude;
     explore_goal.max_altitude = req.max_altitude;
+    explore_action_client_.waitForServer();
     sendExploreTask(explore_goal);
     cmd_history_.append("Sent explore goal.\n");
     resp.success = true;
@@ -531,6 +552,73 @@ std::string TaskManager::getStatusString() {
         default:
             return "unknown";
     }
+}
+
+void TaskManager::publishHealth() {
+    // TODO fill in json string and publish
+    ros::Duration half_dur = ros::Duration(0.5 * health_check_s_.toSec() );
+    bool explore_healthy = explore_action_client_.waitForServer(half_dur);
+
+    auto jsonObjects = json::array();
+    ros::Time t = ros::Time::now();
+    // 1) MAVROS position
+    json j = {
+        {"name", "mavrosPosition"},
+        {"label", "MAVROS position"},
+        {"value", (t - last_mavros_pos_stamp_ < health_check_s_)}
+    };
+    jsonObjects.push_back(j);
+    // 2) SLAM position
+    j = {
+        {"name", "slamPosition"},
+        {"label", "SLAM position"},
+        {"value", (t - last_slam_pos_stamp_ < health_check_s_)}
+    };
+    jsonObjects.push_back(j);
+    // 3) costmap
+    j = {
+        {"name", "costmap"},
+        {"label", "Costmap"},
+        {"value", (t - last_costmap_stamp_ < health_check_s_)}
+    };
+    jsonObjects.push_back(j);
+    // 4) LiDAR
+    j = {
+        {"name", "lidar"},
+        {"label", "LiDAR"},
+        {"value", (t - last_lidar_stamp_ < health_check_s_)}
+    };
+    jsonObjects.push_back(j);
+    // 5) MAPIR
+    j = {
+        {"name", "mapir"},
+        {"label", "MAPIR Camera"},
+        {"value", (t - last_mapir_stamp_ < health_check_s_)}
+    };
+    jsonObjects.push_back(j);
+    // 6) Explore
+    j = {
+        {"name", "explore"},
+        {"label", "Explore Service"},
+        {"value", explore_healthy}
+    };
+    jsonObjects.push_back(j);
+    std::string s = jsonObjects.dump();
+    std_msgs::String health_string;
+    health_string.data = s;
+    health_pub_.publish(health_string);
+}
+
+void TaskManager::costmapCallback(const map_msgs::OccupancyGridUpdate::ConstPtr &msg) {
+    last_costmap_stamp_ = msg->header.stamp;
+}
+
+void TaskManager::lidarCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
+    last_lidar_stamp_ =  msg->header.stamp;
+}
+
+void TaskManager::mapirCallback(const sensor_msgs::ImageConstPtr &msg) {
+    last_mapir_stamp_ = msg->header.stamp;
 }
 
 }

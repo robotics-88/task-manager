@@ -10,10 +10,14 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 #include <actionlib/client/simple_action_client.h>
 #include <actionlib/client/terminal_state.h>
+#include <costmap_2d/costmap_2d.h>
 #include <geometry_msgs/Polygon.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <message_filters/subscriber.h>
 #include <message_filters/sync_policies/approximate_time.h>
+#include <map_msgs/OccupancyGridUpdate.h>
+#include <sensor_msgs/Image.h>
+#include <sensor_msgs/PointCloud2.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf2_ros/static_transform_broadcaster.h>
 #include <tf2_ros/transform_broadcaster.h>
@@ -55,6 +59,11 @@ class TaskManager {
 
         void syncedPoseCallback(const geometry_msgs::PoseStampedConstPtr &mavros_pose, const geometry_msgs::PoseStampedConstPtr &slam_pose);
         bool pauseOperations();
+
+        // Health subscribers, unused except to verify publishing
+        void costmapCallback(const map_msgs::OccupancyGridUpdate::ConstPtr &msg);
+        void lidarCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
+        void mapirCallback(const sensor_msgs::ImageConstPtr &msg);
 
     private:
         enum CurrentStatus
@@ -114,6 +123,22 @@ class TaskManager {
 
         actionlib::SimpleActionClient<messages_88::ExploreAction> explore_action_client_;
 
+        // Health params and subscribers (for topics not already present)
+        ros::Duration health_check_s_;
+        ros::Time last_mavros_pos_stamp_;
+        ros::Time last_slam_pos_stamp_;
+        ros::Time last_costmap_stamp_;
+        ros::Time last_lidar_stamp_;
+        ros::Time last_mapir_stamp_;
+        ros::Subscriber costmap_sub_;
+        ros::Subscriber lidar_sub_;
+        ros::Subscriber mapir_sub_;
+        ros::Publisher health_pub_;
+        std::string costmap_topic_;
+        std::string lidar_topic_;
+        std::string mapir_topic_;
+        ros::Timer health_pub_timer_;
+
         // Saving
         std::string directory_;
         ros::ServiceClient vegetation_save_client_;
@@ -144,6 +169,7 @@ class TaskManager {
         bool isInside(const geometry_msgs::Polygon& polygon, const geometry_msgs::Point& point);
         bool polygonDistanceOk(double &min_dist, geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region);
         std::string getStatusString();
+        void publishHealth();
 
 };
 
