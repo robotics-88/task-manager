@@ -94,6 +94,8 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     stop_record_pub_ = nh_.advertise<std_msgs::String>("/record/stop", 5);
 
     task_pub_ = nh_.advertise<messages_88::TaskStatus>("task_status", 10);
+    task_msg_.enable_autonomy = false;
+    task_msg_.enable_exploration = false;
 
     vegetation_save_client_ = private_nh_.serviceClient<messages_88::Save>("/vegetation/save");
     tree_save_client_ = private_nh_.serviceClient<messages_88::Save>("/species_mapper/save");
@@ -254,7 +256,9 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
         target_position.pose.position.z = req.altitude;
     }
 
-    getDroneReady();
+    if (task_msg_.enable_autonomy) {
+        getDroneReady();
+    }
 
     boost::uuids::random_generator generator;
     boost::uuids::uuid u = generator();
@@ -273,10 +277,12 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
     explore_goal.altitude = req.altitude;
     explore_goal.min_altitude = req.min_altitude;
     explore_goal.max_altitude = req.max_altitude;
-    explore_action_client_.waitForServer();
-    sendExploreTask(explore_goal);
-    cmd_history_.append("Sent explore goal.\n");
-    resp.success = true;
+    if (task_msg_.enable_exploration) {
+        explore_action_client_.waitForServer();
+        sendExploreTask(explore_goal);
+        cmd_history_.append("Sent explore goal.\n");
+        resp.success = true;
+    }
     return true;
 }
 
