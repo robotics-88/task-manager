@@ -263,7 +263,7 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
     boost::uuids::random_generator generator;
     boost::uuids::uuid u = generator();
     messages_88::ExploreGoal explore_goal;
-    if (needs_transit) {
+    if (task_msg_.enable_autonomy && needs_transit) {
         messages_88::NavToPointGoal nav_goal;
         nav_goal.point = target_position.pose.position;
         nav_goal.uuid.data = boost::uuids::to_string(u);
@@ -564,51 +564,59 @@ void TaskManager::publishHealth() {
     // TODO fill in json string and publish
     ros::Duration half_dur = ros::Duration(0.5 * health_check_s_.toSec() );
     bool explore_healthy = explore_action_client_.waitForServer(half_dur);
-
-    auto jsonObjects = json::array();
+    auto jsonObjects = json::object();
     ros::Time t = ros::Time::now();
+    json header = {
+        {"frame_id", "decco"},
+        {"stamp", t.toSec()},
+    };
+    jsonObjects["header"] = header;
+
+    auto healthObjects = json::array();
     // 1) MAVROS position
     json j = {
         {"name", "mavrosPosition"},
         {"label", "MAVROS position"},
-        {"value", (t - last_mavros_pos_stamp_ < health_check_s_)}
+        {"isHealthy", (t - last_mavros_pos_stamp_ < health_check_s_)}
     };
-    jsonObjects.push_back(j);
+    healthObjects.push_back(j);
     // 2) SLAM position
     j = {
         {"name", "slamPosition"},
         {"label", "SLAM position"},
-        {"value", (t - last_slam_pos_stamp_ < health_check_s_)}
+        {"isHealthy", (t - last_slam_pos_stamp_ < health_check_s_)}
     };
-    jsonObjects.push_back(j);
+    healthObjects.push_back(j);
     // 3) costmap
     j = {
         {"name", "costmap"},
         {"label", "Costmap"},
-        {"value", (t - last_costmap_stamp_ < health_check_s_)}
+        {"isHealthy", (t - last_costmap_stamp_ < health_check_s_)}
     };
-    jsonObjects.push_back(j);
+    healthObjects.push_back(j);
     // 4) LiDAR
     j = {
         {"name", "lidar"},
         {"label", "LiDAR"},
-        {"value", (t - last_lidar_stamp_ < health_check_s_)}
+        {"isHealthy", (t - last_lidar_stamp_ < health_check_s_)}
     };
-    jsonObjects.push_back(j);
+    healthObjects.push_back(j);
     // 5) MAPIR
     j = {
         {"name", "mapir"},
         {"label", "MAPIR Camera"},
-        {"value", (t - last_mapir_stamp_ < health_check_s_)}
+        {"isHealthy", (t - last_mapir_stamp_ < health_check_s_)}
     };
-    jsonObjects.push_back(j);
+    healthObjects.push_back(j);
     // 6) Explore
     j = {
         {"name", "explore"},
         {"label", "Explore Service"},
-        {"value", explore_healthy}
+        {"isHealthy", explore_healthy}
     };
-    jsonObjects.push_back(j);
+    healthObjects.push_back(j);
+    jsonObjects["healthIndicators"] = healthObjects;
+
     std::string s = jsonObjects.dump();
     std_msgs::String health_string;
     health_string.data = s;
