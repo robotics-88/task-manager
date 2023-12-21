@@ -48,6 +48,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , costmap_topic_("/costmap_node/costmap/costmap")
     , lidar_topic_("/livox/lidar")
     , mapir_topic_("/mapir_rgn/image_rect")
+    , rosbag_topic_("/record/heartbeat")
     , did_save_(false)
     , did_takeoff_(false)
 {
@@ -60,6 +61,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<std::string>("costmap_topic", costmap_topic_, costmap_topic_);
     private_nh_.param<std::string>("lidar_topic", lidar_topic_, lidar_topic_);
     private_nh_.param<std::string>("mapir_topic", mapir_topic_, mapir_topic_);
+    private_nh_.param<std::string>("rosbag_topic", rosbag_topic_, rosbag_topic_);
 
     // Subscribe to MAVROS and SLAM pose topics to 
     slam_pose_sub_.subscribe(nh_, slam_pose_topic_, 10);
@@ -75,6 +77,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     costmap_sub_ = nh_.subscribe<map_msgs::OccupancyGridUpdate>(costmap_topic_, 10, &TaskManager::costmapCallback, this);
     lidar_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(lidar_topic_, 10, &TaskManager::lidarCallback, this);
     mapir_sub_ = nh_.subscribe<sensor_msgs::Image>(mapir_topic_, 10, &TaskManager::mapirCallback, this);
+    rosbag_sub_ = nh_.subscribe<std_msgs::String>(rosbag_topic_, 10, &TaskManager::rosbagCallback, this);
     health_pub_timer_ = private_nh_.createTimer(health_check_s_,
                                [this](const ros::TimerEvent&) { publishHealth(); });
 
@@ -103,7 +106,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     std::string time_local = boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time());
     time_local.replace(time_local.find(" "), 1, "_");
     directory_ = data_folder + time_local + "/";
-    if (!boost::filesystem::exists(directory_)) {
+    if (do_record_ && !boost::filesystem::exists(directory_)) {
         ROS_INFO("Folder did not exist, creating directory: %s", directory_.c_str());
         boost::filesystem::create_directories(directory_);
     }
@@ -633,6 +636,10 @@ void TaskManager::lidarCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
 
 void TaskManager::mapirCallback(const sensor_msgs::ImageConstPtr &msg) {
     last_mapir_stamp_ = msg->header.stamp;
+}
+
+void TaskManager::rosbagCallback(const std_msgs::StringConstPtr &msg) {
+    last_rosbag_stamp_ = ros::Time::now();
 }
 
 }

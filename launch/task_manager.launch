@@ -8,6 +8,7 @@
     <arg name="costmap_topic" default="/costmap_node/costmap/costmap_updates"/>
     <arg name="lidar_topic" default="/livox/lidar"/>
     <arg name="mapir_topic" default="/mapir_rgn/image_rect"/>
+    <arg name="rosbag_topic" default="/record/heartbeat"/>
 
      <!-- Record -->
     <arg name="do_record" default="true"/>
@@ -21,5 +22,6 @@
         <param name="costmap_topic" value="$(arg costmap_topic)"/>
         <param name="lidar_topic" value="$(arg lidar_topic)"/>
         <param name="mapir_topic" value="$(arg mapir_topic)"/>
+        <param name="rosbag_topic" value="$(arg rosbag_topic)"/>
     </node>
 </launch>
