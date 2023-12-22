@@ -618,6 +618,13 @@ void TaskManager::publishHealth() {
         {"isHealthy", explore_healthy}
     };
     healthObjects.push_back(j);
+    // 7) ROS bag
+    j = {
+        {"name", "rosbag"},
+        {"label", "ROS bag"},
+        {"isHealthy", (t - last_rosbag_stamp_ < health_check_s_)}
+    };
+    healthObjects.push_back(j);
     jsonObjects["healthIndicators"] = healthObjects;
 
     std::string s = jsonObjects.dump();
