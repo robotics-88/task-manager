@@ -48,6 +48,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , costmap_topic_("/costmap_node/costmap/costmap")
     , lidar_topic_("/livox/lidar")
     , mapir_topic_("/mapir_rgn/image_rect")
+    , rosbag_topic_("/record/heartbeat")
     , did_save_(false)
     , did_takeoff_(false)
 {
@@ -60,6 +61,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<std::string>("costmap_topic", costmap_topic_, costmap_topic_);
     private_nh_.param<std::string>("lidar_topic", lidar_topic_, lidar_topic_);
     private_nh_.param<std::string>("mapir_topic", mapir_topic_, mapir_topic_);
+    private_nh_.param<std::string>("rosbag_topic", rosbag_topic_, rosbag_topic_);
 
     // Subscribe to MAVROS and SLAM pose topics to 
     slam_pose_sub_.subscribe(nh_, slam_pose_topic_, 10);
@@ -75,6 +77,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     costmap_sub_ = nh_.subscribe<map_msgs::OccupancyGridUpdate>(costmap_topic_, 10, &TaskManager::costmapCallback, this);
     lidar_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(lidar_topic_, 10, &TaskManager::lidarCallback, this);
     mapir_sub_ = nh_.subscribe<sensor_msgs::Image>(mapir_topic_, 10, &TaskManager::mapirCallback, this);
+    rosbag_sub_ = nh_.subscribe<std_msgs::String>(rosbag_topic_, 10, &TaskManager::rosbagCallback, this);
     health_pub_timer_ = private_nh_.createTimer(health_check_s_,
                                [this](const ros::TimerEvent&) { publishHealth(); });
 
@@ -103,7 +106,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     std::string time_local = boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time());
     time_local.replace(time_local.find(" "), 1, "_");
     directory_ = data_folder + time_local + "/";
-    if (!boost::filesystem::exists(directory_)) {
+    if (do_record_ && !boost::filesystem::exists(directory_)) {
         ROS_INFO("Folder did not exist, creating directory: %s", directory_.c_str());
         boost::filesystem::create_directories(directory_);
     }
@@ -263,7 +266,7 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
     boost::uuids::random_generator generator;
     boost::uuids::uuid u = generator();
     messages_88::ExploreGoal explore_goal;
-    if (needs_transit) {
+    if (task_msg_.enable_autonomy && needs_transit) {
         messages_88::NavToPointGoal nav_goal;
         nav_goal.point = target_position.pose.position;
         nav_goal.uuid.data = boost::uuids::to_string(u);
@@ -564,51 +567,66 @@ void TaskManager::publishHealth() {
     // TODO fill in json string and publish
     ros::Duration half_dur = ros::Duration(0.5 * health_check_s_.toSec() );
     bool explore_healthy = explore_action_client_.waitForServer(half_dur);
-
-    auto jsonObjects = json::array();
+    auto jsonObjects = json::object();
     ros::Time t = ros::Time::now();
+    json header = {
+        {"frame_id", "decco"},
+        {"stamp", t.toSec()},
+    };
+    jsonObjects["header"] = header;
+
+    auto healthObjects = json::array();
     // 1) MAVROS position
     json j = {
         {"name", "mavrosPosition"},
         {"label", "MAVROS position"},
-        {"value", (t - last_mavros_pos_stamp_ < health_check_s_)}
+        {"isHealthy", (t - last_mavros_pos_stamp_ < health_check_s_)}
     };
-    jsonObjects.push_back(j);
+    healthObjects.push_back(j);
     // 2) SLAM position
     j = {
         {"name", "slamPosition"},
         {"label", "SLAM position"},
-        {"value", (t - last_slam_pos_stamp_ < health_check_s_)}
+        {"isHealthy", (t - last_slam_pos_stamp_ < health_check_s_)}
     };
-    jsonObjects.push_back(j);
+    healthObjects.push_back(j);
     // 3) costmap
     j = {
         {"name", "costmap"},
         {"label", "Costmap"},
-        {"value", (t - last_costmap_stamp_ < health_check_s_)}
+        {"isHealthy", (t - last_costmap_stamp_ < health_check_s_)}
     };
-    jsonObjects.push_back(j);
+    healthObjects.push_back(j);
     // 4) LiDAR
     j = {
         {"name", "lidar"},
         {"label", "LiDAR"},
-        {"value", (t - last_lidar_stamp_ < health_check_s_)}
+        {"isHealthy", (t - last_lidar_stamp_ < health_check_s_)}
     };
-    jsonObjects.push_back(j);
+    healthObjects.push_back(j);
     // 5) MAPIR
     j = {
         {"name", "mapir"},
         {"label", "MAPIR Camera"},
-        {"value", (t - last_mapir_stamp_ < health_check_s_)}
+        {"isHealthy", (t - last_mapir_stamp_ < health_check_s_)}
     };
-    jsonObjects.push_back(j);
+    healthObjects.push_back(j);
     // 6) Explore
     j = {
         {"name", "explore"},
         {"label", "Explore Service"},
-        {"value", explore_healthy}
+        {"isHealthy", explore_healthy}
     };
-    jsonObjects.push_back(j);
+    healthObjects.push_back(j);
+    // 7) ROS bag
+    j = {
+        {"name", "rosbag"},
+        {"label", "ROS bag"},
+        {"isHealthy", (t - last_rosbag_stamp_ < health_check_s_)}
+    };
+    healthObjects.push_back(j);
+    jsonObjects["healthIndicators"] = healthObjects;
+
     std::string s = jsonObjects.dump();
     std_msgs::String health_string;
     health_string.data = s;
@@ -625,6 +643,10 @@ void TaskManager::lidarCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
 
 void TaskManager::mapirCallback(const sensor_msgs::ImageConstPtr &msg) {
     last_mapir_stamp_ = msg->header.stamp;
+}
+
+void TaskManager::rosbagCallback(const std_msgs::StringConstPtr &msg) {
+    last_rosbag_stamp_ = ros::Time::now();
 }
 
 }

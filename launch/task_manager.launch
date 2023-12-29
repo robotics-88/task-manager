@@ -4,10 +4,13 @@
     <arg name="slam_pose_topic" default="/decco/pose"/>
     <arg name="goal_topic" default="/mavros/setpoint_position/local"/> <!-- for mavros without OA, use /mavros/setpoint_position/local. default is /goal.-->
 
+    <arg name="default_altitude_m" default="3.0"/> 
+
     <!-- Health topics -->
     <arg name="costmap_topic" default="/costmap_node/costmap/costmap_updates"/>
     <arg name="lidar_topic" default="/livox/lidar"/>
     <arg name="mapir_topic" default="/mapir_rgn/image_rect"/>
+    <arg name="rosbag_topic" default="/record/heartbeat"/>
 
      <!-- Record -->
     <arg name="do_record" default="true"/>
@@ -21,5 +24,7 @@
         <param name="costmap_topic" value="$(arg costmap_topic)"/>
         <param name="lidar_topic" value="$(arg lidar_topic)"/>
         <param name="mapir_topic" value="$(arg mapir_topic)"/>
+        <param name="rosbag_topic" value="$(arg rosbag_topic)"/>
+        <param name="default_altitude_m" value="$(arg default_altitude_m)"/>
     </node>
 </launch>
