@@ -378,6 +378,26 @@ void TaskManager::modeMonitor() {
         stop();
         did_takeoff_ = false; // Reset so can restart if another takeoff
     }
+    geometry_msgs::PoseStamped home_pos;
+    home_pos.pose.position.x = 0;
+    home_pos.pose.position.y = 0;
+    home_pos.pose.position.z = current_explore_goal_.altitude;
+    if (current_status_ == CurrentStatus::EXPLORING) {
+        // Check action client status to see if complete
+        if (explore_action_client_.getState() == actionlib::SimpleClientGoalState::ABORTED || explore_action_client_.getState() == actionlib::SimpleClientGoalState::LOST || explore_action_client_.getState() == actionlib::SimpleClientGoalState::SUCCEEDED) {
+            ROS_INFO("explore action client state: %s", explore_action_client_.getState().getText().c_str());
+            std::string action_string = "Exploration complete, action client status: " + explore_action_client_.getState().getText() + ", sending SLAM origin as position target. \n";
+            cmd_history_.append(action_string);
+            local_pos_pub_.publish(home_pos);
+            current_status_ = CurrentStatus::RTL_88;
+        }
+    }
+    if (current_status_ == CurrentStatus::RTL_88) { 
+        if (drone_state_manager_.getCurrentLocalPosition().pose.position == home_pos.pose.position) {
+            drone_state_manager_.setMode(land_mode_);
+            current_status_ = CurrentStatus::LANDING;
+        }
+    }
     task_msg_.header.stamp = ros::Time::now();
     task_msg_.cmd_history.data = cmd_history_.c_str();
     task_msg_.current_status.data = getStatusString();
@@ -555,8 +575,10 @@ std::string TaskManager::getStatusString() {
         case 4:
             return "NAVIGATING";
         case 5:
-            return "TAKING_OFF";
+            return "RTL_88";
         case 6:
+            return "TAKING_OFF";
+        case 7:
             return "LANDING";
         default:
             return "unknown";

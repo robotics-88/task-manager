@@ -74,6 +74,7 @@ class TaskManager {
             WAITING_TO_EXPLORE,
             HOVERING,
             NAVIGATING,
+            RTL_88,
             TAKING_OFF,
             LANDING
         };
