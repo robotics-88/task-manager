@@ -108,8 +108,8 @@ void DroneStateManager::setExplorationEnabled(bool enabled) {
     enable_exploration_ = enabled;
 }
 
-geometry_msgs::Point DroneStateManager::getCurrentLocalPosition() {
-    return current_pose_.pose.position;
+geometry_msgs::PoseStamped DroneStateManager::getCurrentLocalPosition() {
+    return current_pose_;
 }
 
 sensor_msgs::NavSatFix DroneStateManager::getCurrentGlobalPosition() {
