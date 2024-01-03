@@ -134,6 +134,7 @@ class DroneStateManager {
         int imu_count_;
         int local_pos_count_;
         int global_pos_count_;
+        float stream_rate_modifier_;
 
 };
 
