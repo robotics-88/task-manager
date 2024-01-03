@@ -175,6 +175,7 @@ class TaskManager {
         geometry_msgs::Polygon transformPolygon(const geometry_msgs::Polygon &map_poly);
         bool isInside(const geometry_msgs::Polygon& polygon, const geometry_msgs::Point& point);
         bool polygonDistanceOk(double &min_dist, geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region);
+        void padNavTarget(geometry_msgs::PoseStamped &target);
         std::string getStatusString();
         void publishHealth();
 

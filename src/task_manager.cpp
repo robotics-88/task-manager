@@ -118,7 +118,7 @@ void TaskManager::syncedPoseCallback(const geometry_msgs::PoseStampedConstPtr &m
     last_mavros_pos_stamp_ = mavros_pose->header.stamp;
     last_slam_pos_stamp_ = slam_pose->header.stamp;
     if (current_status_ == CurrentStatus::NAVIGATING) {
-        if (mavros_pose->pose.position == current_target_ || isInside(current_explore_goal_.polygon, mavros_pose->pose.position)) {
+        if (slam_pose->pose.position == current_target_ || isInside(current_explore_goal_.polygon, slam_pose->pose.position)) {
             // Within a meter of target or inside polygon
             current_status_ = CurrentStatus::WAITING_TO_EXPLORE;
         }
@@ -246,7 +246,7 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
         // Find nearest point on the polygon
         // Check polygon area and distance
         double min_dist;
-        if (!polygonDistanceOk(min_dist, target_position, req.polygon)) {
+        if (!polygonDistanceOk(min_dist, target_position, current_polygon_)) {
             ROS_WARN("Polygon rejected, exceeds maximum starting distance threshold.");
             resp.success = false;
             return false;
@@ -266,6 +266,7 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
     boost::uuids::uuid u = generator();
     messages_88::ExploreGoal explore_goal;
     if (task_msg_.enable_autonomy && needs_transit) {
+        padNavTarget(target_position);
         messages_88::NavToPointGoal nav_goal;
         nav_goal.point = target_position.pose.position;
         nav_goal.uuid.data = boost::uuids::to_string(u);
@@ -275,7 +276,7 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
     else {
         explore_goal.uuid.data = "NO_TRANSIT";
     }
-    explore_goal.polygon = req.polygon;
+    explore_goal.polygon = current_polygon_;
     explore_goal.altitude = req.altitude;
     explore_goal.min_altitude = req.min_altitude;
     explore_goal.max_altitude = req.max_altitude;
@@ -441,15 +442,17 @@ void TaskManager::getDroneReady() {
 geometry_msgs::Polygon TaskManager::transformPolygon(const geometry_msgs::Polygon &map_poly) {
     geometry_msgs::Polygon slam_map_poly;
     if (map_tf_init_) {
+        geometry_msgs::TransformStamped tf = tf_buffer_.lookupTransform(slam_map_frame_, mavros_map_frame_, ros::Time(0));
         for (int nn = 0; nn < map_poly.points.size(); nn++) {
-            geometry_msgs::Point point_tf;
-            geometry_msgs::Point map_pt;
-            map_pt.x = map_poly.points.at(nn).x;
-            map_pt.y = map_poly.points.at(nn).y;
-            tf2::doTransform(map_pt, point_tf, map_to_slam_tf_);
+            geometry_msgs::PointStamped point_tf;
+            geometry_msgs::PointStamped map_pt;
+            map_pt.point.x = map_poly.points.at(nn).x;
+            map_pt.point.y = map_poly.points.at(nn).y;
+            map_pt.header.frame_id = mavros_map_frame_;
+            tf2::doTransform(map_pt, point_tf, tf);
             geometry_msgs::Point32 point;
-            point.x = point_tf.x;
-            point.y = point_tf.y;
+            point.x = point_tf.point.x;
+            point.y = point_tf.point.y;
             slam_map_poly.points.push_back(point);
         }
     }
@@ -577,6 +580,20 @@ bool TaskManager::polygonDistanceOk(double &min_dist, geometry_msgs::PoseStamped
         return false;
     }
     return true;
+}
+
+void TaskManager::padNavTarget(geometry_msgs::PoseStamped &target) {
+    // Add 2m to ensure fully inside polygon, otherwise exploration won't start
+    float padding = 2.0;
+    geometry_msgs::Point my_position = drone_state_manager_.getCurrentLocalPosition().pose.position;
+    double dif_x = target.pose.position.x - my_position.x;
+    double dif_y = target.pose.position.y - my_position.y;
+    double norm = sqrt(std::pow(dif_x, 2) + std::pow(dif_y, 2));
+    double normed_dif_x = dif_x / norm;
+    double normed_dif_y = dif_y / norm;
+    target.pose.position.x += normed_dif_x * padding;
+    target.pose.position.y += normed_dif_y * padding;
+
 }
 
 std::string TaskManager::getStatusString() {
