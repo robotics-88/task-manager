@@ -91,6 +91,7 @@ class TaskManager {
         // Frames
         std::string mavros_map_frame_;
         std::string slam_map_frame_;
+        geometry_msgs::TransformStamped map_to_slam_tf_;
 
         // TF publisher
         typedef message_filters::sync_policies::ApproximateTime<geometry_msgs::PoseStamped, geometry_msgs::PoseStamped> MySyncPolicy;
@@ -171,6 +172,7 @@ class TaskManager {
         void stopBag();
         void getDroneReady();
         void readyToExplore();
+        geometry_msgs::Polygon transformPolygon(const geometry_msgs::Polygon &map_poly);
         bool isInside(const geometry_msgs::Polygon& polygon, const geometry_msgs::Point& point);
         bool polygonDistanceOk(double &min_dist, geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region);
         std::string getStatusString();

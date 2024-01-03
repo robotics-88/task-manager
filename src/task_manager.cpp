@@ -153,18 +153,17 @@ void TaskManager::syncedPoseCallback(const geometry_msgs::PoseStampedConstPtr &m
     if (map_tf_init_) {
         return;
     }
-    geometry_msgs::TransformStamped map_to_slam_tf;
-    map_to_slam_tf.header.frame_id = mavros_map_frame_;
-    map_to_slam_tf.header.stamp = ros::Time::now();
-    map_to_slam_tf.child_frame_id = slam_map_frame_;
+    map_to_slam_tf_.header.frame_id = mavros_map_frame_;
+    map_to_slam_tf_.header.stamp = ros::Time::now();
+    map_to_slam_tf_.child_frame_id = slam_map_frame_;
 
-    map_to_slam_tf.transform.translation.x = mavros_pose->pose.position.x;
-    map_to_slam_tf.transform.translation.y = mavros_pose->pose.position.y;
-    map_to_slam_tf.transform.translation.z = mavros_pose->pose.position.z;
+    map_to_slam_tf_.transform.translation.x = mavros_pose->pose.position.x;
+    map_to_slam_tf_.transform.translation.y = mavros_pose->pose.position.y;
+    map_to_slam_tf_.transform.translation.z = mavros_pose->pose.position.z;
 
     geometry_msgs::Quaternion quat = mavros_pose->pose.orientation;
-    map_to_slam_tf.transform.rotation = quat;
-    static_tf_broadcaster_.sendTransform(map_to_slam_tf);
+    map_to_slam_tf_.transform.rotation = quat;
+    static_tf_broadcaster_.sendTransform(map_to_slam_tf_);
 
     map_tf_init_ = true;
 }
@@ -240,7 +239,7 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
     cmd_history_.append("Get ready to explore command received.\n ");
     bool needs_transit = false;
     geometry_msgs::PoseStamped target_position;
-    current_polygon_ = req.polygon;
+    current_polygon_ = transformPolygon(req.polygon);
     if (!isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition().pose.position)) {
         cmd_history_.append("Transit to explore required.\n ");
         needs_transit = true;
@@ -437,6 +436,24 @@ void TaskManager::getDroneReady() {
         did_takeoff_ = drone_state_manager_.getReadyForAction();
         cmd_history_.append("Drone ready for action result: " + std::to_string(did_takeoff_) + "\n");
     }
+}
+
+geometry_msgs::Polygon TaskManager::transformPolygon(const geometry_msgs::Polygon &map_poly) {
+    geometry_msgs::Polygon slam_map_poly;
+    if (map_tf_init_) {
+        for (int nn = 0; nn < map_poly.points.size(); nn++) {
+            geometry_msgs::Point point_tf;
+            geometry_msgs::Point map_pt;
+            map_pt.x = map_poly.points.at(nn).x;
+            map_pt.y = map_poly.points.at(nn).y;
+            tf2::doTransform(map_pt, point_tf, map_to_slam_tf_);
+            geometry_msgs::Point32 point;
+            point.x = point_tf.x;
+            point.y = point_tf.y;
+            slam_map_poly.points.push_back(point);
+        }
+    }
+    return slam_map_poly;
 }
 
 bool TaskManager::isInside(const geometry_msgs::Polygon& polygon, const geometry_msgs::Point& point)
