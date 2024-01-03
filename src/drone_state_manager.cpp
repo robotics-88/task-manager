@@ -6,6 +6,9 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "task_manager/drone_state_manager.h"
 #include "messages_88/ExploreAction.h"
 
+#include <mavros_msgs/StreamRate.h>
+#include <mavros_msgs/MessageInterval.h>
+
 #include <geometry_msgs/PolygonStamped.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <visualization_msgs/Marker.h>
@@ -45,6 +48,7 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
   , in_air_(false)
   , in_guided_mode_(false)
   , service_wait_duration_(2.0)
+  , msg_rate_timer_dt_(2.0)
 {
     // Set params from launch file 
     private_nh_.param<float>("default_altitude_m", target_altitude_, target_altitude_);
@@ -65,6 +69,11 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
     mavros_local_pos_subscriber_ = nh_.subscribe<geometry_msgs::PoseStamped>("/mavros/local_position/pose", 10, &DroneStateManager::localPositionCallback, this);
     mavros_state_subscriber_ = nh_.subscribe<mavros_msgs::State>(mavros_state_topic_, 10, &DroneStateManager::statusCallback, this);
     mavros_alt_subscriber_ = nh_.subscribe<std_msgs::Float64>(mavros_alt_topic_, 10, &DroneStateManager::altitudeCallback, this);
+    mavros_imu_subscriber_ = nh_.subscribe<sensor_msgs::Imu>("/mavros/imu/data", 10, &DroneStateManager::imuCallback, this);
+
+    all_msg_request_timer_ = private_nh_.createTimer(ros::Duration(5.0), &DroneStateManager::requestAllMsgs, this);
+
+    msg_rate_timer_ = private_nh_.createTimer(ros::Duration(msg_rate_timer_dt_), &DroneStateManager::checkMsgRates, this);
 
     setSafetyArea();
     local_pos_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/mavros/setpoint_position/local", 10);
@@ -88,6 +97,40 @@ DroneStateManager::~DroneStateManager() {
     arming_client_.shutdown();
     set_mode_client_.shutdown();
     takeoff_client_.shutdown();
+}
+
+void DroneStateManager::requestAllMsgs(const ros::TimerEvent &event) {
+
+    ROS_INFO("Requesting MAVLink streams from autopilot");
+
+    auto client = nh_.serviceClient<mavros_msgs::StreamRate>("/mavros/set_stream_rate");
+    mavros_msgs::StreamRate srv;
+    srv.request.stream_id = 0;
+    srv.request.message_rate = 3.0;
+    srv.request.on_off = 1;
+
+    if (client.call(srv)) {
+        all_msg_request_timer_.stop();
+    }
+}
+
+void DroneStateManager::checkMsgRates(const ros::TimerEvent &event) {
+
+    auto client = nh_.serviceClient<mavros_msgs::MessageInterval>("/mavros/set_message_interval");
+    mavros_msgs::MessageInterval srv;
+
+    bool rates_ok = true;
+    if (imu_count_ / msg_rate_timer_dt_ < 45.0) {
+        rates_ok = false;
+        ROS_WARN("Warning, IMU only running at %f hz", (imu_count_ / msg_rate_timer_dt_));
+        srv.request.message_id = 30;
+        srv.request.message_rate = 50.0;
+        client.call(srv);
+    }
+
+    imu_count_ = 0;
+    global_pos_count_ = 0;
+    local_pos_count_ = 0;
 }
 
 void DroneStateManager::setAutonomyEnabled(bool enabled) {
@@ -143,10 +186,17 @@ bool DroneStateManager::getIsArmed() {
 
 void DroneStateManager::globalPositionCallback(const sensor_msgs::NavSatFix::ConstPtr &msg) {
     current_ll_ = *msg;
+    global_pos_count_++;
 }
 
 void DroneStateManager::localPositionCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
     current_pose_ = *msg;
+    local_pos_count_++;
+}
+
+void DroneStateManager::imuCallback(const sensor_msgs::Imu::ConstPtr &msg) {
+    current_imu_ = *msg;
+    imu_count_++;
 }
 
 void DroneStateManager::statusCallback(const mavros_msgs::State::ConstPtr & msg) {

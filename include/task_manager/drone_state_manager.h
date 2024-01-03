@@ -17,6 +17,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <mavros_msgs/SetMode.h>
 #include <mavros_msgs/State.h>
 #include <mavros_msgs/StatusText.h>
+#include <sensor_msgs/Imu.h>
 #include <sensor_msgs/NavSatFix.h>
 #include <std_msgs/Float64.h>
 #include <std_msgs/String.h>
@@ -51,6 +52,7 @@ class DroneStateManager {
         void localPositionCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
         void statusCallback(const mavros_msgs::State::ConstPtr & msg);
         void altitudeCallback(const std_msgs::Float64::ConstPtr & msg);
+        void imuCallback(const sensor_msgs::Imu::ConstPtr &msg);
 
         // Mavros state control
         bool setGuided();
@@ -62,6 +64,8 @@ class DroneStateManager {
         bool readyForAction();
         bool getReadyForAction();
         bool setSafetyArea();
+        void requestAllMsgs(const ros::TimerEvent &event);
+        void checkMsgRates(const ros::TimerEvent &event);
 
     private:
         ros::NodeHandle private_nh_;
@@ -91,6 +95,7 @@ class DroneStateManager {
         ros::Subscriber mavros_alt_subscriber_;
         ros::Subscriber mavros_home_subscriber_;
         ros::Publisher local_pos_pub_;
+        ros::Subscriber mavros_imu_subscriber_;
 
         // Mavros service clients
         std::string arming_topic_;
@@ -109,6 +114,7 @@ class DroneStateManager {
         // Mavros position and status
         sensor_msgs::NavSatFix current_ll_;
         geometry_msgs::PoseStamped current_pose_;
+        sensor_msgs::Imu current_imu_;
         double current_altitude_;
         std::string current_mode_;
         bool altitude_set_;
@@ -117,6 +123,15 @@ class DroneStateManager {
         bool in_air_;
         bool in_guided_mode_;
         ros::Duration service_wait_duration_;
+
+        // Message rate check stuff
+        ros::Timer all_msg_request_timer_;
+        double msg_rate_timer_dt_;
+        ros::Timer msg_rate_timer_;
+        int imu_count_;
+        int local_pos_count_;
+        int global_pos_count_;
+
 };
 
 }
