@@ -49,6 +49,9 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
   , in_guided_mode_(false)
   , service_wait_duration_(2.0)
   , msg_rate_timer_dt_(2.0)
+  , imu_rate_(50.0)
+  , local_pos_rate_(30.0)
+  , global_pos_rate_(5.0)
 {
     // Set params from launch file 
     private_nh_.param<float>("default_altitude_m", target_altitude_, target_altitude_);
@@ -61,6 +64,9 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
     private_nh_.param<std::string>("mavros_takeoff_topic", takeoff_topic_, takeoff_topic_);
     private_nh_.param<std::string>("mavros_alt_topic", mavros_alt_topic_, mavros_alt_topic_);
     private_nh_.param<bool>("ardupilot", ardupilot_, ardupilot_);
+    private_nh_.param<float>("imu_rate", imu_rate_, imu_rate_);
+    private_nh_.param<float>("local_pos_rate", local_pos_rate_, local_pos_rate_);
+    private_nh_.param<float>("global_pos_rate", global_pos_rate_, global_pos_rate_);
 
     safety_area_viz_ = nh_.advertise<geometry_msgs::PolygonStamped>("safety_box", 10);
 
@@ -106,7 +112,7 @@ void DroneStateManager::requestAllMsgs(const ros::TimerEvent &event) {
     auto client = nh_.serviceClient<mavros_msgs::StreamRate>("/mavros/set_stream_rate");
     mavros_msgs::StreamRate srv;
     srv.request.stream_id = 0;
-    srv.request.message_rate = 3.0;
+    srv.request.message_rate = 30.0;
     srv.request.on_off = 1;
 
     if (client.call(srv)) {
@@ -119,15 +125,26 @@ void DroneStateManager::checkMsgRates(const ros::TimerEvent &event) {
     auto client = nh_.serviceClient<mavros_msgs::MessageInterval>("/mavros/set_message_interval");
     mavros_msgs::MessageInterval srv;
 
-    bool rates_ok = true;
-    if (imu_count_ / msg_rate_timer_dt_ < 45.0) {
-        rates_ok = false;
-        ROS_WARN("Warning, IMU only running at %f hz", (imu_count_ / msg_rate_timer_dt_));
+    if (imu_count_ / msg_rate_timer_dt_ < imu_rate_ * 0.9) {
+        ROS_WARN("Warning, IMU only sending at %i / %i hz", (imu_count_ / msg_rate_timer_dt_), imu_rate_);
         srv.request.message_id = 30;
-        srv.request.message_rate = 50.0;
+        srv.request.message_rate = imu_rate_;
+        client.call(srv);
+    }
+    if (local_pos_count_ / msg_rate_timer_dt_ < local_pos_rate_ * 0.9) {
+        ROS_WARN("Warning, local position only sending at %i / %i hz", (local_pos_count_ / msg_rate_timer_dt_, local_pos_rate_));
+        srv.request.message_id = 32;
+        srv.request.message_rate = local_pos_rate_;
+        client.call(srv);
+    }
+    if (global_pos_count_ / msg_rate_timer_dt_ < global_pos_rate_ * 0.9) {
+        ROS_WARN("Warning, global position only sending at %i / %i hz", (global_pos_count_ / msg_rate_timer_dt_, global_pos_rate_));
+        srv.request.message_id = 33;
+        srv.request.message_rate = global_pos_rate_;
         client.call(srv);
     }
 
+    // Reset counters
     imu_count_ = 0;
     global_pos_count_ = 0;
     local_pos_count_ = 0;

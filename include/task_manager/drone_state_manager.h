@@ -126,8 +126,11 @@ class DroneStateManager {
 
         // Message rate check stuff
         ros::Timer all_msg_request_timer_;
-        double msg_rate_timer_dt_;
+        float msg_rate_timer_dt_;
         ros::Timer msg_rate_timer_;
+        float imu_rate_;
+        float local_pos_rate_;
+        float global_pos_rate_;
         int imu_count_;
         int local_pos_count_;
         int global_pos_count_;
