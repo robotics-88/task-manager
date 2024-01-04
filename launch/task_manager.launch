@@ -14,6 +14,8 @@
 
      <!-- Record -->
     <arg name="do_record" default="true"/>
+
+    <arg name="simulate" default="false"/>
     
     <node pkg="task_manager_88" type="task_manager" name="task_manager" output="screen">
         <param name="goal_topic" value="$(arg goal_topic)"/>
@@ -26,5 +28,11 @@
         <param name="mapir_topic" value="$(arg mapir_topic)"/>
         <param name="rosbag_topic" value="$(arg rosbag_topic)"/>
         <param name="default_altitude_m" value="$(arg default_altitude_m)"/>
+
+        <param name="imu_rate" value="50"/>
+        <param name="local_pos_rate" value="30"/>
+        <param name="global_pos_rate" value="5"/>
+
+        <param name="simulate" value="$(arg simulate)"/>
     </node>
 </launch>
