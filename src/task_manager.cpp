@@ -602,24 +602,15 @@ void TaskManager::padNavTarget(geometry_msgs::PoseStamped &target) {
 
 std::string TaskManager::getStatusString() {
     switch (current_status_) {
-        case CurrentStatus::ON_START:
-            return "ON_START";
-        case CurrentStatus::EXPLORING:
-            return "EXPLORING";
-        case CurrentStatus::WAITING_TO_EXPLORE:
-            return "WAITING_TO_EXPLORE";
-        case CurrentStatus::HOVERING:
-            return "HOVERING";
-        case CurrentStatus::NAVIGATING:
-            return "NAVIGATING";
-        case CurrentStatus::RTL_88:
-            return "RTL_88";
-        case CurrentStatus::TAKING_OFF:
-            return "TAKING_OFF";
-        case CurrentStatus::LANDING:
-            return "LANDING";
-        default:
-            return "unknown";
+        case CurrentStatus::ON_START:           return "ON_START";
+        case CurrentStatus::EXPLORING:          return "EXPLORING";
+        case CurrentStatus::WAITING_TO_EXPLORE: return "WAITING_TO_EXPLORE";
+        case CurrentStatus::HOVERING:           return "HOVERING";
+        case CurrentStatus::NAVIGATING:         return "NAVIGATING";
+        case CurrentStatus::RTL_88:             return "RTL_88";
+        case CurrentStatus::TAKING_OFF:         return "TAKING_OFF";
+        case CurrentStatus::LANDING:            return "LANDING";
+        default:                                return "unknown";
     }
 }
 
