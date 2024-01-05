@@ -444,7 +444,11 @@ void TaskManager::modeMonitor() {
     home_pos.pose.position.z = current_explore_goal_.altitude;
     if (current_status_ == CurrentStatus::EXPLORING) {
         // Check action client status to see if complete
-        if (explore_action_client_.getState() == actionlib::SimpleClientGoalState::ABORTED || explore_action_client_.getState() == actionlib::SimpleClientGoalState::LOST || explore_action_client_.getState() == actionlib::SimpleClientGoalState::SUCCEEDED) {
+        actionlib::SimpleClientGoalState goal_state = explore_action_client_.getState();
+        bool is_aborted = goal_state == actionlib::SimpleClientGoalState::ABORTED;
+        bool is_lost = goal_state == actionlib::SimpleClientGoalState::LOST;
+        bool is_completed = goal_state == actionlib::SimpleClientGoalState::SUCCEEDED;
+        if (is_aborted || is_lost || is_completed) {
             ROS_INFO("explore action client state: %s", explore_action_client_.getState().getText().c_str());
             std::string action_string = "Exploration complete, action client status: " + explore_action_client_.getState().getText() + ", sending SLAM origin as position target. \n";
             cmd_history_.append(action_string);
@@ -658,24 +662,15 @@ void TaskManager::padNavTarget(geometry_msgs::PoseStamped &target) {
 
 std::string TaskManager::getStatusString() {
     switch (current_status_) {
-        case 0:
-            return "ON_START";
-        case 1:
-            return "EXPLORING";
-        case 2:
-            return "WAITING_TO_EXPLORE";
-        case 3:
-            return "HOVERING";
-        case 4:
-            return "NAVIGATING";
-        case 5:
-            return "RTL_88";
-        case 6:
-            return "TAKING_OFF";
-        case 7:
-            return "LANDING";
-        default:
-            return "unknown";
+        case CurrentStatus::ON_START:           return "ON_START";
+        case CurrentStatus::EXPLORING:          return "EXPLORING";
+        case CurrentStatus::WAITING_TO_EXPLORE: return "WAITING_TO_EXPLORE";
+        case CurrentStatus::HOVERING:           return "HOVERING";
+        case CurrentStatus::NAVIGATING:         return "NAVIGATING";
+        case CurrentStatus::RTL_88:             return "RTL_88";
+        case CurrentStatus::TAKING_OFF:         return "TAKING_OFF";
+        case CurrentStatus::LANDING:            return "LANDING";
+        default:                                return "unknown";
     }
 }
 
