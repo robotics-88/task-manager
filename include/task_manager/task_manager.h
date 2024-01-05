@@ -37,7 +37,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 namespace task_manager {
 /**
  * @class TaskManager
- * @brief The TaskManager manages the task queue (e.g., navigate to polygon, explore, handle emergency)
+ * @brief The TaskManager manages the task queue (e.g., navigate to polygon, explore, handle emergency). Handles comms to/from UI, including task assignment, starting capabilities, and safety features based on drone status.
  */
 class TaskManager {
 
@@ -50,6 +50,10 @@ class TaskManager {
         bool getReadyForExplore(messages_88::PrepareExplore::Request& req, messages_88::PrepareExplore::Response& resp);
         bool getDronePosition(messages_88::GetPosition::Request& req, messages_88::GetPosition::Response& resp);
         bool emergencyResponse(messages_88::Emergency::Request& req, messages_88::Emergency::Response& resp);
+
+        // Heartbeat
+        void uiHeartbeatCallback(const std_msgs::String::ConstPtr &msg);
+        void heartbeatTimerCallback(const ros::TimerEvent&);
 
         void startNav2PointTask(messages_88::NavToPointGoal &nav_goal);
         void sendExploreTask(messages_88::ExploreGoal &goal);
@@ -108,6 +112,13 @@ class TaskManager {
         ros::ServiceServer drone_explore_service_;
         ros::ServiceServer drone_position_service_;
         ros::ServiceServer emergency_service_;
+
+        // Heartbeat
+        ros::Publisher heartbeat_pub_;
+        ros::Subscriber ui_heartbeat_subscriber_;
+        ros::Time last_ui_heartbeat_stamp_;
+        float ui_hb_threshold_;
+        ros::Timer heartbeat_timer_;
 
         // Record
         bool do_record_;

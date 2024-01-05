@@ -37,6 +37,8 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , mavros_map_frame_("map")
     , slam_map_frame_("slam_map")
     , slam_pose_topic_("decco/pose")
+    , last_ui_heartbeat_stamp_(ros::Time::now())
+    , ui_hb_threshold_(5.0)
     , do_record_(true)
     , bag_active_(false)
     , record_config_name_("r88_default")
@@ -91,6 +93,12 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     // MAVROS
     local_pos_pub_ = nh_.advertise<geometry_msgs::PoseStamped>(goal_topic, 10);
     local_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("/mavros/setpoint_velocity/cmd_vel_unstamped", 10);
+
+    // Heartbeat handling
+    heartbeat_pub_ = nh_.advertise<std_msgs::String>("/mapversation/monarch_heartbeat", 10);
+    int heartbeat_hz = 1;
+    heartbeat_timer_ = nh_.createTimer(ros::Duration(1.0 / heartbeat_hz), &TaskManager::heartbeatTimerCallback, this);
+    ui_heartbeat_subscriber_ = nh_.subscribe<std_msgs::String>("/mapversation/ui_heartbeat", 10, &TaskManager::uiHeartbeatCallback, this);
 
     // Recording
     start_record_pub_ = nh_.advertise<bag_recorder::Rosbag>("/record/start", 5);
@@ -194,6 +202,57 @@ bool TaskManager::emergencyResponse(messages_88::Emergency::Request& req, messag
     return true;
 }
 
+void TaskManager::heartbeatTimerCallback(const ros::TimerEvent&) {
+    sensor_msgs::NavSatFix hb = drone_state_manager_.getCurrentGlobalPosition();
+    geometry_msgs::PoseStamped local = drone_state_manager_.getCurrentLocalPosition();
+    geometry_msgs::Quaternion quat_flu = local.pose.orientation;
+    double yaw;
+    if (map_tf_init_) {
+        tf2::Quaternion tf2_quat(quat_flu.x, quat_flu.y, quat_flu.z, quat_flu.w), tf2_quat_ned;
+        geometry_msgs::TransformStamped slam_to_mapned_tf = tf_buffer_.lookupTransform("map_ned", slam_map_frame_, ros::Time(0));
+        geometry_msgs::Quaternion quat1, quatned;
+        tf2::convert(tf2_quat, quat1);
+        geometry_msgs::PoseStamped pt_quat, pt_ned;
+        pt_quat.pose.orientation = quat1;
+        tf2::doTransform(pt_quat, pt_ned, slam_to_mapned_tf);
+        tf2::convert(pt_ned.pose.orientation, tf2_quat_ned);
+        tf2::Matrix3x3 mat(tf2_quat_ned);
+        double roll, pitch;
+        mat.getRPY(roll, pitch, yaw);
+        yaw = yaw * 180 / M_PI; // Hello Decco expects yaw in degrees NED, but comes as FLU radians. did TF, now just convert rad2deg.
+    }
+    else {
+        yaw = 0.0;
+    }
+    json j = {
+        {"latitude", hb.latitude},
+        {"longitude", hb.longitude},
+        {"altitude", hb.altitude},
+        {"heading", yaw},
+        {"header", {
+            {"frame_id", hb.header.frame_id},
+            {"stamp", hb.header.stamp.toSec()}
+        }}
+    };
+    std::string s = j.dump();
+    std_msgs::String hb_string;
+    hb_string.data = s;
+    heartbeat_pub_.publish(hb_string);
+
+    ros::Time now_time = ros::Time::now();
+    float interval = (now_time - last_ui_heartbeat_stamp_).toSec();
+    // TODO needs also check if drone state is in air/action
+    if (interval > ui_hb_threshold_) {
+        messages_88::Emergency emergency;
+        // TODO fill in pause msg
+        // emergency_client_.call(emergency);
+    }
+}
+
+void TaskManager::uiHeartbeatCallback(const std_msgs::String::ConstPtr &msg) {
+    last_ui_heartbeat_stamp_ = ros::Time::now();
+}
+
 bool TaskManager::pauseOperations() {
     actionlib::SimpleClientGoalState goal_state = explore_action_client_.getState();
     if (goal_state == actionlib::SimpleClientGoalState::ACTIVE) {
@@ -207,6 +266,7 @@ bool TaskManager::pauseOperations() {
 
 bool TaskManager::initDroneStateManager(messages_88::InitDroneState::Request& req, messages_88::InitDroneState::Response& resp) {
     // Drone state manager setup
+    ROS_INFO("init drone state rcvd");
     drone_state_manager_.setAutonomyEnabled(req.enable_autonomy);
     task_msg_.enable_autonomy = req.enable_autonomy;
     task_msg_.enable_exploration = req.enable_exploration;
