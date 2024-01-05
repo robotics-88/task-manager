@@ -118,7 +118,7 @@ void TaskManager::syncedPoseCallback(const geometry_msgs::PoseStampedConstPtr &m
     last_mavros_pos_stamp_ = mavros_pose->header.stamp;
     last_slam_pos_stamp_ = slam_pose->header.stamp;
     if (current_status_ == CurrentStatus::NAVIGATING) {
-        if (mavros_pose->pose.position == current_target_ || isInside(current_explore_goal_.polygon, mavros_pose->pose.position)) {
+        if (slam_pose->pose.position == current_target_ || isInside(current_explore_goal_.polygon, slam_pose->pose.position)) {
             // Within a meter of target or inside polygon
             current_status_ = CurrentStatus::WAITING_TO_EXPLORE;
         }
@@ -153,18 +153,17 @@ void TaskManager::syncedPoseCallback(const geometry_msgs::PoseStampedConstPtr &m
     if (map_tf_init_) {
         return;
     }
-    geometry_msgs::TransformStamped map_to_slam_tf;
-    map_to_slam_tf.header.frame_id = mavros_map_frame_;
-    map_to_slam_tf.header.stamp = ros::Time::now();
-    map_to_slam_tf.child_frame_id = slam_map_frame_;
+    map_to_slam_tf_.header.frame_id = mavros_map_frame_;
+    map_to_slam_tf_.header.stamp = ros::Time::now();
+    map_to_slam_tf_.child_frame_id = slam_map_frame_;
 
-    map_to_slam_tf.transform.translation.x = mavros_pose->pose.position.x;
-    map_to_slam_tf.transform.translation.y = mavros_pose->pose.position.y;
-    map_to_slam_tf.transform.translation.z = mavros_pose->pose.position.z;
+    map_to_slam_tf_.transform.translation.x = mavros_pose->pose.position.x;
+    map_to_slam_tf_.transform.translation.y = mavros_pose->pose.position.y;
+    map_to_slam_tf_.transform.translation.z = mavros_pose->pose.position.z;
 
     geometry_msgs::Quaternion quat = mavros_pose->pose.orientation;
-    map_to_slam_tf.transform.rotation = quat;
-    static_tf_broadcaster_.sendTransform(map_to_slam_tf);
+    map_to_slam_tf_.transform.rotation = quat;
+    static_tf_broadcaster_.sendTransform(map_to_slam_tf_);
 
     map_tf_init_ = true;
 }
@@ -240,14 +239,14 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
     cmd_history_.append("Get ready to explore command received.\n ");
     bool needs_transit = false;
     geometry_msgs::PoseStamped target_position;
-    current_polygon_ = req.polygon;
-    if (!isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition())) {
+    current_polygon_ = transformPolygon(req.polygon);
+    if (!isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition().pose.position)) {
         cmd_history_.append("Transit to explore required.\n ");
         needs_transit = true;
         // Find nearest point on the polygon
         // Check polygon area and distance
         double min_dist;
-        if (!polygonDistanceOk(min_dist, target_position, req.polygon)) {
+        if (!polygonDistanceOk(min_dist, target_position, current_polygon_)) {
             ROS_WARN("Polygon rejected, exceeds maximum starting distance threshold.");
             resp.success = false;
             return false;
@@ -267,6 +266,7 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
     boost::uuids::uuid u = generator();
     messages_88::ExploreGoal explore_goal;
     if (task_msg_.enable_autonomy && needs_transit) {
+        padNavTarget(target_position);
         messages_88::NavToPointGoal nav_goal;
         nav_goal.point = target_position.pose.position;
         nav_goal.uuid.data = boost::uuids::to_string(u);
@@ -276,7 +276,7 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
     else {
         explore_goal.uuid.data = "NO_TRANSIT";
     }
-    explore_goal.polygon = req.polygon;
+    explore_goal.polygon = current_polygon_;
     explore_goal.altitude = req.altitude;
     explore_goal.min_altitude = req.min_altitude;
     explore_goal.max_altitude = req.max_altitude;
@@ -303,7 +303,7 @@ void TaskManager::startNav2PointTask(messages_88::NavToPointGoal &nav_goal) {
     geometry_msgs::PoseStamped target;
     target.pose.position = point;
     local_pos_pub_.publish(target);
-    while (!(isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition()) || current_status_ == CurrentStatus::WAITING_TO_EXPLORE)) {
+    while (!(isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition().pose.position) || current_status_ == CurrentStatus::WAITING_TO_EXPLORE)) {
         ros::Duration(1.0).sleep();    
     }
 }
@@ -378,6 +378,30 @@ void TaskManager::modeMonitor() {
         stop();
         did_takeoff_ = false; // Reset so can restart if another takeoff
     }
+    geometry_msgs::PoseStamped home_pos;
+    home_pos.pose.position.x = 0;
+    home_pos.pose.position.y = 0;
+    home_pos.pose.position.z = current_explore_goal_.altitude;
+    if (current_status_ == CurrentStatus::EXPLORING) {
+        // Check action client status to see if complete
+        actionlib::SimpleClientGoalState goal_state = explore_action_client_.getState();
+        bool is_aborted = goal_state == actionlib::SimpleClientGoalState::ABORTED;
+        bool is_lost = goal_state == actionlib::SimpleClientGoalState::LOST;
+        bool is_completed = goal_state == actionlib::SimpleClientGoalState::SUCCEEDED;
+        if (is_aborted || is_lost || is_completed) {
+            ROS_INFO("explore action client state: %s", explore_action_client_.getState().getText().c_str());
+            std::string action_string = "Exploration complete, action client status: " + explore_action_client_.getState().getText() + ", sending SLAM origin as position target. \n";
+            cmd_history_.append(action_string);
+            local_pos_pub_.publish(home_pos);
+            current_status_ = CurrentStatus::RTL_88;
+        }
+    }
+    if (current_status_ == CurrentStatus::RTL_88) { 
+        if (drone_state_manager_.getCurrentLocalPosition().pose.position == home_pos.pose.position) {
+            drone_state_manager_.setMode(land_mode_);
+            current_status_ = CurrentStatus::LANDING;
+        }
+    }
     task_msg_.header.stamp = ros::Time::now();
     task_msg_.cmd_history.data = cmd_history_.c_str();
     task_msg_.current_status.data = getStatusString();
@@ -417,6 +441,26 @@ void TaskManager::getDroneReady() {
         did_takeoff_ = drone_state_manager_.getReadyForAction();
         cmd_history_.append("Drone ready for action result: " + std::to_string(did_takeoff_) + "\n");
     }
+}
+
+geometry_msgs::Polygon TaskManager::transformPolygon(const geometry_msgs::Polygon &map_poly) {
+    geometry_msgs::Polygon slam_map_poly;
+    if (map_tf_init_) {
+        geometry_msgs::TransformStamped tf = tf_buffer_.lookupTransform(slam_map_frame_, mavros_map_frame_, ros::Time(0));
+        for (int nn = 0; nn < map_poly.points.size(); nn++) {
+            geometry_msgs::PointStamped point_tf;
+            geometry_msgs::PointStamped map_pt;
+            map_pt.point.x = map_poly.points.at(nn).x;
+            map_pt.point.y = map_poly.points.at(nn).y;
+            map_pt.header.frame_id = mavros_map_frame_;
+            tf2::doTransform(map_pt, point_tf, tf);
+            geometry_msgs::Point32 point;
+            point.x = point_tf.point.x;
+            point.y = point_tf.point.y;
+            slam_map_poly.points.push_back(point);
+        }
+    }
+    return slam_map_poly;
 }
 
 bool TaskManager::isInside(const geometry_msgs::Polygon& polygon, const geometry_msgs::Point& point)
@@ -473,7 +517,7 @@ bool TaskManager::polygonDistanceOk(double &min_dist, geometry_msgs::PoseStamped
 
     // Compute intersection
     bool intersection1 = false, intersection2 = false;
-    geometry_msgs::Point my_position = drone_state_manager_.getCurrentLocalPosition();
+    geometry_msgs::Point my_position = drone_state_manager_.getCurrentLocalPosition().pose.position;
     // Compute first edge
     double dx1 = closest_point.x - point1.x;
     double dy1 = closest_point.y - point1.y;
@@ -542,24 +586,31 @@ bool TaskManager::polygonDistanceOk(double &min_dist, geometry_msgs::PoseStamped
     return true;
 }
 
+void TaskManager::padNavTarget(geometry_msgs::PoseStamped &target) {
+    // Add 2m to ensure fully inside polygon, otherwise exploration won't start
+    float padding = 2.0;
+    geometry_msgs::Point my_position = drone_state_manager_.getCurrentLocalPosition().pose.position;
+    double dif_x = target.pose.position.x - my_position.x;
+    double dif_y = target.pose.position.y - my_position.y;
+    double norm = sqrt(std::pow(dif_x, 2) + std::pow(dif_y, 2));
+    double normed_dif_x = dif_x / norm;
+    double normed_dif_y = dif_y / norm;
+    target.pose.position.x += normed_dif_x * padding;
+    target.pose.position.y += normed_dif_y * padding;
+
+}
+
 std::string TaskManager::getStatusString() {
     switch (current_status_) {
-        case 0:
-            return "ON_START";
-        case 1:
-            return "EXPLORING";
-        case 2:
-            return "WAITING_TO_EXPLORE";
-        case 3:
-            return "HOVERING";
-        case 4:
-            return "NAVIGATING";
-        case 5:
-            return "TAKING_OFF";
-        case 6:
-            return "LANDING";
-        default:
-            return "unknown";
+        case CurrentStatus::ON_START:           return "ON_START";
+        case CurrentStatus::EXPLORING:          return "EXPLORING";
+        case CurrentStatus::WAITING_TO_EXPLORE: return "WAITING_TO_EXPLORE";
+        case CurrentStatus::HOVERING:           return "HOVERING";
+        case CurrentStatus::NAVIGATING:         return "NAVIGATING";
+        case CurrentStatus::RTL_88:             return "RTL_88";
+        case CurrentStatus::TAKING_OFF:         return "TAKING_OFF";
+        case CurrentStatus::LANDING:            return "LANDING";
+        default:                                return "unknown";
     }
 }
 

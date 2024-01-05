@@ -80,7 +80,7 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
 
     // Set subscribers for Mavros
     mavros_global_pos_subscriber_ = nh_.subscribe<sensor_msgs::NavSatFix>(mavros_global_pos_topic_, 10, &DroneStateManager::globalPositionCallback, this);
-    mavros_local_pos_subscriber_ = nh_.subscribe<geometry_msgs::PoseStamped>("/mavros/local_position/pose", 10, &DroneStateManager::localPositionCallback, this);
+    mavros_local_pos_subscriber_ = nh_.subscribe<geometry_msgs::PoseStamped>("/decco/pose", 10, &DroneStateManager::localPositionCallback, this);
     mavros_state_subscriber_ = nh_.subscribe<mavros_msgs::State>(mavros_state_topic_, 10, &DroneStateManager::statusCallback, this);
     mavros_alt_subscriber_ = nh_.subscribe<std_msgs::Float64>(mavros_alt_topic_, 10, &DroneStateManager::altitudeCallback, this);
     mavros_imu_subscriber_ = nh_.subscribe<sensor_msgs::Imu>("/mavros/imu/data", 10, &DroneStateManager::imuCallback, this);
@@ -176,8 +176,8 @@ void DroneStateManager::setExplorationEnabled(bool enabled) {
     enable_exploration_ = enabled;
 }
 
-geometry_msgs::Point DroneStateManager::getCurrentLocalPosition() {
-    return current_pose_.pose.position;
+geometry_msgs::PoseStamped DroneStateManager::getCurrentLocalPosition() {
+    return current_pose_;
 }
 
 sensor_msgs::NavSatFix DroneStateManager::getCurrentGlobalPosition() {

@@ -39,7 +39,7 @@ class DroneStateManager {
         // State access methods
         void setAutonomyEnabled(bool enabled);
         void setExplorationEnabled(bool enabled);
-        geometry_msgs::Point getCurrentLocalPosition();
+        geometry_msgs::PoseStamped getCurrentLocalPosition();
         sensor_msgs::NavSatFix getCurrentGlobalPosition();
         double getAltitudeAGL();
         std::string getFlightMode();
