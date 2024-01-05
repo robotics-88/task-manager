@@ -384,7 +384,11 @@ void TaskManager::modeMonitor() {
     home_pos.pose.position.z = current_explore_goal_.altitude;
     if (current_status_ == CurrentStatus::EXPLORING) {
         // Check action client status to see if complete
-        if (explore_action_client_.getState() == actionlib::SimpleClientGoalState::ABORTED || explore_action_client_.getState() == actionlib::SimpleClientGoalState::LOST || explore_action_client_.getState() == actionlib::SimpleClientGoalState::SUCCEEDED) {
+        actionlib::SimpleClientGoalState goal_state = explore_action_client_.getState();
+        bool is_aborted = goal_state == actionlib::SimpleClientGoalState::ABORTED;
+        bool is_lost = goal_state == actionlib::SimpleClientGoalState::LOST;
+        bool is_completed = goal_state == actionlib::SimpleClientGoalState::SUCCEEDED;
+        if (is_aborted || is_lost || is_completed) {
             ROS_INFO("explore action client state: %s", explore_action_client_.getState().getText().c_str());
             std::string action_string = "Exploration complete, action client status: " + explore_action_client_.getState().getText() + ", sending SLAM origin as position target. \n";
             cmd_history_.append(action_string);
