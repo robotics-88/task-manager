@@ -148,7 +148,7 @@ void DroneStateManager::initializeDrone() {
         ROS_WARN("Geofence clear failed");
     }
 
-    // Clear any existing mission (just for safety)
+    // Clear any existing mission (we don't use missions, this is just for safety)
     auto mission_clear_client = nh_.serviceClient<mavros_msgs::WaypointClear>("/mavros/mission/clear");
     mission_clear_client.call(waypoint_clear_srv);
     if (!waypoint_clear_srv.response.success) {
