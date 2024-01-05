@@ -142,10 +142,17 @@ void DroneStateManager::initializeDrone() {
 
     // Clear previous geofence
     auto geofence_clear_client = nh_.serviceClient<mavros_msgs::WaypointClear>("/mavros/geofence/clear");
-    mavros_msgs::WaypointClear geofence_clear_srv;
-    geofence_clear_client.call(geofence_clear_srv);
-    if (!geofence_clear_srv.response.success) {
+    mavros_msgs::WaypointClear waypoint_clear_srv;
+    geofence_clear_client.call(waypoint_clear_srv);
+    if (!waypoint_clear_srv.response.success) {
         ROS_WARN("Geofence clear failed");
+    }
+
+    // Clear any existing mission (just for safety)
+    auto mission_clear_client = nh_.serviceClient<mavros_msgs::WaypointClear>("/mavros/mission/clear");
+    mission_clear_client.call(waypoint_clear_srv);
+    if (!waypoint_clear_srv.response.success) {
+        ROS_WARN("Mission clear failed");
     }
 
 }
