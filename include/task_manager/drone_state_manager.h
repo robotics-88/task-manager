@@ -64,7 +64,7 @@ class DroneStateManager {
         bool readyForAction();
         bool getReadyForAction();
         bool setSafetyArea();
-        void requestAllMsgs(const ros::TimerEvent &event);
+        void initializeDrone();
         void checkMsgRates(const ros::TimerEvent &event);
 
     private:
@@ -130,10 +130,8 @@ class DroneStateManager {
         ros::Timer msg_rate_timer_;
         float imu_rate_;
         float local_pos_rate_;
-        float global_pos_rate_;
         int imu_count_;
         int local_pos_count_;
-        int global_pos_count_;
         float stream_rate_modifier_;
 
 };
