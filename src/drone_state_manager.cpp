@@ -87,8 +87,6 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
     msg_rate_timer_ = private_nh_.createTimer(ros::Duration(msg_rate_timer_dt_), &DroneStateManager::checkMsgRates, this);
 
     // Run initialization for requesting MAVLink streams and clearing missions/fences, etc
-    // Sleep for a bit first so mavros has time to launch
-    ros::Duration(5.0).sleep();
     initializeDrone();
 
     setSafetyArea();
@@ -121,6 +119,7 @@ void DroneStateManager::initializeDrone() {
 
     // Request all streams
     auto streamrate_client = nh_.serviceClient<mavros_msgs::StreamRate>("/mavros/set_stream_rate");
+    streamrate_client.waitForExistence();
     mavros_msgs::StreamRate streamrate_srv;
     streamrate_srv.request.stream_id = 0;
     streamrate_srv.request.message_rate = 5.0 * stream_rate_modifier_;
@@ -130,6 +129,7 @@ void DroneStateManager::initializeDrone() {
 
     // Request specific streams at particular rates
     auto msg_interval_client = nh_.serviceClient<mavros_msgs::MessageInterval>("/mavros/set_message_interval");
+    msg_interval_client.waitForExistence();
     mavros_msgs::MessageInterval msg_interval_srv;
 
     msg_interval_srv.request.message_id = 30; // ATTITUDE
@@ -142,6 +142,7 @@ void DroneStateManager::initializeDrone() {
 
     // Clear previous geofence
     auto geofence_clear_client = nh_.serviceClient<mavros_msgs::WaypointClear>("/mavros/geofence/clear");
+    geofence_clear_client.waitForExistence();
     mavros_msgs::WaypointClear waypoint_clear_srv;
     geofence_clear_client.call(waypoint_clear_srv);
     if (!waypoint_clear_srv.response.success) {
@@ -150,6 +151,7 @@ void DroneStateManager::initializeDrone() {
 
     // Clear any existing mission (we don't use missions, this is just for safety)
     auto mission_clear_client = nh_.serviceClient<mavros_msgs::WaypointClear>("/mavros/mission/clear");
+    mission_clear_client.waitForExistence();
     mission_clear_client.call(waypoint_clear_srv);
     if (!waypoint_clear_srv.response.success) {
         ROS_WARN("Mission clear failed");
