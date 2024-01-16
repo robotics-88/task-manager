@@ -41,11 +41,15 @@ class DroneStateManager {
         void setExplorationEnabled(bool enabled);
         geometry_msgs::PoseStamped getCurrentLocalPosition();
         sensor_msgs::NavSatFix getCurrentGlobalPosition();
+        void waitForGlobal();
+        int getUTMZone();
         double getAltitudeAGL();
         std::string getFlightMode();
         bool getIsInAir();
         bool getAutonomyActive();
         bool getIsArmed();
+        bool getMapYaw(double &yaw);
+        double getCompass();
 
         // Mavros subscriber callbacks
         void globalPositionCallback(const sensor_msgs::NavSatFix::ConstPtr &msg);
@@ -53,6 +57,7 @@ class DroneStateManager {
         void statusCallback(const mavros_msgs::State::ConstPtr & msg);
         void altitudeCallback(const std_msgs::Float64::ConstPtr & msg);
         void imuCallback(const sensor_msgs::Imu::ConstPtr &msg);
+        void compassCallback(const std_msgs::Float64::ConstPtr & msg);
 
         // Mavros state control
         bool setGuided();
@@ -65,6 +70,7 @@ class DroneStateManager {
         bool getReadyForAction();
         bool setSafetyArea();
         void initializeDrone();
+        void initUTM(double &utm_x, double &utm_y);
         void checkMsgRates(const ros::TimerEvent &event);
 
     private:
@@ -84,6 +90,7 @@ class DroneStateManager {
         float max_distance_;
         ros::Publisher safety_area_viz_;
         bool ardupilot_;
+        bool compass_init_;
 
         // Mavros subscribers and topics
         std::string mavros_global_pos_topic_;
@@ -96,6 +103,7 @@ class DroneStateManager {
         ros::Subscriber mavros_home_subscriber_;
         ros::Publisher local_pos_pub_;
         ros::Subscriber mavros_imu_subscriber_;
+        ros::Subscriber mavros_compass_subscriber_;
 
         // Mavros service clients
         std::string arming_topic_;
@@ -115,6 +123,9 @@ class DroneStateManager {
         sensor_msgs::NavSatFix current_ll_;
         geometry_msgs::PoseStamped current_pose_;
         sensor_msgs::Imu current_imu_;
+        double home_compass_hdg_;
+        double compass_hdg_;
+        int compass_count_;
         double current_altitude_;
         std::string current_mode_;
         bool altitude_set_;
@@ -123,6 +134,7 @@ class DroneStateManager {
         bool in_air_;
         bool in_guided_mode_;
         ros::Duration service_wait_duration_;
+        int detected_utm_zone_;
 
         // Message rate check stuff
         ros::Timer all_msg_request_timer_;

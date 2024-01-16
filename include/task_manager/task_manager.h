@@ -26,6 +26,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "messages_88/Emergency.h"
 #include "messages_88/ExploreAction.h"
 #include "messages_88/InitDroneState.h"
+#include "messages_88/Geopoint.h"
 #include "messages_88/GetPosition.h"
 #include "messages_88/PrepareDrone.h"
 #include "messages_88/PrepareExplore.h"
@@ -50,6 +51,7 @@ class TaskManager {
         bool getReadyForExplore(messages_88::PrepareExplore::Request& req, messages_88::PrepareExplore::Response& resp);
         bool getDronePosition(messages_88::GetPosition::Request& req, messages_88::GetPosition::Response& resp);
         bool emergencyResponse(messages_88::Emergency::Request& req, messages_88::Emergency::Response& resp);
+        bool convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp);
 
         // Heartbeat
         void uiHeartbeatCallback(const std_msgs::String::ConstPtr &msg);
@@ -86,11 +88,16 @@ class TaskManager {
         ros::NodeHandle private_nh_;
         ros::NodeHandle nh_;
 
+        // Map params
         tf2_ros::StaticTransformBroadcaster static_tf_broadcaster_;
         tf2_ros::TransformBroadcaster tf_broadcaster_;
         bool map_tf_init_;
         tf2_ros::Buffer tf_buffer_;
         tf2_ros::TransformListener tf_listener_;
+        double utm_x_offset_;
+        double utm_y_offset_;
+        double map_yaw_;
+        int home_utm_zone_;
 
         // Frames
         std::string mavros_map_frame_;
@@ -112,6 +119,7 @@ class TaskManager {
         ros::ServiceServer drone_explore_service_;
         ros::ServiceServer drone_position_service_;
         ros::ServiceServer emergency_service_;
+        ros::ServiceServer geopoint_service_;
 
         // Heartbeat
         ros::Publisher heartbeat_pub_;

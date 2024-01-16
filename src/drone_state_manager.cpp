@@ -14,10 +14,9 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <geometry_msgs/PoseStamped.h>
 #include <visualization_msgs/Marker.h>
 
-#include <GeographicLib/PolygonArea.hpp>
 #include <GeographicLib/GeoCoords.hpp>
 #include <GeographicLib/Geodesic.hpp>
-#include <GeographicLib/Constants.hpp>
+#include <GeographicLib/UTMUPS.hpp>
 
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
@@ -37,18 +36,21 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
   , max_altitude_(10.0)
   , max_distance_(2.0)
   , ardupilot_(true)
+  , compass_init_(false)
   , mavros_global_pos_topic_("/mavros/global_position/global")
   , mavros_state_topic_("/mavros/state")
   , mavros_alt_topic_("/mavros/global_position/rel_alt")
   , arming_topic_("/mavros/cmd/arming")
   , set_mode_topic_("/mavros/set_mode")
   , takeoff_topic_("/mavros/cmd/takeoff")
+  , compass_count_(0)
   , altitude_set_(false)
   , connected_(false)
   , armed_(false)
   , in_air_(false)
   , in_guided_mode_(false)
   , service_wait_duration_(2.0)
+  , detected_utm_zone_(-1)
   , msg_rate_timer_dt_(5.0)
   , imu_rate_(50.0)
   , local_pos_rate_(30.0)
@@ -83,6 +85,7 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
     mavros_state_subscriber_ = nh_.subscribe<mavros_msgs::State>(mavros_state_topic_, 10, &DroneStateManager::statusCallback, this);
     mavros_alt_subscriber_ = nh_.subscribe<std_msgs::Float64>(mavros_alt_topic_, 10, &DroneStateManager::altitudeCallback, this);
     mavros_imu_subscriber_ = nh_.subscribe<sensor_msgs::Imu>("/mavros/imu/data", 10, &DroneStateManager::imuCallback, this);
+    mavros_compass_subscriber_ = nh_.subscribe<std_msgs::Float64>("/mavros/global_position/compass_hdg", 10, &DroneStateManager::compassCallback, this);
 
     msg_rate_timer_ = private_nh_.createTimer(ros::Duration(msg_rate_timer_dt_), &DroneStateManager::checkMsgRates, this);
 
@@ -159,6 +162,12 @@ void DroneStateManager::initializeDrone() {
 
 }
 
+void DroneStateManager::initUTM(double &utm_x, double &utm_y) {
+    GeographicLib::GeoCoords c(current_ll_.latitude, current_ll_.longitude);
+    utm_x = c.Easting();
+    utm_y = c.Northing();
+}
+
 void DroneStateManager::checkMsgRates(const ros::TimerEvent &event) {
 
     auto client = nh_.serviceClient<mavros_msgs::MessageInterval>("/mavros/set_message_interval");
@@ -202,6 +211,14 @@ sensor_msgs::NavSatFix DroneStateManager::getCurrentGlobalPosition() {
     return current_ll_;
 }
 
+void DroneStateManager::waitForGlobal() {
+    ros::topic::waitForMessage<sensor_msgs::NavSatFix>(mavros_global_pos_topic_, nh_);
+}
+
+int DroneStateManager::getUTMZone() {
+    return detected_utm_zone_;
+}
+
 double DroneStateManager::getAltitudeAGL() {
     if (altitude_set_) {
         return current_altitude_;
@@ -227,8 +244,22 @@ bool DroneStateManager::getIsArmed() {
     return armed_;
 }
 
+bool DroneStateManager::getMapYaw(double &yaw) {
+    if (compass_init_) {
+        yaw = home_compass_hdg_;
+    }
+    return compass_init_;
+}
+
+double DroneStateManager::getCompass() {
+    return compass_hdg_;
+}
+
 void DroneStateManager::globalPositionCallback(const sensor_msgs::NavSatFix::ConstPtr &msg) {
     current_ll_ = *msg;
+    // Check UTM zone
+    double lat = msg->latitude, lon = msg->longitude;
+    detected_utm_zone_ = GeographicLib::UTMUPS::StandardZone(lat, lon);
 }
 
 void DroneStateManager::localPositionCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
@@ -239,6 +270,18 @@ void DroneStateManager::localPositionCallback(const geometry_msgs::PoseStamped::
 void DroneStateManager::imuCallback(const sensor_msgs::Imu::ConstPtr &msg) {
     current_imu_ = *msg;
     imu_count_++;
+}
+
+void DroneStateManager::compassCallback(const std_msgs::Float64::ConstPtr & msg) {
+    if (!compass_init_) {
+        home_compass_hdg_ += msg->data;
+        compass_count_++;
+        if (compass_count_ == 50) { 
+            home_compass_hdg_ /= compass_count_;
+            compass_init_ = true;
+        }
+    }
+    compass_hdg_ = msg->data;
 }
 
 void DroneStateManager::statusCallback(const mavros_msgs::State::ConstPtr & msg) {
