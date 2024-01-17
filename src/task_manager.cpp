@@ -89,6 +89,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     drone_explore_service_ = nh_.advertiseService("/prep_drone_explore", &TaskManager::getReadyForExplore, this);
     drone_position_service_ = nh_.advertiseService("/get_drone_position", &TaskManager::getDronePosition, this);
     emergency_service_ = nh_.advertiseService("/emergency_response", &TaskManager::emergencyResponse, this);
+    geopoint_service_ = nh_.advertiseService("/slam2geo", &TaskManager::convert2Geo, this);
 
     // MAVROS
     local_pos_pub_ = nh_.advertise<geometry_msgs::PoseStamped>(goal_topic, 10);
@@ -165,6 +166,16 @@ void TaskManager::syncedPoseCallback(const geometry_msgs::PoseStampedConstPtr &m
     map_to_slam_tf_.header.stamp = ros::Time::now();
     map_to_slam_tf_.child_frame_id = slam_map_frame_;
 
+    double yaw = 0;
+    ROS_INFO("TM about to get map yaw");
+    while (!drone_state_manager_.getMapYaw(yaw)) {
+        ROS_WARN("Waiting for yaw...");
+        ros::Duration(0.1).sleep();
+    }
+    yaw = M_PI * (yaw) / 180.0;
+    map_yaw_ = yaw;
+    ROS_INFO("TM set map yaw to %f", yaw);
+
     map_to_slam_tf_.transform.translation.x = mavros_pose->pose.position.x;
     map_to_slam_tf_.transform.translation.y = mavros_pose->pose.position.y;
     map_to_slam_tf_.transform.translation.z = mavros_pose->pose.position.z;
@@ -202,28 +213,43 @@ bool TaskManager::emergencyResponse(messages_88::Emergency::Request& req, messag
     return true;
 }
 
+bool TaskManager::convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp) {
+    // Sanity check UTM
+    if (home_utm_zone_ != drone_state_manager_.getUTMZone()) {
+        ROS_WARN("UTM zones crossed. Home UTM: %d. Now UTM: %d", home_utm_zone_, drone_state_manager_.getUTMZone());
+        return false;
+        // TODO decide what to do about it
+    }
+    // TODO init tf at the start, doesn't change
+    tf2::Vector3 translate(utm_x_offset_, utm_y_offset_, 0.0);
+    tf2::Transform utm2slam_tf;
+    tf2::Quaternion quat;
+    quat.setRPY(0.0, 0.0, map_yaw_);
+    utm2slam_tf.setRotation(quat);
+    utm2slam_tf.setOrigin(translate);
+    geometry_msgs::Transform slam2utm = tf2::toMsg(utm2slam_tf);
+    geometry_msgs::PointStamped in, out;
+    in.header.frame_id = slam_map_frame_;
+    in.header.stamp = ros::Time(0);
+    in.point.x = req.slam_position.x;
+    in.point.y = req.slam_position.y;
+    in.point.z = req.slam_position.z;
+    geometry_msgs::TransformStamped geom_stamped_tf;
+    geom_stamped_tf.header.frame_id = slam_map_frame_;
+    geom_stamped_tf.header.stamp = ros::Time(0);
+    geom_stamped_tf.child_frame_id = "utm";
+    geom_stamped_tf.transform = slam2utm;
+    tf2::doTransform(in, out, geom_stamped_tf);
+    resp.utm_position.x = out.point.x;
+    resp.utm_position.y = out.point.y;
+    return true;
+}
+
 void TaskManager::heartbeatTimerCallback(const ros::TimerEvent&) {
     sensor_msgs::NavSatFix hb = drone_state_manager_.getCurrentGlobalPosition();
     geometry_msgs::PoseStamped local = drone_state_manager_.getCurrentLocalPosition();
     geometry_msgs::Quaternion quat_flu = local.pose.orientation;
-    double yaw;
-    if (map_tf_init_) {
-        tf2::Quaternion tf2_quat(quat_flu.x, quat_flu.y, quat_flu.z, quat_flu.w), tf2_quat_ned;
-        geometry_msgs::TransformStamped slam_to_mapned_tf = tf_buffer_.lookupTransform("map_ned", slam_map_frame_, ros::Time(0));
-        geometry_msgs::Quaternion quat1, quatned;
-        tf2::convert(tf2_quat, quat1);
-        geometry_msgs::PoseStamped pt_quat, pt_ned;
-        pt_quat.pose.orientation = quat1;
-        tf2::doTransform(pt_quat, pt_ned, slam_to_mapned_tf);
-        tf2::convert(pt_ned.pose.orientation, tf2_quat_ned);
-        tf2::Matrix3x3 mat(tf2_quat_ned);
-        double roll, pitch;
-        mat.getRPY(roll, pitch, yaw);
-        yaw = yaw * 180 / M_PI; // Hello Decco expects yaw in degrees NED, but comes as FLU radians. did TF, now just convert rad2deg.
-    }
-    else {
-        yaw = 0.0;
-    }
+    double yaw = drone_state_manager_.getCompass();
     json j = {
         {"latitude", hb.latitude},
         {"longitude", hb.longitude},
@@ -266,12 +292,16 @@ bool TaskManager::pauseOperations() {
 
 bool TaskManager::initDroneStateManager(messages_88::InitDroneState::Request& req, messages_88::InitDroneState::Response& resp) {
     // Drone state manager setup
-    ROS_INFO("init drone state rcvd");
     drone_state_manager_.setAutonomyEnabled(req.enable_autonomy);
     task_msg_.enable_autonomy = req.enable_autonomy;
     task_msg_.enable_exploration = req.enable_exploration;
 
     drone_state_manager_.setSafetyArea();
+    ROS_INFO("waiting for global...");
+    drone_state_manager_.waitForGlobal();
+    home_utm_zone_ = drone_state_manager_.getUTMZone();
+    ROS_INFO("Got global, UTM zone: %d. LL : (%f, %f)", home_utm_zone_, drone_state_manager_.getCurrentGlobalPosition().latitude, drone_state_manager_.getCurrentGlobalPosition().longitude);
+    drone_state_manager_.initUTM(utm_x_offset_, utm_y_offset_);
 
     if (req.ardupilot) {
         land_mode_ = "LAND";
