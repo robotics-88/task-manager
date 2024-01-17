@@ -64,6 +64,7 @@ class TaskManager {
         void modeMonitor();
 
         void syncedPoseCallback(const geometry_msgs::PoseStampedConstPtr &mavros_pose, const geometry_msgs::PoseStampedConstPtr &slam_pose);
+        void deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose);
         bool pauseOperations();
 
         // Health subscribers, unused except to verify publishing
@@ -103,6 +104,9 @@ class TaskManager {
         std::string mavros_map_frame_;
         std::string slam_map_frame_;
         geometry_msgs::TransformStamped map_to_slam_tf_;
+        geometry_msgs::TransformStamped slam_to_map_tf_;
+        ros::Subscriber decco_pose_sub_;
+        ros::Publisher vision_pose_publisher_;
 
         // TF publisher
         typedef message_filters::sync_policies::ApproximateTime<geometry_msgs::PoseStamped, geometry_msgs::PoseStamped> MySyncPolicy;

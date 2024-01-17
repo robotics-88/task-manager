@@ -276,7 +276,7 @@ void DroneStateManager::compassCallback(const std_msgs::Float64::ConstPtr & msg)
     if (!compass_init_) {
         home_compass_hdg_ += msg->data;
         compass_count_++;
-        if (compass_count_ == 50) { 
+        if (compass_count_ == 1) { 
             home_compass_hdg_ /= compass_count_;
             compass_init_ = true;
         }

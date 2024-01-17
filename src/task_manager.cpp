@@ -65,11 +65,12 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<std::string>("mapir_topic", mapir_topic_, mapir_topic_);
     private_nh_.param<std::string>("rosbag_topic", rosbag_topic_, rosbag_topic_);
 
-    // Subscribe to MAVROS and SLAM pose topics to 
-    slam_pose_sub_.subscribe(nh_, slam_pose_topic_, 10);
-    mavros_pose_sub_.subscribe(nh_, "/mavros/local_position/pose", 10);
-    sync_.reset(new Sync(MySyncPolicy(10), mavros_pose_sub_, slam_pose_sub_));
-    sync_->registerCallback(boost::bind(&TaskManager::syncedPoseCallback, this, _1, _2));
+    // SLAM pose sub, MAVROS vision pose pub
+    // slam_pose_sub_.subscribe(nh_, slam_pose_topic_, 10);
+    decco_pose_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>(slam_pose_topic_, 10, &TaskManager::deccoPoseCallback, this);
+    // mavros_pose_sub_.subscribe(nh_, "/mavros/local_position/pose", 10);
+    // sync_.reset(new Sync(MySyncPolicy(10), mavros_pose_sub_, slam_pose_sub_));
+    // sync_->registerCallback(boost::bind(&TaskManager::syncedPoseCallback, this, _1, _2));
 
     mode_monitor_timer_ = private_nh_.createTimer(ros::Duration(1.0),
                                [this](const ros::TimerEvent&) { modeMonitor(); });
@@ -187,6 +188,58 @@ void TaskManager::syncedPoseCallback(const geometry_msgs::PoseStampedConstPtr &m
     map_tf_init_ = true;
 }
 
+void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose) {
+    if (!map_tf_init_) {
+        map_to_slam_tf_.header.frame_id = mavros_map_frame_;
+        map_to_slam_tf_.header.stamp = ros::Time::now();
+        map_to_slam_tf_.child_frame_id = slam_map_frame_;
+
+        double yaw = 0;
+        ROS_INFO("TM about to get map yaw");
+        while (!drone_state_manager_.getMapYaw(yaw)) {
+            ROS_WARN_THROTTLE(1, "Waiting for yaw...");
+            ros::Duration(0.1).sleep();
+        }
+        // yaw = -yaw + 90;
+        yaw = M_PI * (90 - yaw) / 180.0;
+        map_yaw_ = -yaw;
+        ROS_INFO("TM set map yaw to %f", yaw);
+
+        map_to_slam_tf_.transform.translation.x = 0.0;
+        map_to_slam_tf_.transform.translation.y = 0.0;
+        map_to_slam_tf_.transform.translation.z = 0.0;
+
+        tf2::Quaternion quat_tf;
+        quat_tf.setRPY(0.0, 0.0, map_yaw_);
+        geometry_msgs::Quaternion quat;
+        tf2::convert(quat_tf, quat);
+        map_to_slam_tf_.transform.rotation = quat;
+        static_tf_broadcaster_.sendTransform(map_to_slam_tf_);
+
+        // Also save inverse
+        slam_to_map_tf_.transform.translation.x = 0.0;
+        slam_to_map_tf_.transform.translation.y = 0.0;
+        slam_to_map_tf_.transform.translation.z = 0.0;
+
+        quat_tf.setRPY(0.0, 0.0, -map_yaw_);
+        tf2::convert(quat_tf, quat);
+        slam_to_map_tf_.transform.rotation = quat;
+
+        slam_to_map_tf_.header.frame_id = slam_map_frame_;
+        slam_to_map_tf_.header.stamp = ros::Time::now();
+        slam_to_map_tf_.child_frame_id = mavros_map_frame_;
+        
+        map_tf_init_ = true;
+        vision_pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("/mavros/vision_pose/pose", 10);
+    }
+
+    geometry_msgs::PoseStamped msg_body_pose;
+    geometry_msgs::PoseStamped slam = *slam_pose;
+    tf2::doTransform(slam, msg_body_pose, slam_to_map_tf_);
+    msg_body_pose.header.frame_id = mavros_map_frame_;
+    vision_pose_publisher_.publish(msg_body_pose);
+}
+
 bool TaskManager::emergencyResponse(messages_88::Emergency::Request& req, messages_88::Emergency::Response& resp) {
     ROS_WARN("Emergency response initiated, level %d.", req.status.severity);
     // Immediately set to hover
@@ -224,7 +277,7 @@ bool TaskManager::convert2Geo(messages_88::Geopoint::Request& req, messages_88::
     tf2::Vector3 translate(utm_x_offset_, utm_y_offset_, 0.0);
     tf2::Transform utm2slam_tf;
     tf2::Quaternion quat;
-    quat.setRPY(0.0, 0.0, map_yaw_);
+    quat.setRPY(0.0, 0.0, -map_yaw_);
     utm2slam_tf.setRotation(quat);
     utm2slam_tf.setOrigin(translate);
     geometry_msgs::Transform slam2utm = tf2::toMsg(utm2slam_tf);
@@ -249,7 +302,7 @@ void TaskManager::heartbeatTimerCallback(const ros::TimerEvent&) {
     sensor_msgs::NavSatFix hb = drone_state_manager_.getCurrentGlobalPosition();
     geometry_msgs::PoseStamped local = drone_state_manager_.getCurrentLocalPosition();
     geometry_msgs::Quaternion quat_flu = local.pose.orientation;
-    double yaw = drone_state_manager_.getCompass();
+    double yaw = drone_state_manager_.getCompass() + map_yaw_;
     json j = {
         {"latitude", hb.latitude},
         {"longitude", hb.longitude},
