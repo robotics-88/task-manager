@@ -249,7 +249,7 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
     // I.e. the compass heading of the drone when the ROS code is started
     if (!compass_init_ok_) {
 
-        ROS_INFO("Getting initial drone heading");
+        ROS_INFO("Getting initial compass heading");
 
         // Wait 3 ticks after setting heading source to Compass before gathering compass
         if (compass_wait_counter_ < 3) {
@@ -269,6 +269,7 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
         }
         else {
             compass_init_ok_ = true;
+            ROS_INFO("Initial compass heading: %f", home_compass_hdg_);
             home_compass_hdg_ = compass_hdg_;
             attempts_ = 0;
         }
@@ -343,7 +344,7 @@ void DroneStateManager::checkMsgRates(const ros::TimerEvent &event) {
 
     check_msg_rates_counter_++;
 
-    if (imu_count_ / msg_rate_timer_dt_ < imu_rate_ * 0.9) {
+    if (imu_count_ / msg_rate_timer_dt_ < imu_rate_ * 0.8) {
         ROS_WARN("Warning, IMU only sending at %f / %f hz", (imu_count_ / msg_rate_timer_dt_), imu_rate_);
         imu_rate_ok_ = false;
     }
@@ -352,7 +353,7 @@ void DroneStateManager::checkMsgRates(const ros::TimerEvent &event) {
     }
 
     // Use battery message as proxy for all generic message streams
-    if (battery_count_ / msg_rate_timer_dt_ < all_stream_rate_ * 0.9) {
+    if (battery_count_ / msg_rate_timer_dt_ < all_stream_rate_ * 0.8) {
         ROS_WARN("Warning, generic stream only sending at %f / %f hz", (battery_count_ / msg_rate_timer_dt_), all_stream_rate_);
         all_stream_rate_ok_ = false;
     }

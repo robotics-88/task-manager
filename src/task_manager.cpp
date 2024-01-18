@@ -203,11 +203,18 @@ void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &sl
 
     // Transform decco pose (in slam_map frame) and publish it in mavros_map frame as /mavros/vision_pose/pose
 
+    geometry_msgs::TransformStamped tf;
+    try {
+        tf = tf_buffer_.lookupTransform(slam_map_frame_, mavros_map_frame_, ros::Time(0));
+    } catch (tf2::TransformException & ex) {
+        return;
+    }
+
     // Apply the transform to the drone pose
     geometry_msgs::PoseStamped msg_body_pose;
     geometry_msgs::PoseStamped slam = *slam_pose;
 
-    tf2::doTransform(slam, msg_body_pose, map_to_slam_tf_);
+    tf2::doTransform(slam, msg_body_pose, tf);
     msg_body_pose.header.frame_id = mavros_map_frame_;
     vision_pose_publisher_.publish(msg_body_pose);
 }
