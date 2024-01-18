@@ -72,6 +72,8 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     // sync_.reset(new Sync(MySyncPolicy(10), mavros_pose_sub_, slam_pose_sub_));
     // sync_->registerCallback(boost::bind(&TaskManager::syncedPoseCallback, this, _1, _2));
 
+    map_tf_timer_ = nh_.createTimer(ros::Duration(1.0), &TaskManager::mapTfTimerCallback, this);
+
     mode_monitor_timer_ = private_nh_.createTimer(ros::Duration(1.0),
                                [this](const ros::TimerEvent&) { modeMonitor(); });
 
@@ -95,6 +97,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     // MAVROS
     local_pos_pub_ = nh_.advertise<geometry_msgs::PoseStamped>(goal_topic, 10);
     local_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("/mavros/setpoint_velocity/cmd_vel_unstamped", 10);
+    vision_pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("/mavros/vision_pose/pose", 10);
 
     // Heartbeat handling
     heartbeat_pub_ = nh_.advertise<std_msgs::String>("/mapversation/monarch_heartbeat", 10);
@@ -123,6 +126,42 @@ TaskManager::TaskManager(ros::NodeHandle& node)
 }
 
 TaskManager::~TaskManager(){}
+
+void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
+
+    // Get drone heading
+    double yaw = 0;
+    if (!drone_state_manager_.getMapYaw(yaw)) {
+        ROS_WARN("Waiting for heading from autopilot...");
+        return;
+    }
+
+    ROS_INFO("Initial heading: %f", yaw);
+
+    // Convert yaw from NED to ENU
+    yaw = -yaw + 90.0;
+    // Convert to degrees
+    map_yaw_ = yaw * M_PI / 180.0;
+
+    // Fill in data
+    map_to_slam_tf_.header.frame_id = mavros_map_frame_;
+    map_to_slam_tf_.header.stamp = ros::Time::now();
+    map_to_slam_tf_.child_frame_id = slam_map_frame_;
+    map_to_slam_tf_.transform.translation.x = 0.0;
+    map_to_slam_tf_.transform.translation.y = 0.0;
+    map_to_slam_tf_.transform.translation.z = 0.0;
+
+    tf2::Quaternion quat_tf;
+    quat_tf.setRPY(0.0, 0.0, map_yaw_);
+    geometry_msgs::Quaternion quat;
+    tf2::convert(quat_tf, quat);
+    map_to_slam_tf_.transform.rotation = quat;
+
+    // Send transform and stop timer
+    static_tf_broadcaster_.sendTransform(map_to_slam_tf_);
+
+    map_tf_timer_.stop();
+}
 
 void TaskManager::syncedPoseCallback(const geometry_msgs::PoseStampedConstPtr &mavros_pose, const geometry_msgs::PoseStampedConstPtr &slam_pose) {
     last_mavros_pos_stamp_ = mavros_pose->header.stamp;
@@ -158,84 +197,17 @@ void TaskManager::syncedPoseCallback(const geometry_msgs::PoseStampedConstPtr &m
     // map_to_slam_tf.transform.translation.z = zdif;
     // map_to_slam_tf.transform.rotation = tf_quat;
     // tf_broadcaster_.sendTransform(map_to_slam_tf);
-
-    // Below assumes static tf
-    if (map_tf_init_) {
-        return;
-    }
-    map_to_slam_tf_.header.frame_id = mavros_map_frame_;
-    map_to_slam_tf_.header.stamp = ros::Time::now();
-    map_to_slam_tf_.child_frame_id = slam_map_frame_;
-
-    double yaw = 0;
-    ROS_INFO("TM about to get map yaw");
-    while (!drone_state_manager_.getMapYaw(yaw)) {
-        ROS_WARN("Waiting for yaw...");
-        ros::Duration(0.1).sleep();
-    }
-    yaw = M_PI * (yaw) / 180.0;
-    map_yaw_ = yaw;
-    ROS_INFO("TM set map yaw to %f", yaw);
-
-    map_to_slam_tf_.transform.translation.x = mavros_pose->pose.position.x;
-    map_to_slam_tf_.transform.translation.y = mavros_pose->pose.position.y;
-    map_to_slam_tf_.transform.translation.z = mavros_pose->pose.position.z;
-
-    geometry_msgs::Quaternion quat = mavros_pose->pose.orientation;
-    map_to_slam_tf_.transform.rotation = quat;
-    static_tf_broadcaster_.sendTransform(map_to_slam_tf_);
-
-    map_tf_init_ = true;
 }
 
 void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose) {
-    if (!map_tf_init_) {
-        map_to_slam_tf_.header.frame_id = mavros_map_frame_;
-        map_to_slam_tf_.header.stamp = ros::Time::now();
-        map_to_slam_tf_.child_frame_id = slam_map_frame_;
 
-        double yaw = 0;
-        ROS_INFO("TM about to get map yaw");
-        while (!drone_state_manager_.getMapYaw(yaw)) {
-            ROS_WARN_THROTTLE(1, "Waiting for yaw...");
-            ros::Duration(0.1).sleep();
-        }
-        // yaw = -yaw + 90;
-        yaw = M_PI * (90 - yaw) / 180.0;
-        map_yaw_ = -yaw;
-        ROS_INFO("TM set map yaw to %f", yaw);
+    // Transform decco pose (in slam_map frame) and publish it in mavros_map frame as /mavros/vision_pose/pose
 
-        map_to_slam_tf_.transform.translation.x = 0.0;
-        map_to_slam_tf_.transform.translation.y = 0.0;
-        map_to_slam_tf_.transform.translation.z = 0.0;
-
-        tf2::Quaternion quat_tf;
-        quat_tf.setRPY(0.0, 0.0, map_yaw_);
-        geometry_msgs::Quaternion quat;
-        tf2::convert(quat_tf, quat);
-        map_to_slam_tf_.transform.rotation = quat;
-        static_tf_broadcaster_.sendTransform(map_to_slam_tf_);
-
-        // Also save inverse
-        slam_to_map_tf_.transform.translation.x = 0.0;
-        slam_to_map_tf_.transform.translation.y = 0.0;
-        slam_to_map_tf_.transform.translation.z = 0.0;
-
-        quat_tf.setRPY(0.0, 0.0, -map_yaw_);
-        tf2::convert(quat_tf, quat);
-        slam_to_map_tf_.transform.rotation = quat;
-
-        slam_to_map_tf_.header.frame_id = slam_map_frame_;
-        slam_to_map_tf_.header.stamp = ros::Time::now();
-        slam_to_map_tf_.child_frame_id = mavros_map_frame_;
-        
-        map_tf_init_ = true;
-        vision_pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("/mavros/vision_pose/pose", 10);
-    }
-
+    // Apply the transform to the drone pose
     geometry_msgs::PoseStamped msg_body_pose;
     geometry_msgs::PoseStamped slam = *slam_pose;
-    tf2::doTransform(slam, msg_body_pose, slam_to_map_tf_);
+
+    tf2::doTransform(slam, msg_body_pose, map_to_slam_tf_);
     msg_body_pose.header.frame_id = mavros_map_frame_;
     vision_pose_publisher_.publish(msg_body_pose);
 }

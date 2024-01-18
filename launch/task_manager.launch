@@ -28,10 +28,8 @@
         <param name="mapir_topic" value="$(arg mapir_topic)"/>
         <param name="rosbag_topic" value="$(arg rosbag_topic)"/>
         <param name="default_altitude_m" value="$(arg default_altitude_m)"/>
-
+        <param name="all_stream_rate" value="5"/>
         <param name="imu_rate" value="50"/>
-        <param name="local_pos_rate" value="30"/>
-
         <param name="simulate" value="$(arg simulate)"/>
     </node>
 </launch>
