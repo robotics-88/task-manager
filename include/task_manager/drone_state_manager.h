@@ -51,6 +51,7 @@ class DroneStateManager {
         bool getIsArmed();
         bool getMapYaw(double &yaw);
         double getCompass();
+        bool getDroneInitalized() {return drone_initialized_;}
 
         // Mavros subscriber callbacks
         void globalPositionCallback(const sensor_msgs::NavSatFix::ConstPtr &msg);
@@ -75,6 +76,7 @@ class DroneStateManager {
         void initUTM(double &utm_x, double &utm_y);
         void checkMsgRates(const ros::TimerEvent &event);
         void requestMavlinkStreams();
+
 
     private:
         ros::NodeHandle private_nh_;
@@ -155,6 +157,7 @@ class DroneStateManager {
         bool param_fetch_complete_ = false;
 
         // Initialization check stuff
+        bool drone_initialized_ = false;
         int check_msg_rates_counter_ = 0;
         int compass_wait_counter_ = 0;
         int attempts_;

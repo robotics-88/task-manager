@@ -129,7 +129,7 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
 
         // Wait for completion of param fetch
         if (!param_fetch_complete_) {
-            for (int i = 0; i < 6; i++) {
+            for (int i = 0; i < 5; i++) {
                 ROS_INFO("Drone state manager waiting for param fetch to complete");
                 ros::Duration(10.0).sleep();
             }
@@ -303,6 +303,7 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
     }
 
     ROS_INFO("Drone initialization successful!");
+    drone_initialized_ = true;
     drone_init_timer_.stop();
 
 }
