@@ -154,14 +154,13 @@ class DroneStateManager {
         bool imu_rate_ok_ = false;
         bool all_stream_rate_ok_ = false;
 
-        bool param_fetch_complete_ = false;
-
         // Initialization check stuff
         bool drone_initialized_ = false;
         int check_msg_rates_counter_ = 0;
         int compass_wait_counter_ = 0;
         int attempts_;
         ros::Timer drone_init_timer_;
+        bool param_fetch_complete_ = false;
         bool heading_src_ok_ = false;
         bool stream_rates_ok_ = false;
         bool geofence_clear_ok_ = false;

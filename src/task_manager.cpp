@@ -153,6 +153,7 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
 
     tf2::Quaternion quat_tf;
     quat_tf.setRPY(0.0, 0.0, map_yaw_);
+    
     geometry_msgs::Quaternion quat;
     tf2::convert(quat_tf, quat);
     map_to_slam_tf_.transform.rotation = quat;
@@ -209,7 +210,7 @@ void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &sl
 
     geometry_msgs::TransformStamped tf;
     try {
-        tf = tf_buffer_.lookupTransform(slam_map_frame_, mavros_map_frame_, ros::Time(0));
+        tf = tf_buffer_.lookupTransform(mavros_map_frame_, slam_map_frame_, ros::Time(0));
     } catch (tf2::TransformException & ex) {
         return;
     }
@@ -220,6 +221,8 @@ void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &sl
 
     tf2::doTransform(slam, msg_body_pose, tf);
     msg_body_pose.header.frame_id = mavros_map_frame_;
+    msg_body_pose.header.stamp = slam_pose->header.stamp;
+
     vision_pose_publisher_.publish(msg_body_pose);
 }
 

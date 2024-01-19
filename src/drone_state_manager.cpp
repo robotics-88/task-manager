@@ -124,19 +124,46 @@ DroneStateManager::~DroneStateManager() {
 
 void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
 
+    // Try setting a dummy param to check if param fetch has completed
+    if (!param_fetch_complete_) {
 
-    if (!stream_rates_ok_) {
-
-        // Wait for completion of param fetch
-        if (!param_fetch_complete_) {
-            for (int i = 0; i < 5; i++) {
+        // Wait an extra long on 
+        if (attempts_ == 0) {
+            for (int i = 0; i < 9; i++) {
                 ROS_INFO("Drone state manager waiting for param fetch to complete");
-                ros::Duration(10.0).sleep();
+                // Takes about 45 seconds, so run 5 second sleep 9 times. 
+                ros::Duration(5.0).sleep();
             }
-            param_fetch_complete_ = true;
-            ROS_INFO("Drone state manager waiting for message rate checker to run");
         }
 
+        // Run the action
+        auto param_set_client = nh_.serviceClient<mavros_msgs::ParamSet>("/mavros/param/set");
+        mavros_msgs::ParamSet param_set_srv;
+        param_set_srv.request.param_id = "ACRO_RP_RATE"; // Use this as we don't care about acro mode stuff.
+        param_set_srv.request.value.real = 360.0;
+        param_set_client.call(param_set_srv);
+
+        // Check success
+        if (!param_set_srv.response.success) {
+            if (attempts_ == 5) {
+                ROS_ERROR("Setting parameter failed after 5 attempts");
+                drone_init_timer_.stop();
+            }
+            ROS_WARN("Param set failed (param fetch may still be occuring), trying again in 5s");
+            attempts_++;
+            ros::Duration(5.0).sleep();
+            return;
+        }
+        else {
+            param_fetch_complete_ = true;
+            attempts_ = 0;
+            ROS_INFO("Param fetch complete");
+            ROS_INFO("Drone state manager waiting for message rate checker to run");
+        }
+    }
+
+    if (!stream_rates_ok_) {
+        
         // Don't continue if message rate checker hasn't run enough times
         if (check_msg_rates_counter_ < 2) {
             return;
@@ -251,8 +278,8 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
 
         ROS_INFO("Getting initial compass heading");
 
-        // Wait 3 ticks after setting heading source to Compass before gathering compass
-        if (compass_wait_counter_ < 3) {
+        // Wait 5 ticks after setting heading source to Compass before gathering compass
+        if (compass_wait_counter_ < 5) {
             compass_wait_counter_++;
             return;
         }
@@ -310,6 +337,9 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
 }
 
 void DroneStateManager::requestMavlinkStreams() {
+
+    ROS_INFO("Requesting MAVLink streams from autopilot");
+    
     // Request all streams
     auto streamrate_client = nh_.serviceClient<mavros_msgs::StreamRate>("/mavros/set_stream_rate");
     streamrate_client.waitForExistence();
