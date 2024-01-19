@@ -161,6 +161,7 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
     static_tf_broadcaster_.sendTransform(map_to_slam_tf_);
 
     map_tf_timer_.stop();
+    map_tf_init_ = true;
 }
 
 void TaskManager::syncedPoseCallback(const geometry_msgs::PoseStampedConstPtr &mavros_pose, const geometry_msgs::PoseStampedConstPtr &slam_pose) {
@@ -202,6 +203,9 @@ void TaskManager::syncedPoseCallback(const geometry_msgs::PoseStampedConstPtr &m
 void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose) {
 
     // Transform decco pose (in slam_map frame) and publish it in mavros_map frame as /mavros/vision_pose/pose
+    if (!map_tf_init_) {
+        return;
+    }
 
     // Apply the transform to the drone pose
     geometry_msgs::PoseStamped msg_body_pose;
