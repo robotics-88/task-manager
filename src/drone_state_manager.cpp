@@ -52,7 +52,8 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
   , service_wait_duration_(2.0)
   , detected_utm_zone_(-1)
   , msg_rate_timer_dt_(5.0)
-  , imu_rate_(50.0)
+  , imu_rate_(120.0)
+  , local_pos_rate_(60.0)
   , all_stream_rate_(5.0)
 {
     // Set params from launch file 
@@ -67,6 +68,7 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
     private_nh_.param<std::string>("mavros_alt_topic", mavros_alt_topic_, mavros_alt_topic_);
     private_nh_.param<bool>("ardupilot", ardupilot_, ardupilot_);
     private_nh_.param<float>("imu_rate", imu_rate_, imu_rate_);
+    private_nh_.param<float>("local_pos_rate", local_pos_rate_, local_pos_rate_);
     private_nh_.param<float>("all_stream_rate", all_stream_rate_, all_stream_rate_);
 
     // Add a stream rate modifier in simulation b/c arducopter loop rate is slow
@@ -339,7 +341,7 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
 void DroneStateManager::requestMavlinkStreams() {
 
     ROS_INFO("Requesting MAVLink streams from autopilot");
-    
+
     // Request all streams
     auto streamrate_client = nh_.serviceClient<mavros_msgs::StreamRate>("/mavros/set_stream_rate");
     streamrate_client.waitForExistence();
@@ -356,6 +358,10 @@ void DroneStateManager::requestMavlinkStreams() {
 
     msg_interval_srv.request.message_id = 30; // ATTITUDE
     msg_interval_srv.request.message_rate = imu_rate_ * stream_rate_modifier_;
+    msg_interval_client.call(msg_interval_srv);
+
+    msg_interval_srv.request.message_id = 32; // LOCAL_POSITION_NED
+    msg_interval_srv.request.message_rate = local_pos_rate_ * stream_rate_modifier_;
     msg_interval_client.call(msg_interval_srv);
 }
 
@@ -391,8 +397,15 @@ void DroneStateManager::checkMsgRates(const ros::TimerEvent &event) {
         all_stream_rate_ok_ = true;
     }
 
+    // Also check local pos rate, but don't use this for initialization check b/c drone needs to initialize before
+    // vision pose starts publishing (which ultimately, local position comes from)
+    if (local_pos_count_ / msg_rate_timer_dt_ <  8) {
+        ROS_WARN("Warning, IMU only sending at %f / 10 hz", (local_pos_count_ / msg_rate_timer_dt_));
+    }
+
     // Reset counters
     imu_count_ = 0;
+    local_pos_count_ = 0;
     battery_count_ = 0;
 }
 
@@ -475,6 +488,7 @@ void DroneStateManager::globalPositionCallback(const sensor_msgs::NavSatFix::Con
 
 void DroneStateManager::localPositionCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
     current_pose_ = *msg;
+    local_pos_count_++;
 }
 
 void DroneStateManager::imuCallback(const sensor_msgs::Imu::ConstPtr &msg) {
