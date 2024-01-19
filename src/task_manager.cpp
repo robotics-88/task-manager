@@ -140,7 +140,7 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
 
     // Convert yaw from NED to ENU
     yaw = -yaw + 90.0;
-    // Convert to degrees
+    // Convert to radians
     map_yaw_ = yaw * M_PI / 180.0;
 
     // Fill in data
@@ -153,7 +153,7 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
 
     tf2::Quaternion quat_tf;
     quat_tf.setRPY(0.0, 0.0, map_yaw_);
-    
+
     geometry_msgs::Quaternion quat;
     tf2::convert(quat_tf, quat);
     map_to_slam_tf_.transform.rotation = quat;
@@ -288,7 +288,7 @@ void TaskManager::heartbeatTimerCallback(const ros::TimerEvent&) {
     sensor_msgs::NavSatFix hb = drone_state_manager_.getCurrentGlobalPosition();
     geometry_msgs::PoseStamped local = drone_state_manager_.getCurrentLocalPosition();
     geometry_msgs::Quaternion quat_flu = local.pose.orientation;
-    double yaw = drone_state_manager_.getCompass() + map_yaw_;
+    double yaw = drone_state_manager_.getCompass();
     json j = {
         {"latitude", hb.latitude},
         {"longitude", hb.longitude},
