@@ -65,7 +65,6 @@ class TaskManager {
         void stop();
         void modeMonitor();
 
-        void syncedPoseCallback(const geometry_msgs::PoseStampedConstPtr &mavros_pose, const geometry_msgs::PoseStampedConstPtr &slam_pose);
         void deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose);
         bool pauseOperations();
 

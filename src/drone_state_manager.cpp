@@ -97,9 +97,6 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
     drone_init_timer_ = private_nh_.createTimer(ros::Duration(1.0), &DroneStateManager::initializeDrone, this);
     msg_rate_timer_ = private_nh_.createTimer(ros::Duration(msg_rate_timer_dt_), &DroneStateManager::checkMsgRates, this);
 
-    // Run initialization for requesting MAVLink streams and clearing missions/fences, etc
-    // initializeDrone();
-
     setSafetyArea();
     local_pos_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/mavros/setpoint_position/local", 10);
 
@@ -147,13 +144,13 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
 
         // Check success
         if (!param_set_srv.response.success) {
-            if (attempts_ == 5) {
-                ROS_ERROR("Setting parameter failed after 5 attempts");
+            if (attempts_ == 10) {
+                ROS_ERROR("Setting parameter failed after 10 attempts");
                 drone_init_timer_.stop();
             }
-            ROS_WARN("Param set failed (param fetch may still be occuring), trying again in 5s");
+            ROS_WARN_THROTTLE(5, "Param set failed (param fetch may still be occuring)");
+
             attempts_++;
-            ros::Duration(5.0).sleep();
             return;
         }
         else {
@@ -161,6 +158,7 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
             attempts_ = 0;
             ROS_INFO("Param fetch complete");
             ROS_INFO("Drone state manager waiting for message rate checker to run");
+            requestMavlinkStreams();
         }
     }
 
@@ -177,7 +175,6 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
                 ROS_ERROR("MAVlink stream rates failed after 5 attempts");
                 drone_init_timer_.stop();
             }
-            ROS_WARN("MAVlink stream rates not ok, requesting streams again");
 
             requestMavlinkStreams();
             attempts_++;
@@ -186,13 +183,13 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
         else {
             stream_rates_ok_ = true;
             attempts_ = 0;
+            ROS_INFO("Mavlink streaming rates OK");
+            ROS_INFO("Clearing Geofence");
         }
     }
 
     // Clear previous geofence
     if (!geofence_clear_ok_) {
-
-        ROS_INFO("Clearing Geofence");
 
         // Run the action
         auto geofence_clear_client = nh_.serviceClient<mavros_msgs::WaypointClear>("/mavros/geofence/clear");
@@ -213,13 +210,12 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
         else {
             geofence_clear_ok_ = true;
             attempts_ = 0;
+            ROS_INFO("Clearing mission");
         }
     }
 
     // Clear any existing mission (we don't use missions, this is just for safety)
     if (!mission_clear_ok_) {
-
-        ROS_INFO("Clearing mission");
 
         // Run the action
         auto mission_clear_client = nh_.serviceClient<mavros_msgs::WaypointClear>("/mavros/mission/clear");
@@ -240,13 +236,12 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
         else {
             mission_clear_ok_ = true;
             attempts_ = 0;
+            ROS_INFO("Setting Arducopter heading source to Compass");
         }
     }
 
     // Set heading source to compass. Also acts as check on whether parameter fetch is complete
     if (!heading_src_ok_) {
-
-        ROS_INFO("Setting Arducopter heading source to Compass");
             
         // Run the action
         auto param_set_client = nh_.serviceClient<mavros_msgs::ParamSet>("/mavros/param/set");
@@ -262,14 +257,14 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
                 ROS_ERROR("EKF heading source param set failed after 3 attempts");
                 drone_init_timer_.stop();
             }
-            ROS_WARN("EKF heading source param set failed, trying again in 5s");
+            ROS_WARN("EKF heading source param set failed");
             attempts_++;
-            ros::Duration(5.0).sleep(); // Sleep here to give the param fetch extra time
             return;
         }
         else {
             heading_src_ok_ = true;
             attempts_ = 0;
+            ROS_INFO("Getting initial compass heading");
         }
     }
 
@@ -278,10 +273,8 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
     // I.e. the compass heading of the drone when the ROS code is started
     if (!compass_init_ok_) {
 
-        ROS_INFO("Getting initial compass heading");
-
-        // Wait 5 ticks after setting heading source to Compass before gathering compass
-        if (compass_wait_counter_ < 5) {
+        // Wait 3 ticks after setting heading source to Compass before gathering compass
+        if (compass_wait_counter_ < 3) {
             compass_wait_counter_++;
             return;
         }
@@ -298,16 +291,15 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
         }
         else {
             compass_init_ok_ = true;
-            ROS_INFO("Initial compass heading: %f", home_compass_hdg_);
             home_compass_hdg_ = compass_hdg_;
             attempts_ = 0;
+            ROS_INFO("Initial compass heading: %f", home_compass_hdg_);
+            ROS_INFO("Setting Arducopter heading source to ExternalNav");
         }
     }
 
     // Set heading source back to slam now that we have received the home compass heading
     if (!heading_src_back_ok_) {
-
-        ROS_INFO("Setting Arducopter heading source to ExternalNav");
 
         // Run the action
         auto param_set_client = nh_.serviceClient<mavros_msgs::ParamSet>("/mavros/param/set");
@@ -340,7 +332,7 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
 
 void DroneStateManager::requestMavlinkStreams() {
 
-    ROS_INFO("Requesting MAVLink streams from autopilot");
+    ROS_INFO_THROTTLE(5, "Requesting MAVLink streams from autopilot");
 
     // Request all streams
     auto streamrate_client = nh_.serviceClient<mavros_msgs::StreamRate>("/mavros/set_stream_rate");
@@ -400,7 +392,7 @@ void DroneStateManager::checkMsgRates(const ros::TimerEvent &event) {
     // Also check local pos rate, but don't use this for initialization check b/c drone needs to initialize before
     // vision pose starts publishing (which ultimately, local position comes from)
     if (local_pos_count_ / msg_rate_timer_dt_ <  8) {
-        ROS_WARN("Warning, IMU only sending at %f / 10 hz", (local_pos_count_ / msg_rate_timer_dt_));
+        ROS_WARN("Warning, local position only sending at %f / 10 hz", (local_pos_count_ / msg_rate_timer_dt_));
     }
 
     // Reset counters
