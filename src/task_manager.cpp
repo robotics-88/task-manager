@@ -296,7 +296,6 @@ bool TaskManager::initDroneStateManager(messages_88::InitDroneState::Request& re
     task_msg_.enable_autonomy = req.enable_autonomy;
     task_msg_.enable_exploration = req.enable_exploration;
 
-    drone_state_manager_.setSafetyArea();
     ROS_INFO("waiting for global...");
     drone_state_manager_.waitForGlobal();
     home_utm_zone_ = drone_state_manager_.getUTMZone();

@@ -97,7 +97,6 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
     drone_init_timer_ = private_nh_.createTimer(ros::Duration(1.0), &DroneStateManager::initializeDrone, this);
     msg_rate_timer_ = private_nh_.createTimer(ros::Duration(msg_rate_timer_dt_), &DroneStateManager::checkMsgRates, this);
 
-    setSafetyArea();
     local_pos_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/mavros/setpoint_position/local", 10);
 
     if (ardupilot_) {
@@ -638,7 +637,6 @@ bool DroneStateManager::getReadyForAction() {
         ROS_WARN("Autonomy disabled in getReady.");
         return false;;
     }
-    // TODO: setSafetyArea();
     bool guided = false, armed = false, takeoff = false;
     if (!in_guided_mode_) {
         ROS_INFO("setting guided mode to %s", guided_mode_.c_str());
@@ -658,10 +656,6 @@ bool DroneStateManager::getReadyForAction() {
         ros::Duration(10).sleep();
     }
     return guided && armed && (in_air_ || takeoff);
-}
-
-bool DroneStateManager::setSafetyArea() {
-    // TODO set MAVROS bounding polygon based on exploration region
 }
 
 }
