@@ -53,6 +53,8 @@ class TaskManager {
         bool emergencyResponse(messages_88::Emergency::Request& req, messages_88::Emergency::Response& resp);
         bool convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp);
 
+        void mapTfTimerCallback(const ros::TimerEvent&);
+
         // Heartbeat
         void uiHeartbeatCallback(const std_msgs::String::ConstPtr &msg);
         void heartbeatTimerCallback(const ros::TimerEvent&);
@@ -63,7 +65,7 @@ class TaskManager {
         void stop();
         void modeMonitor();
 
-        void syncedPoseCallback(const geometry_msgs::PoseStampedConstPtr &mavros_pose, const geometry_msgs::PoseStampedConstPtr &slam_pose);
+        void deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose);
         bool pauseOperations();
 
         // Health subscribers, unused except to verify publishing
@@ -103,8 +105,11 @@ class TaskManager {
         std::string mavros_map_frame_;
         std::string slam_map_frame_;
         geometry_msgs::TransformStamped map_to_slam_tf_;
+        ros::Subscriber decco_pose_sub_;
+        ros::Publisher vision_pose_publisher_;
 
         // TF publisher
+        ros::Timer map_tf_timer_;
         typedef message_filters::sync_policies::ApproximateTime<geometry_msgs::PoseStamped, geometry_msgs::PoseStamped> MySyncPolicy;
         typedef message_filters::Synchronizer<MySyncPolicy> Sync;
         boost::shared_ptr<Sync> sync_;

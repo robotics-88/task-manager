@@ -17,6 +17,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <mavros_msgs/SetMode.h>
 #include <mavros_msgs/State.h>
 #include <mavros_msgs/StatusText.h>
+#include <sensor_msgs/BatteryState.h>
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/NavSatFix.h>
 #include <std_msgs/Float64.h>
@@ -50,6 +51,7 @@ class DroneStateManager {
         bool getIsArmed();
         bool getMapYaw(double &yaw);
         double getCompass();
+        bool getDroneInitalized() {return drone_initialized_;}
 
         // Mavros subscriber callbacks
         void globalPositionCallback(const sensor_msgs::NavSatFix::ConstPtr &msg);
@@ -58,6 +60,7 @@ class DroneStateManager {
         void altitudeCallback(const std_msgs::Float64::ConstPtr & msg);
         void imuCallback(const sensor_msgs::Imu::ConstPtr &msg);
         void compassCallback(const std_msgs::Float64::ConstPtr & msg);
+        void batteryCallback(const sensor_msgs::BatteryState::ConstPtr &msg);
 
         // Mavros state control
         bool setGuided();
@@ -69,9 +72,11 @@ class DroneStateManager {
         bool readyForAction();
         bool getReadyForAction();
         bool setSafetyArea();
-        void initializeDrone();
+        void initializeDrone(const ros::TimerEvent &event);
         void initUTM(double &utm_x, double &utm_y);
         void checkMsgRates(const ros::TimerEvent &event);
+        void requestMavlinkStreams();
+
 
     private:
         ros::NodeHandle private_nh_;
@@ -90,7 +95,7 @@ class DroneStateManager {
         float max_distance_;
         ros::Publisher safety_area_viz_;
         bool ardupilot_;
-        bool compass_init_;
+        bool compass_received_ = false;
 
         // Mavros subscribers and topics
         std::string mavros_global_pos_topic_;
@@ -104,6 +109,7 @@ class DroneStateManager {
         ros::Publisher local_pos_pub_;
         ros::Subscriber mavros_imu_subscriber_;
         ros::Subscriber mavros_compass_subscriber_;
+        ros::Subscriber mavros_battery_subscriber_;
 
         // Mavros service clients
         std::string arming_topic_;
@@ -137,14 +143,33 @@ class DroneStateManager {
         int detected_utm_zone_;
 
         // Message rate check stuff
-        ros::Timer all_msg_request_timer_;
+        float all_stream_rate_;        
         float msg_rate_timer_dt_;
         ros::Timer msg_rate_timer_;
         float imu_rate_;
-        float local_pos_rate_;
         int imu_count_;
+        float local_pos_rate_;
         int local_pos_count_;
         float stream_rate_modifier_;
+        int battery_count_;
+
+        bool imu_rate_ok_ = false;
+        bool all_stream_rate_ok_ = false;
+
+        // Initialization check stuff
+        bool drone_initialized_ = false;
+        int check_msg_rates_counter_ = 0;
+        int compass_wait_counter_ = 0;
+        int attempts_;
+        ros::Timer drone_init_timer_;
+        bool param_fetch_complete_ = false;
+        bool heading_src_ok_ = false;
+        bool stream_rates_ok_ = false;
+        bool geofence_clear_ok_ = false;
+        bool mission_clear_ok_ = false;
+        bool compass_init_ok_ = false;
+        bool heading_src_back_ok_ = false;
+
 
 };
 
