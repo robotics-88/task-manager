@@ -35,6 +35,9 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "messages_88/TaskStatus.h"
 #include "task_manager/drone_state_manager.h"
 
+#include <task_manager/json.hpp>
+using json = nlohmann::json;
+
 namespace task_manager {
 /**
  * @class TaskManager
@@ -170,7 +173,7 @@ class TaskManager {
         ros::Timer health_pub_timer_;
 
         // Saving
-        std::string directory_;
+        std::string log_dir_;
         ros::ServiceClient vegetation_save_client_;
         ros::ServiceClient tree_save_client_;
         bool did_save_;
@@ -192,6 +195,11 @@ class TaskManager {
         CurrentStatus current_status_ = CurrentStatus::ON_START;
         ros::Timer status_timer_;
 
+        // Burn unit handling
+        ros::Publisher burn_unit_pub_;
+        int current_index_;
+        json burn_unit_json_;
+
         void startBag();
         void stopBag();
         void getDroneReady();
@@ -202,6 +210,9 @@ class TaskManager {
         void padNavTarget(geometry_msgs::PoseStamped &target);
         std::string getStatusString();
         void publishHealth();
+        void initBurnUnit(const std_msgs::String &msg);
+        geometry_msgs::Polygon polygonFromJson(json jsonPolygon);
+        void updateBurnUnit(std::string flight_status);
 
 };
 

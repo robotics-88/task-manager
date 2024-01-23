@@ -15,9 +15,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <geometry_msgs/Twist.h>
 #include <ros/package.h>
 
-#include <task_manager/json.hpp>
-using json = nlohmann::json;
-
 inline static bool operator==(const geometry_msgs::Point& one,
                               const geometry_msgs::Point& two)
 {
@@ -73,6 +70,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     mode_monitor_timer_ = private_nh_.createTimer(ros::Duration(1.0),
                                [this](const ros::TimerEvent&) { modeMonitor(); });
 
+
     // Health pubs/subs
     health_pub_ = nh_.advertise<std_msgs::String>("/mapversation/health_report", 10);
     costmap_sub_ = nh_.subscribe<map_msgs::OccupancyGridUpdate>(costmap_topic_, 10, &TaskManager::costmapCallback, this);
@@ -109,15 +107,19 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     task_msg_.enable_autonomy = false;
     task_msg_.enable_exploration = false;
 
+    // Burn units
+    burn_unit_pub_ = nh_.advertise<std_msgs::String>("/mapversation/burn_unit_receive", 10);
+
+    // Logs created in offline mode
     vegetation_save_client_ = private_nh_.serviceClient<messages_88::Save>("/vegetation/save");
     tree_save_client_ = private_nh_.serviceClient<messages_88::Save>("/species_mapper/save");
     std::string data_folder = ros::package::getPath("task_manager_88") + "/logs/";
     std::string time_local = boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time());
     time_local.replace(time_local.find(" "), 1, "_");
-    directory_ = data_folder + time_local + "/";
-    if (do_record_ && !boost::filesystem::exists(directory_)) {
-        ROS_INFO("Folder did not exist, creating directory: %s", directory_.c_str());
-        boost::filesystem::create_directories(directory_);
+    log_dir_ = data_folder + time_local + "/";
+    if (do_record_ && !boost::filesystem::exists(log_dir_)) {
+        ROS_INFO("Folder did not exist, creating directory: %s", log_dir_.c_str());
+        boost::filesystem::create_directories(log_dir_);
     }
 }
 
@@ -326,9 +328,9 @@ bool TaskManager::getReadyForAction(messages_88::PrepareDrone::Request& req, mes
 
 bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, messages_88::PrepareExplore::Response& resp) {
     cmd_history_.append("Get ready to explore command received.\n ");
+    initBurnUnit(req.burn_unit_json);
     bool needs_transit = false;
     geometry_msgs::PoseStamped target_position;
-    current_polygon_ = transformPolygon(req.polygon);
     if (!isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition().pose.position)) {
         cmd_history_.append("Transit to explore required.\n ");
         needs_transit = true;
@@ -373,6 +375,7 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
         explore_action_client_.waitForServer();
         sendExploreTask(explore_goal);
         cmd_history_.append("Sent explore goal.\n");
+        updateBurnUnit("ACTIVE");
         resp.success = true;
     }
     return true;
@@ -439,7 +442,7 @@ void TaskManager::stop() {
     stopBag();
     if (!did_save_) {
         messages_88::Save save_msg;
-        save_msg.request.directory.data = directory_;
+        save_msg.request.directory.data = log_dir_;
         vegetation_save_client_.call(save_msg);
         tree_save_client_.call(save_msg);
         did_save_ = true;
@@ -470,6 +473,8 @@ void TaskManager::modeMonitor() {
         did_takeoff_ = false; // Reset so can restart if another takeoff
     }
     geometry_msgs::PoseStamped home_pos;
+    home_pos.header.frame_id = slam_map_frame_;
+    home_pos.header.stamp = ros::Time::now();
     home_pos.pose.position.x = 0;
     home_pos.pose.position.y = 0;
     home_pos.pose.position.z = current_explore_goal_.altitude;
@@ -485,6 +490,7 @@ void TaskManager::modeMonitor() {
             cmd_history_.append(action_string);
             local_pos_pub_.publish(home_pos);
             current_status_ = CurrentStatus::RTL_88;
+            updateBurnUnit("COMPLETED");
         }
     }
     if (current_status_ == CurrentStatus::RTL_88) { 
@@ -718,6 +724,7 @@ void TaskManager::publishHealth() {
     jsonObjects["header"] = header;
 
     auto healthObjects = json::array();
+    // TODO fix 1,2 health topics, missing now
     // 1) MAVROS position
     json j = {
         {"name", "mavrosPosition"},
@@ -789,6 +796,43 @@ void TaskManager::mapirCallback(const sensor_msgs::ImageConstPtr &msg) {
 
 void TaskManager::rosbagCallback(const std_msgs::StringConstPtr &msg) {
     last_rosbag_stamp_ = ros::Time::now();
+}
+
+void TaskManager::initBurnUnit(const std_msgs::String &msg) {
+    // TODO check trip type, check if flights filled in, etc (prop be helpful just to have a struct for holding burn unit)
+    burn_unit_json_ = json::parse(msg.data);
+    // Iterate through subpolygons to get first not done
+    int ind = 0;
+    geometry_msgs::Polygon poly;
+    for (auto& flight : burn_unit_json_["trips"][0]["flights"]) {
+        if (flight["status"] == "NOTSTARTED") {
+            current_index_ = ind;
+            poly = polygonFromJson(flight["subpolygon"]);
+            break;
+        }
+        ind++;
+    }
+    current_polygon_ = transformPolygon(poly);
+}
+
+void TaskManager::updateBurnUnit(std::string flight_status) {
+    burn_unit_json_["trips"][0]["flights"][current_index_]["status"] = flight_status;
+    std::string s = burn_unit_json_.dump();
+    std_msgs::String burn_string;
+    burn_string.data = s;
+    burn_unit_pub_.publish(burn_string);
+    std::cout << "burn json filled in: \n" << burn_unit_json_.dump(4) << std::endl;
+}
+
+geometry_msgs::Polygon TaskManager::polygonFromJson(json jsonPolygon) {
+    geometry_msgs::Polygon polygon;
+    for (auto& element : jsonPolygon) {
+        geometry_msgs::Point32 pt;
+        pt.x = element[0];
+        pt.y = element[1];
+        polygon.points.push_back(pt);
+    }
+    return polygon;
 }
 
 }
