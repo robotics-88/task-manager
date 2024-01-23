@@ -296,7 +296,6 @@ bool TaskManager::initDroneStateManager(messages_88::InitDroneState::Request& re
     task_msg_.enable_autonomy = req.enable_autonomy;
     task_msg_.enable_exploration = req.enable_exploration;
 
-    drone_state_manager_.setSafetyArea();
     ROS_INFO("waiting for global...");
     drone_state_manager_.waitForGlobal();
     home_utm_zone_ = drone_state_manager_.getUTMZone();
@@ -391,6 +390,8 @@ void TaskManager::startNav2PointTask(messages_88::NavToPointGoal &nav_goal) {
     geometry_msgs::Point point = goal.point;
     current_target_ = point;
     geometry_msgs::PoseStamped target;
+    target.header.frame_id = slam_map_frame_;
+    target.header.stamp = ros::Time::now();
     target.pose.position = point;
     local_pos_pub_.publish(target);
     while (!(isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition().pose.position) || current_status_ == CurrentStatus::WAITING_TO_EXPLORE)) {

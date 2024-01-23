@@ -71,7 +71,6 @@ class DroneStateManager {
         // safety/validity checking
         bool readyForAction();
         bool getReadyForAction();
-        bool setSafetyArea();
         void initializeDrone(const ros::TimerEvent &event);
         void initUTM(double &utm_x, double &utm_y);
         void checkMsgRates(const ros::TimerEvent &event);
