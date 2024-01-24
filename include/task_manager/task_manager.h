@@ -34,6 +34,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "messages_88/Save.h"
 #include "messages_88/TaskStatus.h"
 #include "task_manager/drone_state_manager.h"
+#include "task_manager/hello_decco_manager.h"
 
 #include <task_manager/json.hpp>
 using json = nlohmann::json;
@@ -49,12 +50,14 @@ class TaskManager {
         TaskManager(ros::NodeHandle& node);
         ~TaskManager();
 
-        bool initDroneStateManager(messages_88::InitDroneState::Request& req, messages_88::InitDroneState::Response& resp);
-        bool getReadyForAction(messages_88::PrepareDrone::Request& req, messages_88::PrepareDrone::Response& resp);
-        bool getReadyForExplore(messages_88::PrepareExplore::Request& req, messages_88::PrepareExplore::Response& resp);
-        bool getDronePosition(messages_88::GetPosition::Request& req, messages_88::GetPosition::Response& resp);
-        bool emergencyResponse(messages_88::Emergency::Request& req, messages_88::Emergency::Response& resp);
+        void initDroneStateManager();
+        bool getReadyForAction();
+        void getReadyForExplore();
         bool convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp);
+
+        void targetPolygonCallback(const geometry_msgs::Polygon::ConstPtr &msg);
+        void targetSetpointCallback(const sensor_msgs::NavSatFix::ConstPtr &msg);
+        void emergencyResponse(const mavros_msgs::StatusText::ConstPtr &msg);
 
         void mapTfTimerCallback(const ros::TimerEvent&);
 
@@ -93,14 +96,29 @@ class TaskManager {
         ros::NodeHandle private_nh_;
         ros::NodeHandle nh_;
 
+        // Hello Decco comms
+        hello_decco_manager::HelloDeccoManager hello_decco_manager_;
+        ros::Subscriber target_polygon_subscriber_;
+        ros::Subscriber target_setpoint_subscriber_;
+        ros::Subscriber emergency_subscriber_;
+
+        // Safety for enabling control
+        bool enable_autonomy_;
+        bool enable_exploration_;
+        bool ardupilot_;
+
+        // Control defaults
+        float target_altitude_;
+        float min_altitude_;
+        float max_altitude_;
+        double max_dist_to_polygon_;
+
         // Map params
         tf2_ros::StaticTransformBroadcaster static_tf_broadcaster_;
         tf2_ros::TransformBroadcaster tf_broadcaster_;
         bool map_tf_init_;
         tf2_ros::Buffer tf_buffer_;
         tf2_ros::TransformListener tf_listener_;
-        double utm_x_offset_;
-        double utm_y_offset_;
         double map_yaw_;
         int home_utm_zone_;
 
@@ -122,11 +140,6 @@ class TaskManager {
 
         // Drone state and services
         drone_state_manager::DroneStateManager drone_state_manager_;
-        ros::ServiceServer drone_state_service_;
-        ros::ServiceServer drone_ready_service_;
-        ros::ServiceServer drone_explore_service_;
-        ros::ServiceServer drone_position_service_;
-        ros::ServiceServer emergency_service_;
         ros::ServiceServer geopoint_service_;
 
         // Heartbeat
@@ -144,7 +157,6 @@ class TaskManager {
         ros::Publisher stop_record_pub_;
 
         // Drone state params
-        double max_dist_to_polygon_;
         geometry_msgs::Polygon current_polygon_;
         ros::Timer mode_monitor_timer_;
         std::string cmd_history_;
@@ -196,23 +208,21 @@ class TaskManager {
         ros::Timer status_timer_;
 
         // Burn unit handling
-        ros::Publisher burn_unit_pub_;
+        ros::Subscriber burn_unit_sub_;
         int current_index_;
-        json burn_unit_json_;
+        void makeBurnUnitJson(const std_msgs::String::ConstPtr &msg);
+        void makeBurnUnitJson();
 
         void startBag();
         void stopBag();
         void getDroneReady();
         void readyToExplore();
-        geometry_msgs::Polygon transformPolygon(const geometry_msgs::Polygon &map_poly);
+        // geometry_msgs::Polygon transformPolygon(const geometry_msgs::Polygon &map_poly);
         bool isInside(const geometry_msgs::Polygon& polygon, const geometry_msgs::Point& point);
         bool polygonDistanceOk(double &min_dist, geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region);
         void padNavTarget(geometry_msgs::PoseStamped &target);
         std::string getStatusString();
         void publishHealth();
-        void initBurnUnit(const std_msgs::String &msg);
-        geometry_msgs::Polygon polygonFromJson(json jsonPolygon);
-        void updateBurnUnit(std::string flight_status);
 
 };
 

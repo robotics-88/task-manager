@@ -140,6 +140,7 @@ class DroneStateManager {
         bool in_guided_mode_;
         ros::Duration service_wait_duration_;
         int detected_utm_zone_;
+        bool utm_set_;
 
         // Message rate check stuff
         float all_stream_rate_;        

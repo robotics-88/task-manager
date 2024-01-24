@@ -4,7 +4,15 @@
     <arg name="slam_pose_topic" default="/decco/pose"/>
     <arg name="goal_topic" default="/mavros/setpoint_position/local"/> <!-- for mavros without OA, use /mavros/setpoint_position/local. default is /goal.-->
 
-    <arg name="default_altitude_m" default="3.0"/> 
+    <arg name="enable_autonomy" default="false"/>
+    <arg name="enable_exploration" default="false"/>
+    <arg name="ardupilot" default="true"/>
+    
+    <arg name="default_altitude_m" default="2.0"/>
+    <arg name="min_altitude_m" default="2.0"/>
+    <arg name="max_altitude_m" default="10.0"/>
+    <arg name="max_dist_to_polygon" default="500"/>
+    <arg name="flightleg_area_m2" default="2023"/> <!-- 1 acre = 4046 m2-->
 
     <!-- Health topics -->
     <arg name="costmap_topic" default="/costmap_node/costmap/costmap_updates"/>
@@ -18,6 +26,8 @@
     <arg name="simulate" default="false"/>
     
     <node pkg="task_manager_88" type="task_manager" name="task_manager" output="screen">
+        <param name="enable_autonomy" value="$(arg enable_autonomy)"/>
+        <param name="enable_exploration" value="$(arg enable_exploration)"/>
         <param name="goal_topic" value="$(arg goal_topic)"/>
         <param name="do_record" value="$(arg do_record)"/>
         <param name="mavros_map_frame" value="$(arg mavros_map_frame)"/>
@@ -28,6 +38,11 @@
         <param name="mapir_topic" value="$(arg mapir_topic)"/>
         <param name="rosbag_topic" value="$(arg rosbag_topic)"/>
         <param name="default_altitude_m" value="$(arg default_altitude_m)"/>
+        <param name="min_altitude_m" value="$(arg min_altitude_m)"/>
+        <param name="max_altitude_m" value="$(arg max_altitude_m)"/>
+        <param name="max_dist_to_polygon" value="$(arg max_dist_to_polygon)"/>
+        <param name="ardupilot" value="$(arg ardupilot)"/>
+        <param name="flightleg_area_m2" value="$(arg flightleg_area_m2)"/>
         <param name="all_stream_rate" value="5"/>
         <param name="imu_rate" value="120"/>
         <param name="local_pos_rate" value="60"/>
