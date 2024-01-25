@@ -103,7 +103,6 @@ int HelloDeccoManager::initBurnUnit(geometry_msgs::Polygon &polygon) {
     // Iterate through subpolygons to get first not done
     int ind = 0;
     geometry_msgs::Polygon poly;
-    std::cout << "init burn unit, has json: " << burn_unit_json_.dump(4) << std::endl;
     for (auto& flight : burn_unit_json_["trips"][0]["flights"]) {
         if (flight["status"] == "NOT_STARTED") {
             poly = subpolygons_.at(ind);
