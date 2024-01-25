@@ -15,6 +15,7 @@
     <arg name="flightleg_area_m2" default="2023"/> <!-- 1 acre = 4046 m2-->
 
     <!-- Health topics -->
+    <arg name="path_planner_topic" default="/kd_pointcloud_accumulated"/>
     <arg name="costmap_topic" default="/costmap_node/costmap/costmap_updates"/>
     <arg name="lidar_topic" default="/livox/lidar"/>
     <arg name="mapir_topic" default="/mapir_rgn/image_rect"/>
@@ -35,6 +36,7 @@
         <param name="data_directory" value="$(arg data_directory)"/>
         <param name="mavros_map_frame" value="$(arg mavros_map_frame)"/>
         <param name="slam_map_frame" value="$(arg slam_map_frame)"/>
+        <param name="path_planner_topic" value="$(arg path_planner_topic)"/>
         <param name="slam_pose_topic" value="$(arg slam_pose_topic)"/>
         <param name="costmap_topic" value="$(arg costmap_topic)"/>
         <param name="lidar_topic" value="$(arg lidar_topic)"/>
