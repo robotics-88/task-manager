@@ -22,6 +22,8 @@
 
      <!-- Record -->
     <arg name="do_record" default="true"/>
+    <arg name="user" value="$(env USER)"/>
+    <arg name="data_directory" default="/home/$(arg user)/src/bags/"/>
 
     <arg name="simulate" default="false"/>
     
@@ -30,6 +32,7 @@
         <param name="enable_exploration" value="$(arg enable_exploration)"/>
         <param name="goal_topic" value="$(arg goal_topic)"/>
         <param name="do_record" value="$(arg do_record)"/>
+        <param name="data_directory" value="$(arg data_directory)"/>
         <param name="mavros_map_frame" value="$(arg mavros_map_frame)"/>
         <param name="slam_map_frame" value="$(arg slam_map_frame)"/>
         <param name="slam_pose_topic" value="$(arg slam_pose_topic)"/>

@@ -210,6 +210,7 @@ class TaskManager {
         // Burn unit handling
         ros::Subscriber burn_unit_sub_;
         int current_index_;
+        std::string burn_dir_prefix_;
         void makeBurnUnitJson(const std_msgs::String::ConstPtr &msg);
         void makeBurnUnitJson(json burn_unit);
 

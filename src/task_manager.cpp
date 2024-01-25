@@ -77,6 +77,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<std::string>("lidar_topic", lidar_topic_, lidar_topic_);
     private_nh_.param<std::string>("mapir_topic", mapir_topic_, mapir_topic_);
     private_nh_.param<std::string>("rosbag_topic", rosbag_topic_, rosbag_topic_);
+    private_nh_.param<std::string>("data_directory", burn_dir_prefix_, burn_dir_prefix_);
 
     hello_decco_manager_.setFrames(mavros_map_frame_, slam_map_frame_);
 
@@ -509,8 +510,9 @@ void TaskManager::startBag() {
     if (bag_active_) {
         return;
     }
-    cmd_history_.append("Bag starting.\n ");
+    cmd_history_.append("Bag starting, prefix " + burn_dir_prefix_ + " .\n ");
     bag_recorder::Rosbag start_bag_msg;
+    start_bag_msg.data_dir = burn_dir_prefix_;
     start_bag_msg.bag_name = "decco";
     start_bag_msg.config = record_config_name_;
     start_bag_msg.header.stamp = ros::Time::now();
@@ -787,8 +789,10 @@ void TaskManager::makeBurnUnitJson(const std_msgs::String::ConstPtr &msg) {
         ROS_WARN("Not ready for flight, try again after initialized.");
         return;
     }
-    ROS_INFO("home utm was %d", home_utm_zone_);
-    hello_decco_manager_.makeBurnUnitJson(json::parse(msg->data), home_utm_zone_);
+    json burn_unit = json::parse(msg->data);
+    std::string name = burn_unit["name"];
+    burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
+    hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
     current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
     getReadyForExplore();
 }
@@ -802,6 +806,8 @@ void TaskManager::makeBurnUnitJson(json burn_unit) {
         ROS_WARN("Not ready for flight, try again after initialized.");
         return;
     }
+    std::string name = burn_unit["name"];
+    burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
     hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
     current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
     getReadyForExplore();
