@@ -53,7 +53,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , explore_action_client_("explore", true)
     , health_check_s_(5.0)
     , costmap_topic_("/costmap_node/costmap/costmap")
-    , lidar_topic_("/livox/lidar")
+    , lidar_topic_("/cloud_registered")
     , mapir_topic_("/mapir_rgn/image_rect")
     , rosbag_topic_("/record/heartbeat")
     , did_save_(false)
@@ -205,6 +205,8 @@ void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &sl
     msg_body_pose.header.stamp = slam_pose->header.stamp;
 
     vision_pose_publisher_.publish(msg_body_pose);
+
+    last_slam_pos_stamp_ = slam_pose->header.stamp;
 }
 
 void TaskManager::emergencyResponse(const mavros_msgs::StatusText::ConstPtr &msg) {
@@ -769,6 +771,7 @@ void TaskManager::costmapCallback(const map_msgs::OccupancyGridUpdate::ConstPtr 
 }
 
 void TaskManager::lidarCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
+    // TODO do we want to change this to point to raw pointcloud? If registered, not independent from SLAM position, but raw requires handling multiple data types.
     last_lidar_stamp_ =  msg->header.stamp;
 }
 
