@@ -64,8 +64,8 @@ class HelloDeccoManager {
         json burn_unit_json_;
         ros::Publisher burn_unit_pub_;
         ros::Publisher map_region_pub_;
-        ros::Time start_time_;
-        ros::Time end_time_;
+        int start_time_;
+        int end_time_;
 
         // MAVROS geofence publisher
         ros::ServiceClient mavros_geofence_client_;

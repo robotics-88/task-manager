@@ -119,13 +119,13 @@ int HelloDeccoManager::initBurnUnit(geometry_msgs::Polygon &polygon) {
 void HelloDeccoManager::updateBurnUnit(int index, std::string flight_status) {
     burn_unit_json_["trips"][0]["flights"][index]["status"] = flight_status;
     if (flight_status == "ACTIVE") {
-        start_time_ = ros::Time::now();
-        burn_unit_json_["trips"][0]["flights"][index]["startTime"] = std::to_string(round(start_time_.toSec()));
+        start_time_ = static_cast<int>(ros::Time::now().toSec());
+        burn_unit_json_["trips"][0]["flights"][index]["startTime"] = std::to_string(start_time_);
     }
     else if (flight_status == "COMPLETED") {
-        end_time_ = ros::Time::now();
-        burn_unit_json_["trips"][0]["flights"][index]["endTime"] = std::to_string(round(end_time_.toSec()));
-        burn_unit_json_["trips"][0]["flights"][index]["duration"] = std::to_string(round((start_time_ - end_time_).toSec()));
+        end_time_ = static_cast<int>(ros::Time::now().toSec());
+        burn_unit_json_["trips"][0]["flights"][index]["endTime"] = std::to_string(end_time_);
+        burn_unit_json_["trips"][0]["flights"][index]["duration"] = std::to_string(end_time_ - start_time_);
     }
     std::string s = burn_unit_json_.dump();
     std_msgs::String burn_string;
