@@ -211,7 +211,7 @@ class TaskManager {
         ros::Subscriber burn_unit_sub_;
         int current_index_;
         void makeBurnUnitJson(const std_msgs::String::ConstPtr &msg);
-        void makeBurnUnitJson();
+        void makeBurnUnitJson(json burn_unit);
 
         void startBag();
         void stopBag();

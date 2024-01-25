@@ -33,6 +33,7 @@ class HelloDeccoManager {
         ~HelloDeccoManager();
 
         void makeBurnUnitJson(json msgJson, int utm_zone);
+        json polygonToBurnUnit(const geometry_msgs::Polygon &polygon);
         int initBurnUnit(geometry_msgs::Polygon &polygon);
         void updateBurnUnit(int index, std::string flight_status);
         void setFrames(std::string map_frame, std::string slam_frame);
@@ -63,6 +64,8 @@ class HelloDeccoManager {
         json burn_unit_json_;
         ros::Publisher burn_unit_pub_;
         ros::Publisher map_region_pub_;
+        ros::Time start_time_;
+        ros::Time end_time_;
 
         // MAVROS geofence publisher
         ros::ServiceClient mavros_geofence_client_;
@@ -83,7 +86,6 @@ class HelloDeccoManager {
         int concaveToMinimalConvexPolygons();
         void visualizeLegs();
         geometry_msgs::Polygon transformPolygon(const geometry_msgs::Polygon &map_poly);
-        std::string getStatusString(int status);
 };
 
 }

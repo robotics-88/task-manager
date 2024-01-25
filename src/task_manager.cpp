@@ -793,7 +793,7 @@ void TaskManager::makeBurnUnitJson(const std_msgs::String::ConstPtr &msg) {
     getReadyForExplore();
 }
 
-void TaskManager::makeBurnUnitJson() {
+void TaskManager::makeBurnUnitJson(json burn_unit) {
     if (!enable_exploration_) {
         ROS_WARN("Exploration disabled, burn unit ignored.");
         return;
@@ -802,15 +802,15 @@ void TaskManager::makeBurnUnitJson() {
         ROS_WARN("Not ready for flight, try again after initialized.");
         return;
     }
-    json filler;
-    hello_decco_manager_.makeBurnUnitJson(filler, home_utm_zone_);
+    hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
     current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
     getReadyForExplore();
 }
 
 // Below are purely test methods, to eventually be deprecated in favor of burn units
 void TaskManager::targetPolygonCallback(const geometry_msgs::Polygon::ConstPtr &msg) {
-    makeBurnUnitJson();
+    json burn_unit = hello_decco_manager_.polygonToBurnUnit(*msg);
+    makeBurnUnitJson(burn_unit);
 }
 
 void TaskManager::targetSetpointCallback(const sensor_msgs::NavSatFix::ConstPtr &msg) {

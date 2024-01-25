@@ -40,41 +40,9 @@ void HelloDeccoManager::setFrames(std::string map_frame, std::string slam_frame)
 }
 
 void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
-    // TODO check trip type, check if flights filled in, etc (prop be helpful just to have a struct for holding burn unit)
+    // TODO check trip type to decide what data is recording? Or do that on the HD side?
     // Parse data
-    // burn_unit_json_ = msgJson;
-
-    burn_unit_json_ = R"({
-        "id" : 1,
-        "orgId" : 1,
-        "createdBy" : 1,
-        "name" : "Super Great Burn Unit",
-        "polygon" : [
-            [41.49655878994209, -71.30846321582796],
-            [41.4967637037957, -71.30850881338121],
-            [41.49693044694326, -71.30784362554552],
-            [41.4965306644606, -71.30813062191011]
-        ],
-        "trips": [
-            {
-            "id" : 1,
-            "type" : "PRE",
-            "startTime" : 0,
-            "endTime" : 0, 
-            "flights" : [ 
-                {
-                    "startTime" : 0,
-                    "index" : 0,
-                    "endTime" : 0, 
-                    "duration" : 0,
-                    "subpolygon" : [],
-                    "flightLogUrl" : "hellodecco.com/my-url",
-                    "status" : "NOT_STARTED"
-                }
-            ]
-            }
-        ]
-        })"_json;
+    burn_unit_json_ = msgJson;
     std_msgs::String burn_string;
     // Check if already filled in
     int num_flights = burn_unit_json_["trips"][0]["flights"].size();
@@ -150,14 +118,14 @@ int HelloDeccoManager::initBurnUnit(geometry_msgs::Polygon &polygon) {
 
 void HelloDeccoManager::updateBurnUnit(int index, std::string flight_status) {
     burn_unit_json_["trips"][0]["flights"][index]["status"] = flight_status;
-    ROS_INFO("flight status is %s", flight_status.c_str());
     if (flight_status == "ACTIVE") {
-        burn_unit_json_["trips"][0]["flights"][index]["startTime"] = std::to_string(ros::Time::now().toSec());
-        ROS_INFO("in not start loop");
+        start_time_ = ros::Time::now();
+        burn_unit_json_["trips"][0]["flights"][index]["startTime"] = std::to_string(round(start_time_.toSec()));
     }
     else if (flight_status == "COMPLETED") {
-        burn_unit_json_["trips"][0]["flights"][index]["endTime"] = std::to_string(ros::Time::now().toSec());
-        ROS_INFO("in completed loop");
+        end_time_ = ros::Time::now();
+        burn_unit_json_["trips"][0]["flights"][index]["endTime"] = std::to_string(round(end_time_.toSec()));
+        burn_unit_json_["trips"][0]["flights"][index]["duration"] = std::to_string(round((start_time_ - end_time_).toSec()));
     }
     std::string s = burn_unit_json_.dump();
     std_msgs::String burn_string;
@@ -388,13 +356,43 @@ void HelloDeccoManager::mapToGeopoint(const geometry_msgs::PointStamped &point_i
     tf2::doTransform(point_in, point_out, geom_stamped_tf);
 }
 
-// std::string HelloDeccoManager::getStatusString(int status) {
-//     switch (status) {
-//         case FlightStatus::NOT_STARTED:     return "NOT_STARTED";
-//         case FlightStatus::ACTIVE:          return "ACTIVE";
-//         case FlightStatus::COMPLETED:       return "COMPLETED";
-//         default:                            return "unknown";
-//     }
-// }
+json HelloDeccoManager::polygonToBurnUnit(const geometry_msgs::Polygon &polygon) {
+    json burn_unit = R"({
+        "id" : 1,
+        "orgId" : 1,
+        "createdBy" : 1,
+        "name" : "Super Great Burn Unit",
+        "polygon" : [],
+        "trips": [
+            {
+            "id" : 1,
+            "type" : "PRE",
+            "startTime" : 0,
+            "endTime" : 0, 
+            "flights" : [ 
+                {
+                    "startTime" : 0,
+                    "index" : 0,
+                    "endTime" : 0, 
+                    "duration" : 0,
+                    "subpolygon" : [],
+                    "flightLogUrl" : "hellodecco.com/my-url",
+                    "status" : "NOT_STARTED"
+                }
+            ]
+            }
+        ]
+        })"_json;
+
+    json polygon_json;
+    for (int jj = 0; jj < polygon.points.size(); jj++) {
+        json ll;
+        ll.push_back(polygon.points.at(jj).x);
+        ll.push_back(polygon.points.at(jj).y);
+        polygon_json.push_back(ll);
+    }
+    burn_unit["polygon"] = polygon_json;
+    return burn_unit;
+}
 
 }
