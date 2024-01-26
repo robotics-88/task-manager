@@ -15,9 +15,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <geometry_msgs/Twist.h>
 #include <ros/package.h>
 
-#include <task_manager/json.hpp>
-using json = nlohmann::json;
-
 inline static bool operator==(const geometry_msgs::Point& one,
                               const geometry_msgs::Point& two)
 {
@@ -32,8 +29,17 @@ namespace task_manager
 TaskManager::TaskManager(ros::NodeHandle& node)
     : private_nh_("~")
     , nh_(node)
+    , hello_decco_manager_(node)
+    , enable_autonomy_(false)
+    , enable_exploration_(false)
+    , ardupilot_(true)
+    , target_altitude_(2.0)
+    , min_altitude_(2.0)
+    , max_altitude_(10.0)
+    , max_dist_to_polygon_(300.0)
     , map_tf_init_(false)
     , tf_listener_(tf_buffer_)
+    , home_utm_zone_(-1)
     , mavros_map_frame_("map")
     , slam_map_frame_("slam_map")
     , slam_pose_topic_("decco/pose")
@@ -43,7 +49,6 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , bag_active_(false)
     , record_config_name_("r88_default")
     , drone_state_manager_(node)
-    , max_dist_to_polygon_(300.0)
     , cmd_history_("")
     , explore_action_client_("explore", true)
     , health_check_s_(5.0)
@@ -54,6 +59,14 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , did_save_(false)
     , did_takeoff_(false)
 {
+    private_nh_.param<bool>("enable_autonomy", enable_autonomy_, enable_autonomy_);
+    private_nh_.param<bool>("enable_exploration", enable_exploration_, enable_exploration_);
+    private_nh_.param<bool>("ardupilot", ardupilot_, ardupilot_);
+    private_nh_.param<float>("default_altitude_m", target_altitude_, target_altitude_);
+    private_nh_.param<float>("min_altitude", min_altitude_, min_altitude_);
+    private_nh_.param<float>("max_altitude", max_altitude_, max_altitude_);
+    private_nh_.param<double>("max_dist_to_polygon", max_dist_to_polygon_, max_dist_to_polygon_);
+
     std::string goal_topic = "/mavros/setpoint_position/local";
     private_nh_.param<std::string>("goal_topic", goal_topic, goal_topic);
     private_nh_.param<bool>("do_record", do_record_, do_record_);
@@ -64,6 +77,9 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<std::string>("lidar_topic", lidar_topic_, lidar_topic_);
     private_nh_.param<std::string>("mapir_topic", mapir_topic_, mapir_topic_);
     private_nh_.param<std::string>("rosbag_topic", rosbag_topic_, rosbag_topic_);
+    private_nh_.param<std::string>("data_directory", burn_dir_prefix_, burn_dir_prefix_);
+
+    hello_decco_manager_.setFrames(mavros_map_frame_, slam_map_frame_);
 
     // SLAM pose sub
     decco_pose_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>(slam_pose_topic_, 10, &TaskManager::deccoPoseCallback, this);
@@ -82,12 +98,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     health_pub_timer_ = private_nh_.createTimer(health_check_s_,
                                [this](const ros::TimerEvent&) { publishHealth(); });
 
-    // Drone state services
-    drone_state_service_ = nh_.advertiseService("/init_drone_state", &TaskManager::initDroneStateManager, this);
-    drone_ready_service_ = nh_.advertiseService("/prep_drone_action", &TaskManager::getReadyForAction, this);
-    drone_explore_service_ = nh_.advertiseService("/prep_drone_explore", &TaskManager::getReadyForExplore, this);
-    drone_position_service_ = nh_.advertiseService("/get_drone_position", &TaskManager::getDronePosition, this);
-    emergency_service_ = nh_.advertiseService("/emergency_response", &TaskManager::emergencyResponse, this);
+    // Geo/map state services
     geopoint_service_ = nh_.advertiseService("/slam2geo", &TaskManager::convert2Geo, this);
 
     // MAVROS
@@ -109,16 +120,25 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     task_msg_.enable_autonomy = false;
     task_msg_.enable_exploration = false;
 
+    // Burn unit subscribers
+    burn_unit_sub_ = nh_.subscribe<std_msgs::String>("/mapversation/burn_unit_send", 10, &TaskManager::makeBurnUnitJson, this);
+    target_polygon_subscriber_ = nh_.subscribe<geometry_msgs::Polygon>("/mapversation/target_polygon", 10, &TaskManager::targetPolygonCallback, this);
+    target_setpoint_subscriber_ = nh_.subscribe<sensor_msgs::NavSatFix>("/mapversation/target_setpoint", 10, &TaskManager::targetSetpointCallback, this);
+    emergency_subscriber_ = nh_.subscribe<mavros_msgs::StatusText>("/mapversation/emergency", 10, &TaskManager::emergencyResponse, this);
+
+    // Logs created in offline mode
     vegetation_save_client_ = private_nh_.serviceClient<messages_88::Save>("/vegetation/save");
     tree_save_client_ = private_nh_.serviceClient<messages_88::Save>("/species_mapper/save");
     std::string data_folder = ros::package::getPath("task_manager_88") + "/logs/";
     std::string time_local = boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time());
     time_local.replace(time_local.find(" "), 1, "_");
-    directory_ = data_folder + time_local + "/";
-    if (do_record_ && !boost::filesystem::exists(directory_)) {
-        ROS_INFO("Folder did not exist, creating directory: %s", directory_.c_str());
-        boost::filesystem::create_directories(directory_);
+    log_dir_ = data_folder + time_local + "/";
+    if (do_record_ && !boost::filesystem::exists(log_dir_)) {
+        ROS_INFO("Folder did not exist, creating directory: %s", log_dir_.c_str());
+        boost::filesystem::create_directories(log_dir_);
     }
+
+    initDroneStateManager();
 }
 
 TaskManager::~TaskManager(){}
@@ -159,6 +179,19 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
 
     map_tf_timer_.stop();
     map_tf_init_ = true;
+
+    ROS_INFO("waiting for global...");
+    drone_state_manager_.waitForGlobal();
+    while (home_utm_zone_ < 0) {
+        home_utm_zone_ = drone_state_manager_.getUTMZone();
+        ros::spinOnce();
+        ros::Duration(0.2).sleep();
+    }
+    ROS_INFO("Got global, UTM zone: %d. LL : (%f, %f)", home_utm_zone_, drone_state_manager_.getCurrentGlobalPosition().latitude, drone_state_manager_.getCurrentGlobalPosition().longitude);
+    double utm_x, utm_y;
+    drone_state_manager_.initUTM(utm_x, utm_y);
+    hello_decco_manager_.setUtmOffsets(utm_x, utm_y);
+    ROS_INFO("UTM offsets: (%f, %f)", utm_x, utm_y);
 }
 
 void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose) {
@@ -187,15 +220,15 @@ void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &sl
     vision_pose_publisher_.publish(msg_body_pose);
 }
 
-bool TaskManager::emergencyResponse(messages_88::Emergency::Request& req, messages_88::Emergency::Response& resp) {
-    ROS_WARN("Emergency response initiated, level %d.", req.status.severity);
+void TaskManager::emergencyResponse(const mavros_msgs::StatusText::ConstPtr &msg) {
+    ROS_WARN("Emergency response initiated, level %d.", msg->severity);
     // Immediately set to hover
     drone_state_manager_.setMode(loiter_mode_);
-    cmd_history_.append("Emergency init with severity " + std::to_string(req.status.severity) + "\n");
+    cmd_history_.append("Emergency init with severity " + std::to_string(msg->severity) + "\n");
 
     // Then respond based on severity 
     // (message definitions at http://docs.ros.org/en/noetic/api/mavros_msgs/html/msg/StatusText.html)
-    int level = req.status.severity;
+    int level = msg->severity;
     if (level == 5) {
         // NOTICE = PAUSE
         pauseOperations();
@@ -210,7 +243,6 @@ bool TaskManager::emergencyResponse(messages_88::Emergency::Request& req, messag
         pauseOperations();
         drone_state_manager_.setMode(rtl_mode_);
     }
-    return true;
 }
 
 bool TaskManager::convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp) {
@@ -220,26 +252,13 @@ bool TaskManager::convert2Geo(messages_88::Geopoint::Request& req, messages_88::
         return false;
         // TODO decide what to do about it
     }
-    // TODO init tf at the start, doesn't change
-    tf2::Vector3 translate(utm_x_offset_, utm_y_offset_, 0.0);
-    tf2::Transform utm2slam_tf;
-    tf2::Quaternion quat;
-    quat.setRPY(0.0, 0.0, -map_yaw_);
-    utm2slam_tf.setRotation(quat);
-    utm2slam_tf.setOrigin(translate);
-    geometry_msgs::Transform slam2utm = tf2::toMsg(utm2slam_tf);
     geometry_msgs::PointStamped in, out;
     in.header.frame_id = slam_map_frame_;
     in.header.stamp = ros::Time(0);
     in.point.x = req.slam_position.x;
     in.point.y = req.slam_position.y;
     in.point.z = req.slam_position.z;
-    geometry_msgs::TransformStamped geom_stamped_tf;
-    geom_stamped_tf.header.frame_id = slam_map_frame_;
-    geom_stamped_tf.header.stamp = ros::Time(0);
-    geom_stamped_tf.child_frame_id = "utm";
-    geom_stamped_tf.transform = slam2utm;
-    tf2::doTransform(in, out, geom_stamped_tf);
+    hello_decco_manager_.mapToGeopoint(in, out, -map_yaw_);
     resp.utm_position.x = out.point.x;
     resp.utm_position.y = out.point.y;
     return true;
@@ -290,19 +309,13 @@ bool TaskManager::pauseOperations() {
     return true;
 }
 
-bool TaskManager::initDroneStateManager(messages_88::InitDroneState::Request& req, messages_88::InitDroneState::Response& resp) {
+void TaskManager::initDroneStateManager() {
     // Drone state manager setup
-    drone_state_manager_.setAutonomyEnabled(req.enable_autonomy);
-    task_msg_.enable_autonomy = req.enable_autonomy;
-    task_msg_.enable_exploration = req.enable_exploration;
+    drone_state_manager_.setAutonomyEnabled(enable_autonomy_);
+    task_msg_.enable_autonomy = enable_autonomy_;
+    task_msg_.enable_exploration = enable_exploration_;
 
-    ROS_INFO("waiting for global...");
-    drone_state_manager_.waitForGlobal();
-    home_utm_zone_ = drone_state_manager_.getUTMZone();
-    ROS_INFO("Got global, UTM zone: %d. LL : (%f, %f)", home_utm_zone_, drone_state_manager_.getCurrentGlobalPosition().latitude, drone_state_manager_.getCurrentGlobalPosition().longitude);
-    drone_state_manager_.initUTM(utm_x_offset_, utm_y_offset_);
-
-    if (req.ardupilot) {
+    if (ardupilot_) {
         land_mode_ = "LAND";
         loiter_mode_ = "LOITER";
         rtl_mode_ = "RTL";
@@ -315,20 +328,18 @@ bool TaskManager::initDroneStateManager(messages_88::InitDroneState::Request& re
         guided_mode_ = "OFFBOARD";
         drone_state_manager_.setMode("POSCTL");
     }
-    return true;
 }
 
-bool TaskManager::getReadyForAction(messages_88::PrepareDrone::Request& req, messages_88::PrepareDrone::Response& resp) {
+bool TaskManager::getReadyForAction() {
     cmd_history_.append("Get ready command received.\n ");
     getDroneReady();
     return true;
 }
 
-bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, messages_88::PrepareExplore::Response& resp) {
+void TaskManager::getReadyForExplore() {
     cmd_history_.append("Get ready to explore command received.\n ");
     bool needs_transit = false;
     geometry_msgs::PoseStamped target_position;
-    current_polygon_ = transformPolygon(req.polygon);
     if (!isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition().pose.position)) {
         cmd_history_.append("Transit to explore required.\n ");
         needs_transit = true;
@@ -337,14 +348,13 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
         double min_dist;
         if (!polygonDistanceOk(min_dist, target_position, current_polygon_)) {
             ROS_WARN("Polygon rejected, exceeds maximum starting distance threshold.");
-            resp.success = false;
-            return false;
+            return;
         }
         else {
             ROS_DEBUG("Polygon received, distance ok.");
         }
         ROS_INFO("target position x,y was %f, %f", target_position.pose.position.x, target_position.pose.position.y);
-        target_position.pose.position.z = req.altitude;
+        target_position.pose.position.z = target_altitude_;
     }
 
     if (task_msg_.enable_autonomy) {
@@ -366,22 +376,16 @@ bool TaskManager::getReadyForExplore(messages_88::PrepareExplore::Request& req, 
         explore_goal.uuid.data = "NO_TRANSIT";
     }
     explore_goal.polygon = current_polygon_;
-    explore_goal.altitude = req.altitude;
-    explore_goal.min_altitude = req.min_altitude;
-    explore_goal.max_altitude = req.max_altitude;
+    explore_goal.altitude = target_altitude_;
+    explore_goal.min_altitude = min_altitude_;
+    explore_goal.max_altitude = max_altitude_;
     if (task_msg_.enable_exploration) {
         explore_action_client_.waitForServer();
         sendExploreTask(explore_goal);
         cmd_history_.append("Sent explore goal.\n");
-        resp.success = true;
+        hello_decco_manager_.updateBurnUnit(current_index_, "ACTIVE");
     }
-    return true;
-}
-
-bool TaskManager::getDronePosition(messages_88::GetPosition::Request& req, messages_88::GetPosition::Response& resp) {
-    resp.global = drone_state_manager_.getCurrentGlobalPosition();
-    resp.local = drone_state_manager_.getCurrentLocalPosition();
-    return true;
+    return;
 }
 
 void TaskManager::startNav2PointTask(messages_88::NavToPointGoal &nav_goal) {
@@ -439,7 +443,7 @@ void TaskManager::stop() {
     stopBag();
     if (!did_save_) {
         messages_88::Save save_msg;
-        save_msg.request.directory.data = directory_;
+        save_msg.request.directory.data = log_dir_;
         vegetation_save_client_.call(save_msg);
         tree_save_client_.call(save_msg);
         did_save_ = true;
@@ -470,6 +474,8 @@ void TaskManager::modeMonitor() {
         did_takeoff_ = false; // Reset so can restart if another takeoff
     }
     geometry_msgs::PoseStamped home_pos;
+    home_pos.header.frame_id = slam_map_frame_;
+    home_pos.header.stamp = ros::Time::now();
     home_pos.pose.position.x = 0;
     home_pos.pose.position.y = 0;
     home_pos.pose.position.z = current_explore_goal_.altitude;
@@ -485,6 +491,7 @@ void TaskManager::modeMonitor() {
             cmd_history_.append(action_string);
             local_pos_pub_.publish(home_pos);
             current_status_ = CurrentStatus::RTL_88;
+            hello_decco_manager_.updateBurnUnit(current_index_, "COMPLETED");
         }
     }
     if (current_status_ == CurrentStatus::RTL_88) { 
@@ -503,8 +510,9 @@ void TaskManager::startBag() {
     if (bag_active_) {
         return;
     }
-    cmd_history_.append("Bag starting.\n ");
+    cmd_history_.append("Bag starting, prefix " + burn_dir_prefix_ + " .\n ");
     bag_recorder::Rosbag start_bag_msg;
+    start_bag_msg.data_dir = burn_dir_prefix_;
     start_bag_msg.bag_name = "decco";
     start_bag_msg.config = record_config_name_;
     start_bag_msg.header.stamp = ros::Time::now();
@@ -532,26 +540,6 @@ void TaskManager::getDroneReady() {
         did_takeoff_ = drone_state_manager_.getReadyForAction();
         cmd_history_.append("Drone ready for action result: " + std::to_string(did_takeoff_) + "\n");
     }
-}
-
-geometry_msgs::Polygon TaskManager::transformPolygon(const geometry_msgs::Polygon &map_poly) {
-    geometry_msgs::Polygon slam_map_poly;
-    if (map_tf_init_) {
-        geometry_msgs::TransformStamped tf = tf_buffer_.lookupTransform(slam_map_frame_, mavros_map_frame_, ros::Time(0));
-        for (int nn = 0; nn < map_poly.points.size(); nn++) {
-            geometry_msgs::PointStamped point_tf;
-            geometry_msgs::PointStamped map_pt;
-            map_pt.point.x = map_poly.points.at(nn).x;
-            map_pt.point.y = map_poly.points.at(nn).y;
-            map_pt.header.frame_id = mavros_map_frame_;
-            tf2::doTransform(map_pt, point_tf, tf);
-            geometry_msgs::Point32 point;
-            point.x = point_tf.point.x;
-            point.y = point_tf.point.y;
-            slam_map_poly.points.push_back(point);
-        }
-    }
-    return slam_map_poly;
 }
 
 bool TaskManager::isInside(const geometry_msgs::Polygon& polygon, const geometry_msgs::Point& point)
@@ -718,6 +706,7 @@ void TaskManager::publishHealth() {
     jsonObjects["header"] = header;
 
     auto healthObjects = json::array();
+    // TODO fix 1,2 health topics, missing now
     // 1) MAVROS position
     json j = {
         {"name", "mavrosPosition"},
@@ -789,6 +778,52 @@ void TaskManager::mapirCallback(const sensor_msgs::ImageConstPtr &msg) {
 
 void TaskManager::rosbagCallback(const std_msgs::StringConstPtr &msg) {
     last_rosbag_stamp_ = ros::Time::now();
+}
+
+void TaskManager::makeBurnUnitJson(const std_msgs::String::ConstPtr &msg) {
+    if (!enable_exploration_) {
+        ROS_WARN("Exploration disabled, burn unit ignored.");
+        return;
+    }
+    if (!map_tf_init_) {
+        ROS_WARN("Not ready for flight, try again after initialized.");
+        return;
+    }
+    json burn_unit = json::parse(msg->data);
+    std::string name = burn_unit["name"];
+    burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
+    hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
+    current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
+    getReadyForExplore();
+}
+
+void TaskManager::makeBurnUnitJson(json burn_unit) {
+    if (!enable_exploration_) {
+        ROS_WARN("Exploration disabled, burn unit ignored.");
+        return;
+    }
+    if (!map_tf_init_) {
+        ROS_WARN("Not ready for flight, try again after initialized.");
+        return;
+    }
+    std::string name = burn_unit["name"];
+    burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
+    hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
+    current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
+    getReadyForExplore();
+}
+
+// Below are purely test methods, to eventually be deprecated in favor of burn units
+void TaskManager::targetPolygonCallback(const geometry_msgs::Polygon::ConstPtr &msg) {
+    json burn_unit = hello_decco_manager_.polygonToBurnUnit(*msg);
+    makeBurnUnitJson(burn_unit);
+}
+
+void TaskManager::targetSetpointCallback(const sensor_msgs::NavSatFix::ConstPtr &msg) {
+    // ATM, this response is purely a testing function. All the drone should do is take off and hover.
+    ROS_INFO("setpoint received, ll: %f, %f", msg->latitude, msg->longitude);
+    getReadyForAction();
+    // TODO: check dist (need mavros sub position) below threshold, check mavros status, takeoff etc if needed, go to point
 }
 
 }
