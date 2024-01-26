@@ -180,6 +180,19 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
 
     map_tf_timer_.stop();
     map_tf_init_ = true;
+
+    ROS_INFO("waiting for global...");
+    drone_state_manager_.waitForGlobal();
+    while (home_utm_zone_ < 0) {
+        home_utm_zone_ = drone_state_manager_.getUTMZone();
+        ros::spinOnce();
+        ros::Duration(0.2).sleep();
+    }
+    ROS_INFO("Got global, UTM zone: %d. LL : (%f, %f)", home_utm_zone_, drone_state_manager_.getCurrentGlobalPosition().latitude, drone_state_manager_.getCurrentGlobalPosition().longitude);
+    double utm_x, utm_y;
+    drone_state_manager_.initUTM(utm_x, utm_y);
+    hello_decco_manager_.setUtmOffsets(utm_x, utm_y);
+    ROS_INFO("UTM offsets: (%f, %f)", utm_x, utm_y);
     health_pub_timer_ = private_nh_.createTimer(health_check_s_,
                                [this](const ros::TimerEvent&) { publishHealth(); });
 }
@@ -310,19 +323,6 @@ void TaskManager::initDroneStateManager() {
     drone_state_manager_.setAutonomyEnabled(enable_autonomy_);
     task_msg_.enable_autonomy = enable_autonomy_;
     task_msg_.enable_exploration = enable_exploration_;
-
-    ROS_INFO("waiting for global...");
-    drone_state_manager_.waitForGlobal();
-    while (home_utm_zone_ < 0) {
-        home_utm_zone_ = drone_state_manager_.getUTMZone();
-        ros::spinOnce();
-        ros::Duration(0.2).sleep();
-    }
-    ROS_INFO("Got global, UTM zone: %d. LL : (%f, %f)", home_utm_zone_, drone_state_manager_.getCurrentGlobalPosition().latitude, drone_state_manager_.getCurrentGlobalPosition().longitude);
-    double utm_x, utm_y;
-    drone_state_manager_.initUTM(utm_x, utm_y);
-    hello_decco_manager_.setUtmOffsets(utm_x, utm_y);
-    ROS_INFO("UTM offsets: (%f, %f)", utm_x, utm_y);
 
     if (ardupilot_) {
         land_mode_ = "LAND";

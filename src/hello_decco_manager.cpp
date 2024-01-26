@@ -339,7 +339,7 @@ geometry_msgs::Polygon HelloDeccoManager::transformPolygon(const geometry_msgs::
 
 void HelloDeccoManager::mapToGeopoint(const geometry_msgs::PointStamped &point_in, geometry_msgs::PointStamped &point_out, double yaw) {
     // TODO init tf at the start, doesn't change
-    tf2::Vector3 translate(utm_x_offset_, utm_y_offset_, 0.0);
+    tf2::Vector3 translate(-utm_x_offset_, -utm_y_offset_, 0.0);
     tf2::Transform utm2slam_tf;
     tf2::Quaternion quat;
     quat.setRPY(0.0, 0.0, yaw);
