@@ -51,6 +51,7 @@ include_directories(
 
 add_executable(task_manager
   src/drone_state_manager.cpp
+  src/hello_decco_manager.cpp
   src/task_manager.cpp
   src/task_manager_node.cpp
 )
