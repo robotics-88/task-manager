@@ -171,6 +171,9 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
         yaw = -yaw + 90.0;
         // Convert to radians
         map_yaw_ = yaw * M_PI / 180.0;
+        std_msgs::Float64 yaw_msg;
+        yaw_msg.data = map_yaw_;
+        map_yaw_pub_.publish(yaw_msg);
     }
     else {
         ROS_WARN("Waiting for heading from rosbag...");
