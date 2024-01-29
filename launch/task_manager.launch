@@ -27,6 +27,7 @@
     <arg name="data_directory" default="/home/$(arg user)/src/bags/"/>
 
     <arg name="simulate" default="false"/>
+    <arg name="offline" default="false"/>
     
     <node pkg="task_manager_88" type="task_manager" name="task_manager" output="screen">
         <param name="enable_autonomy" value="$(arg enable_autonomy)"/>
@@ -52,5 +53,6 @@
         <param name="imu_rate" value="120"/>
         <param name="local_pos_rate" value="60"/>
         <param name="simulate" value="$(arg simulate)"/>
+        <param name="offline" value="$(arg offline)"/>
     </node>
 </launch>

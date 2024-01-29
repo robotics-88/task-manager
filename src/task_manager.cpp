@@ -29,6 +29,7 @@ namespace task_manager
 TaskManager::TaskManager(ros::NodeHandle& node)
     : private_nh_("~")
     , nh_(node)
+    , offline_(false)
     , hello_decco_manager_(node)
     , enable_autonomy_(false)
     , enable_exploration_(false)
@@ -79,6 +80,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<std::string>("lidar_topic", lidar_topic_, lidar_topic_);
     private_nh_.param<std::string>("mapir_topic", mapir_topic_, mapir_topic_);
     private_nh_.param<std::string>("rosbag_topic", rosbag_topic_, rosbag_topic_);
+    private_nh_.param<bool>("offline", offline_, offline_);
     private_nh_.param<std::string>("data_directory", burn_dir_prefix_, burn_dir_prefix_);
 
     hello_decco_manager_.setFrames(mavros_map_frame_, slam_map_frame_);

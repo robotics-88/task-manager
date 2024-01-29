@@ -98,6 +98,11 @@ class TaskManager {
         ros::NodeHandle private_nh_;
         ros::NodeHandle nh_;
 
+        // Offline handling
+        bool offline_;
+        ros::Publisher map_yaw_pub_;
+        ros::Subscriber map_yaw_sub_;
+
         // Hello Decco comms
         hello_decco_manager::HelloDeccoManager hello_decco_manager_;
         ros::Subscriber target_polygon_subscriber_;
