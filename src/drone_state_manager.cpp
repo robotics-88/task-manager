@@ -29,6 +29,7 @@ namespace drone_state_manager
 DroneStateManager::DroneStateManager(ros::NodeHandle& node)
   : private_nh_("~")
   , nh_(node)
+  , simulate_(false)
   , autonomy_active_(false)
   , enable_autonomy_(false)
   , enable_exploration_(false)
@@ -72,9 +73,8 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
     private_nh_.param<float>("all_stream_rate", all_stream_rate_, all_stream_rate_);
 
     // Add a stream rate modifier in simulation b/c arducopter loop rate is slow
-    bool simulate;
-    private_nh_.param<bool>("simulate", simulate, false);
-    if (simulate)
+    private_nh_.param<bool>("simulate", simulate_, simulate_);
+    if (simulate_)
         stream_rate_modifier_ = 300.f / 222.f;
     else
         stream_rate_modifier_ = 1.f;
@@ -127,10 +127,12 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
 
         // Wait an extra long on 
         if (attempts_ == 0) {
-            for (int i = 0; i < 9; i++) {
-                ROS_INFO("Drone state manager waiting for param fetch to complete");
-                // Takes about 45 seconds, so run 5 second sleep 9 times. 
-                ros::Duration(5.0).sleep();
+
+            // Param fetch takes about 50 seconds in sim, 15 seconds on drone
+            int approx_time_to_fetch = simulate_ ? 50 : 15;
+            for (int i = 0; i < approx_time_to_fetch; i++) {
+                ROS_INFO_THROTTLE(5, "Drone state manager waiting for param fetch to complete");
+                ros::Duration(1.0).sleep();
             }
         }
 

@@ -81,6 +81,8 @@ class DroneStateManager {
         ros::NodeHandle private_nh_;
         ros::NodeHandle nh_;
 
+        bool simulate_;
+
         bool autonomy_active_;
 
         // Safety for enabling control
