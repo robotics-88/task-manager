@@ -61,6 +61,7 @@ class TaskManager {
 
         void mapTfTimerCallback(const ros::TimerEvent&);
         void failsafe();
+        void mapYawCallback(const std_msgs::Float64::ConstPtr &msg);
 
         // Heartbeat
         void uiHeartbeatCallback(const std_msgs::String::ConstPtr &msg);

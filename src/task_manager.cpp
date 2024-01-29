@@ -118,6 +118,12 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     // Recording
     start_record_pub_ = nh_.advertise<bag_recorder::Rosbag>("/record/start", 5);
     stop_record_pub_ = nh_.advertise<std_msgs::String>("/record/stop", 5);
+    if (offline_) {
+        map_yaw_sub_ = nh_.subscribe<std_msgs::Float64>("map_yaw", 10, &TaskManager::mapYawCallback, this);
+    }
+    else {
+        map_yaw_pub_ = nh_.advertise<std_msgs::Float64>("map_yaw", 5);
+    }
 
     // Task status pub
     task_pub_ = nh_.advertise<messages_88::TaskStatus>("task_status", 10);
@@ -152,18 +158,24 @@ TaskManager::~TaskManager(){}
 void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
 
     // Get drone heading
-    double yaw = 0;
-    if (!drone_state_manager_.getMapYaw(yaw)) {
-        ROS_WARN_THROTTLE(10, "Waiting for heading from autopilot...");
-        return;
+    if (!offline_) {
+        double yaw = 0;
+        if (!drone_state_manager_.getMapYaw(yaw)) {
+            ROS_WARN_THROTTLE(10, "Waiting for heading from autopilot...");
+            return;
+        }
+
+        ROS_INFO("Initial heading: %f", yaw);
+
+        // Convert yaw from NED to ENU
+        yaw = -yaw + 90.0;
+        // Convert to radians
+        map_yaw_ = yaw * M_PI / 180.0;
     }
-
-    ROS_INFO("Initial heading: %f", yaw);
-
-    // Convert yaw from NED to ENU
-    yaw = -yaw + 90.0;
-    // Convert to radians
-    map_yaw_ = yaw * M_PI / 180.0;
+    else {
+        ROS_WARN("Waiting for heading from rosbag...");
+        ros::topic::waitForMessage<std_msgs::Float64>("map_yaw", nh_);
+    }
 
     // Fill in data
     map_to_slam_tf_.header.frame_id = mavros_map_frame_;
@@ -861,6 +873,10 @@ void TaskManager::targetSetpointCallback(const sensor_msgs::NavSatFix::ConstPtr 
     ROS_INFO("setpoint received, ll: %f, %f", msg->latitude, msg->longitude);
     getReadyForAction();
     // TODO: check dist (need mavros sub position) below threshold, check mavros status, takeoff etc if needed, go to point
+}
+
+void TaskManager::mapYawCallback(const std_msgs::Float64::ConstPtr &msg) {
+    map_yaw_ = msg->data;
 }
 
 json TaskManager::makeTaskJson() {
