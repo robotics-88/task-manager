@@ -28,7 +28,7 @@ HelloDeccoManager::HelloDeccoManager(ros::NodeHandle& node)
 
     burn_unit_pub_ = nh_.advertise<std_msgs::String>("/mapversation/burn_unit_receive", 10);
     mavros_geofence_client_ = nh_.serviceClient<mavros_msgs::WaypointPush>("/mavros/geofence/push");
-    map_region_pub_ = nh_.advertise<visualization_msgs::Marker>("/map_region", 10);
+    map_region_pub_ = nh_.advertise<visualization_msgs::Marker>("/map_region", 10, true);
 }
 
 HelloDeccoManager::~HelloDeccoManager() {
