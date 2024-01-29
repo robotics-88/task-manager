@@ -81,14 +81,15 @@ class TaskManager {
         void lidarCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
         void mapirCallback(const sensor_msgs::ImageConstPtr &msg);
         void rosbagCallback(const std_msgs::StringConstPtr &msg);
+        void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
 
     private:
         enum CurrentStatus
         {
             ON_START,
+            INITIALIZED,
             EXPLORING,
             WAITING_TO_EXPLORE,
-            HOVERING,
             NAVIGATING,
             RTL_88,
             TAKING_OFF,
@@ -169,6 +170,9 @@ class TaskManager {
         std::string cmd_history_;
         messages_88::TaskStatus task_msg_;
         ros::Publisher task_pub_;
+        ros::Publisher task_json_pub_;
+        geometry_msgs::PoseStamped goal_;
+        ros::Subscriber goal_sub_;
 
         actionlib::SimpleActionClient<messages_88::ExploreAction> explore_action_client_;
 
@@ -233,7 +237,7 @@ class TaskManager {
         void padNavTarget(geometry_msgs::PoseStamped &target);
         std::string getStatusString();
         void publishHealth();
-
+        json makeTaskJson();
 };
 
 }

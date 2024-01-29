@@ -119,7 +119,10 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     start_record_pub_ = nh_.advertise<bag_recorder::Rosbag>("/record/start", 5);
     stop_record_pub_ = nh_.advertise<std_msgs::String>("/record/stop", 5);
 
+    // Task status pub
     task_pub_ = nh_.advertise<messages_88::TaskStatus>("task_status", 10);
+    task_json_pub_ = nh_.advertise<std_msgs::String>("/mapversation/task_status", 10);
+    goal_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>(goal_topic, 10, &TaskManager::goalCallback, this);
     task_msg_.enable_autonomy = false;
     task_msg_.enable_exploration = false;
 
@@ -195,6 +198,7 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
     drone_state_manager_.initUTM(utm_x, utm_y);
     hello_decco_manager_.setUtmOffsets(utm_x, utm_y);
     ROS_INFO("UTM offsets: (%f, %f)", utm_x, utm_y);
+    current_status_ = CurrentStatus::INITIALIZED;
     health_pub_timer_ = private_nh_.createTimer(health_check_s_,
                                [this](const ros::TimerEvent&) { publishHealth(); });
 }
@@ -514,6 +518,10 @@ void TaskManager::modeMonitor() {
     task_msg_.cmd_history.data = cmd_history_.c_str();
     task_msg_.current_status.data = getStatusString();
     task_pub_.publish(task_msg_);
+    json task_json = makeTaskJson();
+    std_msgs::String task_json_msg;
+    task_json_msg.data = task_json.dump();
+    task_json_pub_.publish(task_json_msg);
 }
 
 void TaskManager::startBag() {
@@ -694,7 +702,7 @@ std::string TaskManager::getStatusString() {
         case CurrentStatus::ON_START:           return "ON_START";
         case CurrentStatus::EXPLORING:          return "EXPLORING";
         case CurrentStatus::WAITING_TO_EXPLORE: return "WAITING_TO_EXPLORE";
-        case CurrentStatus::HOVERING:           return "HOVERING";
+        case CurrentStatus::INITIALIZED:        return "INITIALIZED";
         case CurrentStatus::NAVIGATING:         return "NAVIGATING";
         case CurrentStatus::RTL_88:             return "RTL_88";
         case CurrentStatus::TAKING_OFF:         return "TAKING_OFF";
@@ -804,6 +812,11 @@ void TaskManager::rosbagCallback(const std_msgs::StringConstPtr &msg) {
     last_rosbag_stamp_ = ros::Time::now();
 }
 
+void TaskManager::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
+    task_msg_.goal = *msg;
+    goal_ = *msg;
+}
+
 void TaskManager::makeBurnUnitJson(const std_msgs::String::ConstPtr &msg) {
     if (!enable_exploration_) {
         ROS_WARN("Exploration disabled, burn unit ignored.");
@@ -848,6 +861,19 @@ void TaskManager::targetSetpointCallback(const sensor_msgs::NavSatFix::ConstPtr 
     ROS_INFO("setpoint received, ll: %f, %f", msg->latitude, msg->longitude);
     getReadyForAction();
     // TODO: check dist (need mavros sub position) below threshold, check mavros status, takeoff etc if needed, go to point
+}
+
+json TaskManager::makeTaskJson() {
+    json j;
+    j["flightMode"] = drone_state_manager_.getFlightMode();
+    double xval = goal_.pose.position.x;
+    double yval = goal_.pose.position.y;
+    json goalArray;
+    goalArray.push_back(xval);
+    goalArray.push_back(yval);
+    j["goal"] = goalArray;
+    j["taskStatus"] = getStatusString();
+    return j;
 }
 
 }
