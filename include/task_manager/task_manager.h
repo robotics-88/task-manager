@@ -60,6 +60,7 @@ class TaskManager {
         void emergencyResponse(const mavros_msgs::StatusText::ConstPtr &msg);
 
         void mapTfTimerCallback(const ros::TimerEvent&);
+        void failsafe();
 
         // Heartbeat
         void uiHeartbeatCallback(const std_msgs::String::ConstPtr &msg);
@@ -75,6 +76,7 @@ class TaskManager {
         bool pauseOperations();
 
         // Health subscribers, unused except to verify publishing
+        void pathPlannerCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
         void costmapCallback(const map_msgs::OccupancyGridUpdate::ConstPtr &msg);
         void lidarCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
         void mapirCallback(const sensor_msgs::ImageConstPtr &msg);
@@ -167,17 +169,19 @@ class TaskManager {
 
         // Health params and subscribers (for topics not already present)
         ros::Duration health_check_s_;
-        ros::Time last_mavros_pos_stamp_;
+        ros::Time last_path_planner_stamp_;
         ros::Time last_slam_pos_stamp_;
         ros::Time last_costmap_stamp_;
         ros::Time last_lidar_stamp_;
         ros::Time last_mapir_stamp_;
         ros::Time last_rosbag_stamp_;
+        ros::Subscriber path_planner_sub_;
         ros::Subscriber costmap_sub_;
         ros::Subscriber lidar_sub_;
         ros::Subscriber mapir_sub_;
         ros::Subscriber rosbag_sub_;
         ros::Publisher health_pub_;
+        std::string path_planner_topic_;
         std::string costmap_topic_;
         std::string lidar_topic_;
         std::string mapir_topic_;

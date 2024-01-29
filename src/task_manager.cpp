@@ -52,8 +52,9 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , cmd_history_("")
     , explore_action_client_("explore", true)
     , health_check_s_(5.0)
+    , path_planner_topic_("/kd_pointcloud_accumulated")
     , costmap_topic_("/costmap_node/costmap/costmap")
-    , lidar_topic_("/livox/lidar")
+    , lidar_topic_("/cloud_registered")
     , mapir_topic_("/mapir_rgn/image_rect")
     , rosbag_topic_("/record/heartbeat")
     , did_save_(false)
@@ -72,6 +73,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<bool>("do_record", do_record_, do_record_);
     private_nh_.param<std::string>("mavros_map_frame", mavros_map_frame_, mavros_map_frame_);
     private_nh_.param<std::string>("slam_map_frame", slam_map_frame_, slam_map_frame_);
+    private_nh_.param<std::string>("path_planner_topic", path_planner_topic_, path_planner_topic_);
     private_nh_.param<std::string>("slam_pose_topic", slam_pose_topic_, slam_pose_topic_);
     private_nh_.param<std::string>("costmap_topic", costmap_topic_, costmap_topic_);
     private_nh_.param<std::string>("lidar_topic", lidar_topic_, lidar_topic_);
@@ -91,12 +93,11 @@ TaskManager::TaskManager(ros::NodeHandle& node)
 
     // Health pubs/subs
     health_pub_ = nh_.advertise<std_msgs::String>("/mapversation/health_report", 10);
+    path_planner_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(path_planner_topic_, 10, &TaskManager::pathPlannerCallback, this);
     costmap_sub_ = nh_.subscribe<map_msgs::OccupancyGridUpdate>(costmap_topic_, 10, &TaskManager::costmapCallback, this);
     lidar_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(lidar_topic_, 10, &TaskManager::lidarCallback, this);
     mapir_sub_ = nh_.subscribe<sensor_msgs::Image>(mapir_topic_, 10, &TaskManager::mapirCallback, this);
     rosbag_sub_ = nh_.subscribe<std_msgs::String>(rosbag_topic_, 10, &TaskManager::rosbagCallback, this);
-    health_pub_timer_ = private_nh_.createTimer(health_check_s_,
-                               [this](const ros::TimerEvent&) { publishHealth(); });
 
     // Geo/map state services
     geopoint_service_ = nh_.advertiseService("/slam2geo", &TaskManager::convert2Geo, this);
@@ -192,6 +193,14 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
     drone_state_manager_.initUTM(utm_x, utm_y);
     hello_decco_manager_.setUtmOffsets(utm_x, utm_y);
     ROS_INFO("UTM offsets: (%f, %f)", utm_x, utm_y);
+    health_pub_timer_ = private_nh_.createTimer(health_check_s_,
+                               [this](const ros::TimerEvent&) { publishHealth(); });
+}
+
+void TaskManager::failsafe() {
+    cmd_history_.append("Failsafe init. \n");
+    drone_state_manager_.setMode(land_mode_);
+    stop();
 }
 
 void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose) {
@@ -218,6 +227,8 @@ void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &sl
     msg_body_pose.header.stamp = slam_pose->header.stamp;
 
     vision_pose_publisher_.publish(msg_body_pose);
+
+    last_slam_pos_stamp_ = slam_pose->header.stamp;
 }
 
 void TaskManager::emergencyResponse(const mavros_msgs::StatusText::ConstPtr &msg) {
@@ -231,7 +242,7 @@ void TaskManager::emergencyResponse(const mavros_msgs::StatusText::ConstPtr &msg
     int level = msg->severity;
     if (level == 5) {
         // NOTICE = PAUSE
-        pauseOperations();
+        // TODO, tell exploration to stop searching frontiers. For now, will keep blacklisting them, but the drone is in loiter mode. Currently no way to pick back up and set to guided mode (here or in HD)
     }
     else if (level == 0) {
         // EMERGENCY = LAND IMMEDIATELY
@@ -299,12 +310,10 @@ void TaskManager::uiHeartbeatCallback(const std_msgs::String::ConstPtr &msg) {
 }
 
 bool TaskManager::pauseOperations() {
+    // TODO figure out how to pause and restart
     actionlib::SimpleClientGoalState goal_state = explore_action_client_.getState();
     if (goal_state == actionlib::SimpleClientGoalState::ACTIVE) {
         explore_action_client_.cancelAllGoals();
-    }
-    if (explore_action_client_.getState() == actionlib::SimpleClientGoalState::ACTIVE) {
-        return false;
     }
     return true;
 }
@@ -448,8 +457,7 @@ void TaskManager::stop() {
         tree_save_client_.call(save_msg);
         did_save_ = true;
     }
-
-    // TODO stop any active goals
+    pauseOperations();
 }
 
 void TaskManager::modeMonitor() {
@@ -706,19 +714,28 @@ void TaskManager::publishHealth() {
     jsonObjects["header"] = header;
 
     auto healthObjects = json::array();
-    // TODO fix 1,2 health topics, missing now
-    // 1) MAVROS position
+    // 1) Path planner
+    bool path_healthy = (t - last_path_planner_stamp_ < health_check_s_);
+    if (!path_healthy) {
+        cmd_history_.append("Failsafe triggered by path unhealthy. \n");
+        failsafe();
+    }
     json j = {
-        {"name", "mavrosPosition"},
-        {"label", "MAVROS position"},
-        {"isHealthy", (t - last_mavros_pos_stamp_ < health_check_s_)}
+        {"name", "pathPlanner"},
+        {"label", "Path planner"},
+        {"isHealthy", path_healthy}
     };
     healthObjects.push_back(j);
     // 2) SLAM position
+    bool slam_healthy = (t - last_slam_pos_stamp_ < health_check_s_);
+    if (!slam_healthy) {
+        cmd_history_.append("Failsafe triggered by SLAM unhealthy. \n");
+        failsafe();
+    }
     j = {
         {"name", "slamPosition"},
         {"label", "SLAM position"},
-        {"isHealthy", (t - last_slam_pos_stamp_ < health_check_s_)}
+        {"isHealthy", slam_healthy}
     };
     healthObjects.push_back(j);
     // 3) costmap
@@ -764,11 +781,16 @@ void TaskManager::publishHealth() {
     health_pub_.publish(health_string);
 }
 
+void TaskManager::pathPlannerCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
+    last_path_planner_stamp_ = msg->header.stamp;
+}
+
 void TaskManager::costmapCallback(const map_msgs::OccupancyGridUpdate::ConstPtr &msg) {
     last_costmap_stamp_ = msg->header.stamp;
 }
 
 void TaskManager::lidarCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
+    // TODO do we want to change this to point to raw pointcloud? If registered, not independent from SLAM position, but raw requires handling multiple data types.
     last_lidar_stamp_ =  msg->header.stamp;
 }
 
