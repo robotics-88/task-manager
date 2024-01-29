@@ -122,7 +122,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
         map_yaw_sub_ = nh_.subscribe<std_msgs::Float64>("map_yaw", 10, &TaskManager::mapYawCallback, this);
     }
     else {
-        map_yaw_pub_ = nh_.advertise<std_msgs::Float64>("map_yaw", 5);
+        map_yaw_pub_ = nh_.advertise<std_msgs::Float64>("map_yaw", 5, true);
     }
 
     // Task status pub
