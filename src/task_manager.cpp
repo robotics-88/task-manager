@@ -873,6 +873,9 @@ json TaskManager::makeTaskJson() {
     goalArray.push_back(yval);
     j["goal"] = goalArray;
     j["taskStatus"] = getStatusString();
+    j["minAltitude"] = min_altitude_;
+    j["maxAltitude"] = max_altitude_;
+    j["targetAltitude"] = target_altitude_;
     return j;
 }
 

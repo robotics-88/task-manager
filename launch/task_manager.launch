@@ -9,8 +9,8 @@
     <arg name="ardupilot" default="true"/>
     
     <arg name="default_altitude_m" default="2.0"/>
-    <arg name="min_altitude_m" default="2.0"/>
-    <arg name="max_altitude_m" default="10.0"/>
+    <arg name="min_altitude" default="2.0"/>
+    <arg name="max_altitude" default="10.0"/>
     <arg name="max_dist_to_polygon" default="500"/>
     <arg name="flightleg_area_m2" default="2023"/> <!-- 1 acre = 4046 m2-->
 
@@ -44,8 +44,8 @@
         <param name="mapir_topic" value="$(arg mapir_topic)"/>
         <param name="rosbag_topic" value="$(arg rosbag_topic)"/>
         <param name="default_altitude_m" value="$(arg default_altitude_m)"/>
-        <param name="min_altitude_m" value="$(arg min_altitude_m)"/>
-        <param name="max_altitude_m" value="$(arg max_altitude_m)"/>
+        <param name="min_altitude" value="$(arg min_altitude)"/>
+        <param name="max_altitude" value="$(arg max_altitude)"/>
         <param name="max_dist_to_polygon" value="$(arg max_dist_to_polygon)"/>
         <param name="ardupilot" value="$(arg ardupilot)"/>
         <param name="flightleg_area_m2" value="$(arg flightleg_area_m2)"/>
