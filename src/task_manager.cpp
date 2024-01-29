@@ -873,7 +873,7 @@ void TaskManager::targetPolygonCallback(const geometry_msgs::Polygon::ConstPtr &
 void TaskManager::targetSetpointCallback(const sensor_msgs::NavSatFix::ConstPtr &msg) {
     // ATM, this response is purely a testing function. All the drone should do is take off and hover.
     ROS_INFO("setpoint received, ll: %f, %f", msg->latitude, msg->longitude);
-    getReadyForAction();
+    startBag();
     // TODO: check dist (need mavros sub position) below threshold, check mavros status, takeoff etc if needed, go to point
 }
 
