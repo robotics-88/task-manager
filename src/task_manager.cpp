@@ -825,7 +825,6 @@ void TaskManager::rosbagCallback(const std_msgs::StringConstPtr &msg) {
 }
 
 void TaskManager::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
-    task_msg_.goal = *msg;
     goal_ = *msg;
 }
 
