@@ -81,6 +81,7 @@ class TaskManager {
         void costmapCallback(const map_msgs::OccupancyGridUpdate::ConstPtr &msg);
         void lidarCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
         void mapirCallback(const sensor_msgs::ImageConstPtr &msg);
+        void attolloCallback(const sensor_msgs::ImageConstPtr &msg);
         void rosbagCallback(const std_msgs::StringConstPtr &msg);
         void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
 
@@ -184,11 +185,13 @@ class TaskManager {
         ros::Time last_costmap_stamp_;
         ros::Time last_lidar_stamp_;
         ros::Time last_mapir_stamp_;
+        ros::Time last_attollo_stamp_;
         ros::Time last_rosbag_stamp_;
         ros::Subscriber path_planner_sub_;
         ros::Subscriber costmap_sub_;
         ros::Subscriber lidar_sub_;
         ros::Subscriber mapir_sub_;
+        ros::Subscriber attollo_sub_;
         ros::Subscriber rosbag_sub_;
         ros::Publisher health_pub_;
         std::string path_planner_topic_;

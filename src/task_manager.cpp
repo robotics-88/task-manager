@@ -99,6 +99,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     costmap_sub_ = nh_.subscribe<map_msgs::OccupancyGridUpdate>(costmap_topic_, 10, &TaskManager::costmapCallback, this);
     lidar_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(lidar_topic_, 10, &TaskManager::lidarCallback, this);
     mapir_sub_ = nh_.subscribe<sensor_msgs::Image>(mapir_topic_, 10, &TaskManager::mapirCallback, this);
+    attollo_sub_ = nh_.subscribe<sensor_msgs::Image>("/attollo_cam/image_rect", 10, &TaskManager::attolloCallback, this);
     rosbag_sub_ = nh_.subscribe<std_msgs::String>(rosbag_topic_, 10, &TaskManager::rosbagCallback, this);
 
     // Geo/map state services
@@ -783,6 +784,12 @@ void TaskManager::publishHealth() {
         {"label", "MAPIR Camera"},
         {"isHealthy", (t - last_mapir_stamp_ < health_check_s_)}
     };
+    // 5) Attollo
+    j = {
+        {"name", "attollo"},
+        {"label", "Attollo Camera"},
+        {"isHealthy", (t - last_attollo_stamp_ < health_check_s_)}
+    };
     healthObjects.push_back(j);
     // 6) Explore
     j = {
@@ -821,6 +828,10 @@ void TaskManager::lidarCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
 
 void TaskManager::mapirCallback(const sensor_msgs::ImageConstPtr &msg) {
     last_mapir_stamp_ = msg->header.stamp;
+}
+
+void TaskManager::attolloCallback(const sensor_msgs::ImageConstPtr &msg) {
+    last_attollo_stamp_ = msg->header.stamp;
 }
 
 void TaskManager::rosbagCallback(const std_msgs::StringConstPtr &msg) {
