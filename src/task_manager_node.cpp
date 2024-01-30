@@ -9,7 +9,7 @@ int main(int argc, char** argv)
 {
   ros::init(argc, argv, "task_manager");
   if (ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME,
-                                     ros::console::levels::Debug)) {
+                                     ros::console::levels::Info)) {
     ros::console::notifyLoggerLevelsChanged();
   }
 
