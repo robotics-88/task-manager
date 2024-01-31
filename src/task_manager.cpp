@@ -146,7 +146,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     std::string time_local = boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time());
     time_local.replace(time_local.find(" "), 1, "_");
     log_dir_ = data_folder + time_local + "/";
-    if (do_record_ && !boost::filesystem::exists(log_dir_)) {
+    if ((do_record_ || offline_) && !boost::filesystem::exists(log_dir_)) {
         ROS_INFO("Folder did not exist, creating directory: %s", log_dir_.c_str());
         boost::filesystem::create_directories(log_dir_);
     }
