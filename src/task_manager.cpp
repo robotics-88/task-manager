@@ -784,6 +784,7 @@ void TaskManager::publishHealth() {
         {"label", "MAPIR Camera"},
         {"isHealthy", (t - last_mapir_stamp_ < health_check_s_)}
     };
+    healthObjects.push_back(j);
     // 5) Attollo
     j = {
         {"name", "attollo"},
