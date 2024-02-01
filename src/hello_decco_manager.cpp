@@ -22,9 +22,11 @@ HelloDeccoManager::HelloDeccoManager(ros::NodeHandle& node)
     , mavros_map_frame_("map")
     , slam_map_frame_("slam_map")
     , tf_listener_(tf_buffer_)
-    , flightleg_area_(2023.0)
+    , flightleg_area_m2_(2023.0)
 {
-    nh_.param<double>("flightleg_area_m2", flightleg_area_, flightleg_area_);
+    double flightleg_acres;
+    nh_.param<double>("flightleg_area_acres", flightleg_acres, flightleg_acres);
+    flightleg_area_m2_ = 4046.86 * flightleg_acres;
 
     burn_unit_pub_ = nh_.advertise<std_msgs::String>("/mapversation/burn_unit_receive", 10);
     mavros_geofence_client_ = nh_.serviceClient<mavros_msgs::WaypointPush>("/mavros/geofence/push");
@@ -227,9 +229,9 @@ int HelloDeccoManager::polygonNumFlights(const geometry_msgs::Polygon &polygon) 
     poly.Compute(false, true, perimeter, area);
     int num_legs = 1;
     subpolygons_.clear();
-    if (std::abs(area) > flightleg_area_) {
+    if (std::abs(area) > flightleg_area_m2_) {
         // num_legs = concaveToMinimalConvexPolygons();
-        centroid_splitter::CentroidSplitter splitter(map_region_, flightleg_area_);
+        centroid_splitter::CentroidSplitter splitter(map_region_, flightleg_area_m2_);
         subpolygons_ = splitter.slicePolygon();
         num_legs = subpolygons_.size();
         visualizeLegs();

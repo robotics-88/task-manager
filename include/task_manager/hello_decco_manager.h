@@ -74,7 +74,7 @@ class HelloDeccoManager {
         std::vector<cxd::Vertex > vertices_;
         geometry_msgs::Polygon map_region_; // Entire unit
         std::vector<geometry_msgs::Polygon> subpolygons_; // Flight units
-        double flightleg_area_;
+        double flightleg_area_m2_;
 
         void polygonInitializer(const geometry_msgs::Polygon &msg);
         geometry_msgs::Polygon polygonFromJson(json jsonPolygon);

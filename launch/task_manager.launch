@@ -12,7 +12,7 @@
     <arg name="min_altitude" default="2.0"/>
     <arg name="max_altitude" default="10.0"/>
     <arg name="max_dist_to_polygon" default="500"/>
-    <arg name="flightleg_area_m2" default="2023"/> <!-- 1 acre = 4046 m2-->
+    <arg name="flightleg_area_acres" default="3"/> <!-- 1 acre = 4046 m2-->
 
     <!-- Health topics -->
     <arg name="path_planner_topic" default="/kd_pointcloud_accumulated"/>
@@ -48,7 +48,7 @@
         <param name="max_altitude" value="$(arg max_altitude)"/>
         <param name="max_dist_to_polygon" value="$(arg max_dist_to_polygon)"/>
         <param name="ardupilot" value="$(arg ardupilot)"/>
-        <param name="flightleg_area_m2" value="$(arg flightleg_area_m2)"/>
+        <param name="flightleg_area_acres" value="$(arg flightleg_area_acres)"/>
         <param name="all_stream_rate" value="5"/>
         <param name="imu_rate" value="120"/>
         <param name="local_pos_rate" value="60"/>
