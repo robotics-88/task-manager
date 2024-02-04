@@ -25,7 +25,7 @@ HelloDeccoManager::HelloDeccoManager(ros::NodeHandle& node)
     , flightleg_area_m2_(2023.0)
 {
     double flightleg_acres;
-    nh_.param<double>("flightleg_area_acres", flightleg_acres, flightleg_acres);
+    private_nh_.param<double>("flightleg_area_acres", flightleg_acres, flightleg_acres);
     flightleg_area_m2_ = 4046.86 * flightleg_acres;
 
     burn_unit_pub_ = nh_.advertise<std_msgs::String>("/mapversation/burn_unit_receive", 10);
