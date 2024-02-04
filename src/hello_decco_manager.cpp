@@ -60,8 +60,7 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
         polygonInitializer(poly); // TODO use index to decide which flight leg to send to explore
         json flightLegArray;
         for (int ii = 0; ii < subpolygons_.size(); ii++) {
-            json flight_leg = burn_unit_json_["trips"][0]["flights"][0]; // Should be received with 1 empty flight leg;
-            flight_leg["index"] = ii;
+            json flight_leg;
             json ll_json;
             for (int jj = 0; jj < subpolygons_.at(ii).points.size(); jj++) {
                 json ll;
@@ -75,6 +74,7 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
                 ll_json.push_back(ll);
             }
             flight_leg["subpolygon"] = ll_json;
+            flight_leg["status"] = "NOT_STARTED";
             flightLegArray.push_back(flight_leg);
             // GOnna end up with a blank first leg, fix it
         }
@@ -373,7 +373,6 @@ json HelloDeccoManager::polygonToBurnUnit(const geometry_msgs::Polygon &polygon)
             "flights" : [ 
                 {
                     "startTime" : 0,
-                    "index" : 0,
                     "endTime" : 0, 
                     "duration" : 0,
                     "subpolygon" : [],
