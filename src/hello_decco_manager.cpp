@@ -75,6 +75,9 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
             }
             flight_leg["subpolygon"] = ll_json;
             flight_leg["status"] = "NOT_STARTED";
+            flight_leg["startTime"] = 0;
+            flight_leg["endTime"] = 0;
+            flight_leg["duration"] = 0;
             flightLegArray.push_back(flight_leg);
             // GOnna end up with a blank first leg, fix it
         }
