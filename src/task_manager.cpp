@@ -218,8 +218,8 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
     utm2map_tf.header.frame_id = "utm";
     utm2map_tf.header.stamp = ros::Time::now();
     utm2map_tf.child_frame_id = mavros_map_frame_;
-    utm2map_tf.transform.translation.x = -utm_x;
-    utm2map_tf.transform.translation.y = -utm_y;
+    utm2map_tf.transform.translation.x = utm_x;
+    utm2map_tf.transform.translation.y = utm_y;
     utm2map_tf.transform.translation.z = 0;
     utm2map_tf.transform.rotation.x = 0;
     utm2map_tf.transform.rotation.y = 0;
