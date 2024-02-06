@@ -214,6 +214,19 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
     drone_state_manager_.initUTM(utm_x, utm_y);
     hello_decco_manager_.setUtmOffsets(utm_x, utm_y);
     ROS_INFO("UTM offsets: (%f, %f)", utm_x, utm_y);
+    geometry_msgs::TransformStamped utm2map_tf;
+    utm2map_tf.header.frame_id = "utm";
+    utm2map_tf.header.stamp = ros::Time::now();
+    utm2map_tf.child_frame_id = mavros_map_frame_;
+    utm2map_tf.transform.translation.x = -utm_x;
+    utm2map_tf.transform.translation.y = -utm_y;
+    utm2map_tf.transform.translation.z = 0;
+    utm2map_tf.transform.rotation.x = 0;
+    utm2map_tf.transform.rotation.y = 0;
+    utm2map_tf.transform.rotation.z = 0;
+    utm2map_tf.transform.rotation.w = 1;
+    static_tf_broadcaster_.sendTransform(utm2map_tf);
+
     current_status_ = CurrentStatus::INITIALIZED;
     health_pub_timer_ = private_nh_.createTimer(health_check_s_,
                                [this](const ros::TimerEvent&) { publishHealth(); });

@@ -344,20 +344,21 @@ geometry_msgs::Polygon HelloDeccoManager::transformPolygon(const geometry_msgs::
 
 void HelloDeccoManager::mapToGeopoint(const geometry_msgs::PointStamped &point_in, geometry_msgs::PointStamped &point_out, double yaw) {
     // TODO init tf at the start, doesn't change
-    tf2::Vector3 translate(-utm_x_offset_, -utm_y_offset_, 0.0);
-    tf2::Transform utm2slam_tf;
-    tf2::Quaternion quat;
-    quat.setRPY(0.0, 0.0, yaw);
-    utm2slam_tf.setRotation(quat);
-    utm2slam_tf.setOrigin(translate);
-    geometry_msgs::Transform slam2utm = tf2::toMsg(utm2slam_tf);
+    // tf2::Vector3 translate(-utm_x_offset_, -utm_y_offset_, 0.0);
+    // tf2::Transform utm2slam_tf;
+    // tf2::Quaternion quat;
+    // quat.setRPY(0.0, 0.0, yaw);
+    // utm2slam_tf.setRotation(quat);
+    // utm2slam_tf.setOrigin(translate);
+    //  = tf2::toMsg(utm2slam_tf);
+    tf_buffer_.transform(point_in, point_out, "utm");
     // Apply tf
-    geometry_msgs::TransformStamped geom_stamped_tf;
-    geom_stamped_tf.header.frame_id = slam_map_frame_;
-    geom_stamped_tf.header.stamp = ros::Time(0);
-    geom_stamped_tf.child_frame_id = "utm";
-    geom_stamped_tf.transform = slam2utm;
-    tf2::doTransform(point_in, point_out, geom_stamped_tf);
+    // geometry_msgs::TransformStamped geom_stamped_tf;
+    // geom_stamped_tf.header.frame_id = slam_map_frame_;
+    // geom_stamped_tf.header.stamp = ros::Time(0);
+    // geom_stamped_tf.child_frame_id = "utm";
+    // geom_stamped_tf.transform = slam2utm;
+    // tf2::doTransform(point_in, point_out, geom_stamped_tf);
 }
 
 json HelloDeccoManager::polygonToBurnUnit(const geometry_msgs::Polygon &polygon) {
