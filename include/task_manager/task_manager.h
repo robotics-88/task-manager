@@ -60,6 +60,7 @@ class TaskManager {
         void emergencyResponse(const mavros_msgs::StatusText::ConstPtr &msg);
 
         void mapTfTimerCallback(const ros::TimerEvent&);
+        void mapTfTimerCallbackNoGlobal(const ros::TimerEvent&);
         void failsafe();
         void mapYawCallback(const std_msgs::Float64::ConstPtr &msg);
 
@@ -223,6 +224,11 @@ class TaskManager {
 
         CurrentStatus current_status_ = CurrentStatus::ON_START;
         ros::Timer status_timer_;
+
+        // Explicit UTM param handling
+        bool explicit_global_params_;
+        ros::Publisher global_pose_pub_;
+        geometry_msgs::TransformStamped utm2map_tf_;
 
         // Burn unit handling
         ros::Subscriber burn_unit_sub_;

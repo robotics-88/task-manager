@@ -60,6 +60,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , rosbag_topic_("/record/heartbeat")
     , did_save_(false)
     , did_takeoff_(false)
+    , explicit_global_params_(false)
 {
     private_nh_.param<bool>("enable_autonomy", enable_autonomy_, enable_autonomy_);
     private_nh_.param<bool>("enable_exploration", enable_exploration_, enable_exploration_);
@@ -82,13 +83,21 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<std::string>("rosbag_topic", rosbag_topic_, rosbag_topic_);
     private_nh_.param<bool>("offline", offline_, offline_);
     private_nh_.param<std::string>("data_directory", burn_dir_prefix_, burn_dir_prefix_);
+    private_nh_.param<bool>("explicit_global", explicit_global_params_, explicit_global_params_);
 
     hello_decco_manager_.setFrames(mavros_map_frame_, slam_map_frame_);
 
     // SLAM pose sub
     decco_pose_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>(slam_pose_topic_, 10, &TaskManager::deccoPoseCallback, this);
 
-    map_tf_timer_ = nh_.createTimer(ros::Duration(1.0), &TaskManager::mapTfTimerCallback, this);
+    // TODO eventually remove this, just a patch for TX data where separate bags for MAVROS/Attollo
+    if (!explicit_global_params_) {
+        map_tf_timer_ = nh_.createTimer(ros::Duration(1.0), &TaskManager::mapTfTimerCallback, this);
+    }
+    else {
+        map_tf_timer_ = nh_.createTimer(ros::Duration(1.0), &TaskManager::mapTfTimerCallbackNoGlobal, this);
+        global_pose_pub_ = nh_.advertise<sensor_msgs::NavSatFix>("/mavros/global_position/global", 10);
+    }
 
     mode_monitor_timer_ = private_nh_.createTimer(ros::Duration(1.0),
                                [this](const ros::TimerEvent&) { modeMonitor(); });
@@ -214,18 +223,66 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
     drone_state_manager_.initUTM(utm_x, utm_y);
     hello_decco_manager_.setUtmOffsets(utm_x, utm_y);
     ROS_INFO("UTM offsets: (%f, %f)", utm_x, utm_y);
-    geometry_msgs::TransformStamped utm2map_tf;
-    utm2map_tf.header.frame_id = "utm";
-    utm2map_tf.header.stamp = ros::Time::now();
-    utm2map_tf.child_frame_id = mavros_map_frame_;
-    utm2map_tf.transform.translation.x = utm_x;
-    utm2map_tf.transform.translation.y = utm_y;
-    utm2map_tf.transform.translation.z = 0;
-    utm2map_tf.transform.rotation.x = 0;
-    utm2map_tf.transform.rotation.y = 0;
-    utm2map_tf.transform.rotation.z = 0;
-    utm2map_tf.transform.rotation.w = 1;
-    static_tf_broadcaster_.sendTransform(utm2map_tf);
+    std::cout << "utm x: " << utm_x << "\nutm y: " << utm_y << "\nmap yaw: " << map_yaw_ << std::endl;
+    utm2map_tf_.header.frame_id = "utm";
+    utm2map_tf_.header.stamp = ros::Time::now();
+    utm2map_tf_.child_frame_id = mavros_map_frame_;
+    utm2map_tf_.transform.translation.x = utm_x;
+    utm2map_tf_.transform.translation.y = utm_y;
+    utm2map_tf_.transform.translation.z = 0;
+    utm2map_tf_.transform.rotation.x = 0;
+    utm2map_tf_.transform.rotation.y = 0;
+    utm2map_tf_.transform.rotation.z = 0;
+    utm2map_tf_.transform.rotation.w = 1;
+    static_tf_broadcaster_.sendTransform(utm2map_tf_);
+
+    current_status_ = CurrentStatus::INITIALIZED;
+    health_pub_timer_ = private_nh_.createTimer(health_check_s_,
+                               [this](const ros::TimerEvent&) { publishHealth(); });
+}
+
+void TaskManager::mapTfTimerCallbackNoGlobal(const ros::TimerEvent&) {
+
+    private_nh_.param<double>("map_yaw", map_yaw_, map_yaw_);
+    double utm_x, utm_y;
+    private_nh_.param<double>("utm_y", utm_y, utm_y);
+    private_nh_.param<double>("utm_x", utm_x, utm_x);
+    private_nh_.param<int>("utm_zone", home_utm_zone_, home_utm_zone_);
+
+    // Fill in data
+    map_to_slam_tf_.header.frame_id = mavros_map_frame_;
+    map_to_slam_tf_.header.stamp = ros::Time::now();
+    map_to_slam_tf_.child_frame_id = slam_map_frame_;
+    map_to_slam_tf_.transform.translation.x = 0.0;
+    map_to_slam_tf_.transform.translation.y = 0.0;
+    map_to_slam_tf_.transform.translation.z = 0.0;
+
+    tf2::Quaternion quat_tf;
+    quat_tf.setRPY(0.0, 0.0, map_yaw_);
+
+    geometry_msgs::Quaternion quat;
+    tf2::convert(quat_tf, quat);
+    map_to_slam_tf_.transform.rotation = quat;
+
+    // Send transform and stop timer
+    static_tf_broadcaster_.sendTransform(map_to_slam_tf_);
+    map_tf_timer_.stop();
+    map_tf_init_ = true;
+
+    hello_decco_manager_.setUtmOffsets(utm_x, utm_y);
+    ROS_INFO("UTM offsets: (%f, %f)", utm_x, utm_y);
+    std::cout << "utm x: " << utm_x << "\nutm y: " << utm_y << "\nmap yaw: " << map_yaw_ << std::endl;
+    utm2map_tf_.header.frame_id = "utm";
+    utm2map_tf_.header.stamp = ros::Time::now();
+    utm2map_tf_.child_frame_id = mavros_map_frame_;
+    utm2map_tf_.transform.translation.x = utm_x;
+    utm2map_tf_.transform.translation.y = utm_y;
+    utm2map_tf_.transform.translation.z = 0;
+    utm2map_tf_.transform.rotation.x = 0;
+    utm2map_tf_.transform.rotation.y = 0;
+    utm2map_tf_.transform.rotation.z = 0;
+    utm2map_tf_.transform.rotation.w = 1;
+    static_tf_broadcaster_.sendTransform(utm2map_tf_);
 
     current_status_ = CurrentStatus::INITIALIZED;
     health_pub_timer_ = private_nh_.createTimer(health_check_s_,
@@ -264,6 +321,25 @@ void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &sl
     vision_pose_publisher_.publish(msg_body_pose);
 
     last_slam_pos_stamp_ = slam_pose->header.stamp;
+
+    // Map tf for offline
+    if (explicit_global_params_) {
+        geometry_msgs::PointStamped point_in, point_out;
+        point_in.header = slam_pose->header;
+        point_in.point.x = 0;
+        point_in.point.y = 0;
+        point_in.point.z = 0;
+        tf2::doTransform(point_in, point_out, utm2map_tf_);
+        double lat, lon;
+        hello_decco_manager_.utmToLL(point_out.point.x, point_out.point.y, home_utm_zone_, lat, lon);
+        sensor_msgs::NavSatFix nav_msg;
+        nav_msg.header.frame_id = "base_link";
+        nav_msg.header.stamp = slam_pose->header.stamp;
+        nav_msg.latitude = lat;
+        nav_msg.longitude = lon;
+        global_pose_pub_.publish(nav_msg);
+
+    }
 }
 
 void TaskManager::emergencyResponse(const mavros_msgs::StatusText::ConstPtr &msg) {
@@ -904,6 +980,7 @@ void TaskManager::targetSetpointCallback(const sensor_msgs::NavSatFix::ConstPtr 
 
 void TaskManager::mapYawCallback(const std_msgs::Float64::ConstPtr &msg) {
     map_yaw_ = msg->data;
+    ROS_INFO("got map yaw: %f", map_yaw_);
 }
 
 json TaskManager::makeTaskJson() {

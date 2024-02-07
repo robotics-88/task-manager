@@ -38,6 +38,7 @@ class HelloDeccoManager {
         void updateBurnUnit(int index, std::string flight_status);
         void setFrames(std::string map_frame, std::string slam_frame);
         void mapToGeopoint(const geometry_msgs::PointStamped &point_in, geometry_msgs::PointStamped &point_out, double yaw);
+        void utmToLL(const double utm_x, const double utm_y, const int zone, double &lat, double &lon);
         void setUtmOffsets(double utm_x, double utm_y) {
             utm_x_offset_ = -utm_x;
             utm_y_offset_ = -utm_y;

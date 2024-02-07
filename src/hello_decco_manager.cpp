@@ -361,6 +361,11 @@ void HelloDeccoManager::mapToGeopoint(const geometry_msgs::PointStamped &point_i
     // tf2::doTransform(point_in, point_out, geom_stamped_tf);
 }
 
+void HelloDeccoManager::utmToLL(const double utm_x, const double utm_y, const int zone, double &lat, double &lon) {
+    double k, gamma;
+    GeographicLib::UTMUPS::Reverse(zone, true, utm_x, utm_y, lat, lon, gamma, k);
+}
+
 json HelloDeccoManager::polygonToBurnUnit(const geometry_msgs::Polygon &polygon) {
     json burn_unit = R"({
         "id" : 1,

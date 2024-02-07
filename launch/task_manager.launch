@@ -28,6 +28,13 @@
 
     <arg name="simulate" default="false"/>
     <arg name="offline" default="false"/>
+
+    <!-- Params for the case when UTM and map yaw need to be set manually from prior bag -->
+    <arg name="explicit_global" default="false"/>
+    <arg name="map_yaw" default="-1.49837"/>
+    <arg name="utm_y" default="3354710"/>
+    <arg name="utm_x" default="243885"/>
+    <arg name="utm_zone" default="15"/>
     
     <node pkg="task_manager_88" type="task_manager" name="task_manager" output="screen">
         <param name="enable_autonomy" value="$(arg enable_autonomy)"/>
@@ -54,5 +61,10 @@
         <param name="local_pos_rate" value="60"/>
         <param name="simulate" value="$(arg simulate)"/>
         <param name="offline" value="$(arg offline)"/>
+        <param name="explicit_global" value="$(arg explicit_global)"/>
+        <param name="map_yaw" value="$(arg map_yaw)"/>
+        <param name="utm_y" value="$(arg utm_y)"/>
+        <param name="utm_x" value="$(arg utm_x)"/>
+        <param name="utm_zone" value="$(arg utm_zone)"/>
     </node>
 </launch>
