@@ -9,12 +9,13 @@
     <arg name="ardupilot" default="true"/>
     
     <arg name="default_altitude_m" default="2.0"/>
-    <arg name="min_altitude_m" default="2.0"/>
-    <arg name="max_altitude_m" default="10.0"/>
+    <arg name="min_altitude" default="2.0"/>
+    <arg name="max_altitude" default="10.0"/>
     <arg name="max_dist_to_polygon" default="500"/>
-    <arg name="flightleg_area_m2" default="2023"/> <!-- 1 acre = 4046 m2-->
+    <arg name="flightleg_area_acres" default="3"/> <!-- 1 acre = 4046 m2-->
 
     <!-- Health topics -->
+    <arg name="path_planner_topic" default="/kd_pointcloud_accumulated"/>
     <arg name="costmap_topic" default="/costmap_node/costmap/costmap_updates"/>
     <arg name="lidar_topic" default="/livox/lidar"/>
     <arg name="mapir_topic" default="/mapir_rgn/image_rect"/>
@@ -26,6 +27,14 @@
     <arg name="data_directory" default="/home/$(arg user)/src/bags/"/>
 
     <arg name="simulate" default="false"/>
+    <arg name="offline" default="false"/>
+
+    <!-- Params for the case when UTM and map yaw need to be set manually from prior bag -->
+    <arg name="explicit_global" default="false"/>
+    <arg name="map_yaw" default="-1.49837"/>
+    <arg name="utm_y" default="3354710"/>
+    <arg name="utm_x" default="243885"/>
+    <arg name="utm_zone" default="15"/>
     
     <node pkg="task_manager_88" type="task_manager" name="task_manager" output="screen">
         <param name="enable_autonomy" value="$(arg enable_autonomy)"/>
@@ -35,20 +44,27 @@
         <param name="data_directory" value="$(arg data_directory)"/>
         <param name="mavros_map_frame" value="$(arg mavros_map_frame)"/>
         <param name="slam_map_frame" value="$(arg slam_map_frame)"/>
+        <param name="path_planner_topic" value="$(arg path_planner_topic)"/>
         <param name="slam_pose_topic" value="$(arg slam_pose_topic)"/>
         <param name="costmap_topic" value="$(arg costmap_topic)"/>
         <param name="lidar_topic" value="$(arg lidar_topic)"/>
         <param name="mapir_topic" value="$(arg mapir_topic)"/>
         <param name="rosbag_topic" value="$(arg rosbag_topic)"/>
         <param name="default_altitude_m" value="$(arg default_altitude_m)"/>
-        <param name="min_altitude_m" value="$(arg min_altitude_m)"/>
-        <param name="max_altitude_m" value="$(arg max_altitude_m)"/>
+        <param name="min_altitude" value="$(arg min_altitude)"/>
+        <param name="max_altitude" value="$(arg max_altitude)"/>
         <param name="max_dist_to_polygon" value="$(arg max_dist_to_polygon)"/>
         <param name="ardupilot" value="$(arg ardupilot)"/>
-        <param name="flightleg_area_m2" value="$(arg flightleg_area_m2)"/>
+        <param name="flightleg_area_acres" value="$(arg flightleg_area_acres)"/>
         <param name="all_stream_rate" value="5"/>
         <param name="imu_rate" value="120"/>
         <param name="local_pos_rate" value="60"/>
         <param name="simulate" value="$(arg simulate)"/>
+        <param name="offline" value="$(arg offline)"/>
+        <param name="explicit_global" value="$(arg explicit_global)"/>
+        <param name="map_yaw" value="$(arg map_yaw)"/>
+        <param name="utm_y" value="$(arg utm_y)"/>
+        <param name="utm_x" value="$(arg utm_x)"/>
+        <param name="utm_zone" value="$(arg utm_zone)"/>
     </node>
 </launch>

@@ -29,6 +29,8 @@ namespace drone_state_manager
 DroneStateManager::DroneStateManager(ros::NodeHandle& node)
   : private_nh_("~")
   , nh_(node)
+  , offline_(false)
+  , simulate_(false)
   , autonomy_active_(false)
   , enable_autonomy_(false)
   , enable_exploration_(false)
@@ -71,11 +73,11 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
     private_nh_.param<float>("imu_rate", imu_rate_, imu_rate_);
     private_nh_.param<float>("local_pos_rate", local_pos_rate_, local_pos_rate_);
     private_nh_.param<float>("all_stream_rate", all_stream_rate_, all_stream_rate_);
+    private_nh_.param<bool>("offline", offline_, offline_);
 
     // Add a stream rate modifier in simulation b/c arducopter loop rate is slow
-    bool simulate;
-    private_nh_.param<bool>("simulate", simulate, false);
-    if (simulate)
+    private_nh_.param<bool>("simulate", simulate_, simulate_);
+    if (simulate_)
         stream_rate_modifier_ = 300.f / 222.f;
     else
         stream_rate_modifier_ = 1.f;
@@ -91,12 +93,14 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
     mavros_compass_subscriber_ = nh_.subscribe<std_msgs::Float64>("/mavros/global_position/compass_hdg", 10, &DroneStateManager::compassCallback, this);
     mavros_battery_subscriber_ = nh_.subscribe<sensor_msgs::BatteryState>("/mavros/battery", 10, &DroneStateManager::batteryCallback, this);
 
-    // Run initial mavlink stream request, just so we can get drone data immediately
-    requestMavlinkStreams();
+    if (!offline_) {
+        // Run initial mavlink stream request, just so we can get drone data immediately
+        requestMavlinkStreams();
 
-    attempts_ = 0;
-    drone_init_timer_ = private_nh_.createTimer(ros::Duration(1.0), &DroneStateManager::initializeDrone, this);
-    msg_rate_timer_ = private_nh_.createTimer(ros::Duration(msg_rate_timer_dt_), &DroneStateManager::checkMsgRates, this);
+        attempts_ = 0;
+        drone_init_timer_ = private_nh_.createTimer(ros::Duration(1.0), &DroneStateManager::initializeDrone, this);
+        msg_rate_timer_ = private_nh_.createTimer(ros::Duration(msg_rate_timer_dt_), &DroneStateManager::checkMsgRates, this);
+    }
 
     local_pos_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/mavros/setpoint_position/local", 10);
 
@@ -128,10 +132,12 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
 
         // Wait an extra long on 
         if (attempts_ == 0) {
-            for (int i = 0; i < 9; i++) {
-                ROS_INFO("Drone state manager waiting for param fetch to complete");
-                // Takes about 45 seconds, so run 5 second sleep 9 times. 
-                ros::Duration(5.0).sleep();
+
+            // Param fetch takes about 50 seconds in sim, 15 seconds on drone
+            int approx_time_to_fetch = simulate_ ? 50 : 15;
+            for (int i = 0; i < approx_time_to_fetch; i++) {
+                ROS_INFO_THROTTLE(5, "Drone state manager waiting for param fetch to complete");
+                ros::Duration(1.0).sleep();
             }
         }
 

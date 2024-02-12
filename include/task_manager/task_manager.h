@@ -60,6 +60,9 @@ class TaskManager {
         void emergencyResponse(const mavros_msgs::StatusText::ConstPtr &msg);
 
         void mapTfTimerCallback(const ros::TimerEvent&);
+        void mapTfTimerCallbackNoGlobal(const ros::TimerEvent&);
+        void failsafe();
+        void mapYawCallback(const std_msgs::Float64::ConstPtr &msg);
 
         // Heartbeat
         void uiHeartbeatCallback(const std_msgs::String::ConstPtr &msg);
@@ -75,18 +78,21 @@ class TaskManager {
         bool pauseOperations();
 
         // Health subscribers, unused except to verify publishing
+        void pathPlannerCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
         void costmapCallback(const map_msgs::OccupancyGridUpdate::ConstPtr &msg);
         void lidarCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
         void mapirCallback(const sensor_msgs::ImageConstPtr &msg);
+        void attolloCallback(const sensor_msgs::ImageConstPtr &msg);
         void rosbagCallback(const std_msgs::StringConstPtr &msg);
+        void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
 
     private:
         enum CurrentStatus
         {
             ON_START,
+            INITIALIZED,
             EXPLORING,
             WAITING_TO_EXPLORE,
-            HOVERING,
             NAVIGATING,
             RTL_88,
             TAKING_OFF,
@@ -95,6 +101,11 @@ class TaskManager {
 
         ros::NodeHandle private_nh_;
         ros::NodeHandle nh_;
+
+        // Offline handling
+        bool offline_;
+        ros::Publisher map_yaw_pub_;
+        ros::Subscriber map_yaw_sub_;
 
         // Hello Decco comms
         hello_decco_manager::HelloDeccoManager hello_decco_manager_;
@@ -162,22 +173,29 @@ class TaskManager {
         std::string cmd_history_;
         messages_88::TaskStatus task_msg_;
         ros::Publisher task_pub_;
+        ros::Publisher task_json_pub_;
+        geometry_msgs::PoseStamped goal_;
+        ros::Subscriber goal_sub_;
 
         actionlib::SimpleActionClient<messages_88::ExploreAction> explore_action_client_;
 
         // Health params and subscribers (for topics not already present)
         ros::Duration health_check_s_;
-        ros::Time last_mavros_pos_stamp_;
+        ros::Time last_path_planner_stamp_;
         ros::Time last_slam_pos_stamp_;
         ros::Time last_costmap_stamp_;
         ros::Time last_lidar_stamp_;
         ros::Time last_mapir_stamp_;
+        ros::Time last_attollo_stamp_;
         ros::Time last_rosbag_stamp_;
+        ros::Subscriber path_planner_sub_;
         ros::Subscriber costmap_sub_;
         ros::Subscriber lidar_sub_;
         ros::Subscriber mapir_sub_;
+        ros::Subscriber attollo_sub_;
         ros::Subscriber rosbag_sub_;
         ros::Publisher health_pub_;
+        std::string path_planner_topic_;
         std::string costmap_topic_;
         std::string lidar_topic_;
         std::string mapir_topic_;
@@ -207,6 +225,11 @@ class TaskManager {
         CurrentStatus current_status_ = CurrentStatus::ON_START;
         ros::Timer status_timer_;
 
+        // Explicit UTM param handling
+        bool explicit_global_params_;
+        ros::Publisher global_pose_pub_;
+        geometry_msgs::TransformStamped utm2map_tf_;
+
         // Burn unit handling
         ros::Subscriber burn_unit_sub_;
         int current_index_;
@@ -224,7 +247,7 @@ class TaskManager {
         void padNavTarget(geometry_msgs::PoseStamped &target);
         std::string getStatusString();
         void publishHealth();
-
+        json makeTaskJson();
 };
 
 }

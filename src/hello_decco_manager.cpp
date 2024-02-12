@@ -22,13 +22,15 @@ HelloDeccoManager::HelloDeccoManager(ros::NodeHandle& node)
     , mavros_map_frame_("map")
     , slam_map_frame_("slam_map")
     , tf_listener_(tf_buffer_)
-    , flightleg_area_(2023.0)
+    , flightleg_area_m2_(2023.0)
 {
-    nh_.param<double>("flightleg_area_m2", flightleg_area_, flightleg_area_);
+    double flightleg_acres;
+    private_nh_.param<double>("flightleg_area_acres", flightleg_acres, flightleg_acres);
+    flightleg_area_m2_ = 4046.86 * flightleg_acres;
 
     burn_unit_pub_ = nh_.advertise<std_msgs::String>("/mapversation/burn_unit_receive", 10);
     mavros_geofence_client_ = nh_.serviceClient<mavros_msgs::WaypointPush>("/mavros/geofence/push");
-    map_region_pub_ = nh_.advertise<visualization_msgs::Marker>("/map_region", 10);
+    map_region_pub_ = nh_.advertise<visualization_msgs::Marker>("/map_region", 10, true);
 }
 
 HelloDeccoManager::~HelloDeccoManager() {
@@ -58,8 +60,7 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
         polygonInitializer(poly); // TODO use index to decide which flight leg to send to explore
         json flightLegArray;
         for (int ii = 0; ii < subpolygons_.size(); ii++) {
-            json flight_leg = burn_unit_json_["trips"][0]["flights"][0]; // Should be received with 1 empty flight leg;
-            flight_leg["index"] = ii;
+            json flight_leg;
             json ll_json;
             for (int jj = 0; jj < subpolygons_.at(ii).points.size(); jj++) {
                 json ll;
@@ -73,6 +74,10 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
                 ll_json.push_back(ll);
             }
             flight_leg["subpolygon"] = ll_json;
+            flight_leg["status"] = "NOT_STARTED";
+            flight_leg["startTime"] = 0;
+            flight_leg["endTime"] = 0;
+            flight_leg["duration"] = 0;
             flightLegArray.push_back(flight_leg);
             // GOnna end up with a blank first leg, fix it
         }
@@ -227,9 +232,9 @@ int HelloDeccoManager::polygonNumFlights(const geometry_msgs::Polygon &polygon) 
     poly.Compute(false, true, perimeter, area);
     int num_legs = 1;
     subpolygons_.clear();
-    if (std::abs(area) > flightleg_area_) {
+    if (std::abs(area) > flightleg_area_m2_) {
         // num_legs = concaveToMinimalConvexPolygons();
-        centroid_splitter::CentroidSplitter splitter(map_region_, flightleg_area_);
+        centroid_splitter::CentroidSplitter splitter(map_region_, flightleg_area_m2_);
         subpolygons_ = splitter.slicePolygon();
         num_legs = subpolygons_.size();
         visualizeLegs();
@@ -339,20 +344,26 @@ geometry_msgs::Polygon HelloDeccoManager::transformPolygon(const geometry_msgs::
 
 void HelloDeccoManager::mapToGeopoint(const geometry_msgs::PointStamped &point_in, geometry_msgs::PointStamped &point_out, double yaw) {
     // TODO init tf at the start, doesn't change
-    tf2::Vector3 translate(-utm_x_offset_, -utm_y_offset_, 0.0);
-    tf2::Transform utm2slam_tf;
-    tf2::Quaternion quat;
-    quat.setRPY(0.0, 0.0, yaw);
-    utm2slam_tf.setRotation(quat);
-    utm2slam_tf.setOrigin(translate);
-    geometry_msgs::Transform slam2utm = tf2::toMsg(utm2slam_tf);
+    // tf2::Vector3 translate(-utm_x_offset_, -utm_y_offset_, 0.0);
+    // tf2::Transform utm2slam_tf;
+    // tf2::Quaternion quat;
+    // quat.setRPY(0.0, 0.0, yaw);
+    // utm2slam_tf.setRotation(quat);
+    // utm2slam_tf.setOrigin(translate);
+    //  = tf2::toMsg(utm2slam_tf);
+    tf_buffer_.transform(point_in, point_out, "utm");
     // Apply tf
-    geometry_msgs::TransformStamped geom_stamped_tf;
-    geom_stamped_tf.header.frame_id = slam_map_frame_;
-    geom_stamped_tf.header.stamp = ros::Time(0);
-    geom_stamped_tf.child_frame_id = "utm";
-    geom_stamped_tf.transform = slam2utm;
-    tf2::doTransform(point_in, point_out, geom_stamped_tf);
+    // geometry_msgs::TransformStamped geom_stamped_tf;
+    // geom_stamped_tf.header.frame_id = slam_map_frame_;
+    // geom_stamped_tf.header.stamp = ros::Time(0);
+    // geom_stamped_tf.child_frame_id = "utm";
+    // geom_stamped_tf.transform = slam2utm;
+    // tf2::doTransform(point_in, point_out, geom_stamped_tf);
+}
+
+void HelloDeccoManager::utmToLL(const double utm_x, const double utm_y, const int zone, double &lat, double &lon) {
+    double k, gamma;
+    GeographicLib::UTMUPS::Reverse(zone, true, utm_x, utm_y, lat, lon, gamma, k);
 }
 
 json HelloDeccoManager::polygonToBurnUnit(const geometry_msgs::Polygon &polygon) {
@@ -371,7 +382,6 @@ json HelloDeccoManager::polygonToBurnUnit(const geometry_msgs::Polygon &polygon)
             "flights" : [ 
                 {
                     "startTime" : 0,
-                    "index" : 0,
                     "endTime" : 0, 
                     "duration" : 0,
                     "subpolygon" : [],
