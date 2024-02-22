@@ -31,6 +31,7 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
   , nh_(node)
   , offline_(false)
   , simulate_(false)
+  , do_slam_(false)
   , autonomy_active_(false)
   , enable_autonomy_(false)
   , enable_exploration_(false)
@@ -75,6 +76,17 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
     private_nh_.param<float>("all_stream_rate", all_stream_rate_, all_stream_rate_);
     private_nh_.param<bool>("offline", offline_, offline_);
 
+    // Change arducopter param map if using slam pos src
+    private_nh_.param<bool>("do_slam", do_slam_, do_slam_);
+    if (do_slam_) {
+        param_map_[ "EK3_SRC1_POSXY" ] = 6;
+        param_map_[ "EK3_SRC1_VELXY" ] = 6;
+        param_map_[ "EK3_SRC1_POSZ" ] = 6;
+        param_map_[ "EK3_SRC1_VELZ" ] = 6;
+        param_map_[ "EK3_SRC1_YAW" ] = 6;
+        param_map_[ "VISO_TYPE" ] = 1;
+    }
+    
     // Add a stream rate modifier in simulation b/c arducopter loop rate is slow
     private_nh_.param<bool>("simulate", simulate_, simulate_);
     if (simulate_)
@@ -86,12 +98,15 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
 
     // Set subscribers for Mavros
     mavros_global_pos_subscriber_ = nh_.subscribe<sensor_msgs::NavSatFix>(mavros_global_pos_topic_, 10, &DroneStateManager::globalPositionCallback, this);
-    mavros_local_pos_subscriber_ = nh_.subscribe<geometry_msgs::PoseStamped>("/decco/pose", 10, &DroneStateManager::localPositionCallback, this);
+    mavros_local_pos_subscriber_ = nh_.subscribe<geometry_msgs::PoseStamped>("/mavros/local_position/pose", 10, &DroneStateManager::localPositionCallback, this);
     mavros_state_subscriber_ = nh_.subscribe<mavros_msgs::State>(mavros_state_topic_, 10, &DroneStateManager::statusCallback, this);
     mavros_alt_subscriber_ = nh_.subscribe<std_msgs::Float64>(mavros_alt_topic_, 10, &DroneStateManager::altitudeCallback, this);
     mavros_imu_subscriber_ = nh_.subscribe<sensor_msgs::Imu>("/mavros/imu/data", 10, &DroneStateManager::imuCallback, this);
     mavros_compass_subscriber_ = nh_.subscribe<std_msgs::Float64>("/mavros/global_position/compass_hdg", 10, &DroneStateManager::compassCallback, this);
     mavros_battery_subscriber_ = nh_.subscribe<sensor_msgs::BatteryState>("/mavros/battery", 10, &DroneStateManager::batteryCallback, this);
+
+    // Slam pose subscriber
+    slam_pose_subscriber_ = nh_.subscribe<geometry_msgs::PoseStamped>("/decco/pose", 10, &DroneStateManager::slamPoseCallback, this);
 
     if (!offline_) {
         // Run initial mavlink stream request, just so we can get drone data immediately
@@ -300,34 +315,38 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
             home_compass_hdg_ = compass_hdg_;
             attempts_ = 0;
             ROS_INFO("Initial compass heading: %f", home_compass_hdg_);
-            ROS_INFO("Setting Arducopter heading source to ExternalNav");
+            ROS_INFO("Setting Arducopter params");
         }
     }
 
-    // Set heading source back to slam now that we have received the home compass heading
-    if (!heading_src_back_ok_) {
+    // Set arducopter params
+    if (!param_set_ok_) {
 
         // Run the action
         auto param_set_client = nh_.serviceClient<mavros_msgs::ParamSet>("/mavros/param/set");
         mavros_msgs::ParamSet param_set_srv;
-        param_set_srv.request.param_id = "EK3_SRC1_YAW";
-        param_set_srv.request.value.integer = 6; // 1 = Compass, 6 = ExternalNav
-        param_set_client.call(param_set_srv);
 
-        // Check success
-        if (!param_set_srv.response.success) {
-            if (attempts_ == 3) {
-                ROS_ERROR("EKF heading source param set failed after 3 attempts");
-                drone_init_timer_.stop();
+        std::map<std::string, int>::iterator it;
+
+        for (it = param_map_.begin(); it != param_map_.end(); it++) {
+            param_set_srv.request.param_id = it->first;
+            param_set_srv.request.value.integer = it->second;
+            param_set_client.call(param_set_srv);
+
+            // Check success
+            if (!param_set_srv.response.success) {
+                if (attempts_ == 3) {
+                    ROS_ERROR("Param set of param %s failed after 3 attempts", it->first);
+                    drone_init_timer_.stop();
+                }
+                ROS_WARN("Param %s set failed, trying again in 1s", it->first);
+                attempts_++;
+                return;
             }
-            ROS_WARN("EKF heading source param set failed, trying again in 1s");
-            attempts_++;
-            return;
         }
-        else {
-            heading_src_back_ok_ = true;
-            attempts_ = 0;
-        }
+
+        param_set_ok_ = true;
+        attempts_ = 0;
     }
 
     ROS_INFO("Drone initialization successful!");
@@ -425,6 +444,10 @@ void DroneStateManager::setExplorationEnabled(bool enabled) {
     enable_exploration_ = enabled;
 }
 
+geometry_msgs::PoseStamped DroneStateManager::getCurrentSlamPosition() {
+    return current_slam_pose_;
+}
+
 geometry_msgs::PoseStamped DroneStateManager::getCurrentLocalPosition() {
     return current_pose_;
 }
@@ -475,6 +498,10 @@ bool DroneStateManager::getMapYaw(double &yaw) {
 
 double DroneStateManager::getCompass() {
     return compass_hdg_;
+}
+
+void DroneStateManager::slamPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
+    current_slam_pose_ = *msg;
 }
 
 void DroneStateManager::globalPositionCallback(const sensor_msgs::NavSatFix::ConstPtr &msg) {

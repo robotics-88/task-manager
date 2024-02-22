@@ -114,6 +114,7 @@ class TaskManager {
         ros::Subscriber emergency_subscriber_;
 
         // Safety for enabling control
+        bool do_slam_;
         bool enable_autonomy_;
         bool enable_exploration_;
         bool ardupilot_;
