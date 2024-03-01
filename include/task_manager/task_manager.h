@@ -55,9 +55,9 @@ class TaskManager {
         void getReadyForExplore();
         bool convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp);
 
-        void targetPolygonCallback(const geometry_msgs::Polygon::ConstPtr &msg);
-        void targetSetpointCallback(const sensor_msgs::NavSatFix::ConstPtr &msg);
-        void emergencyResponse(const mavros_msgs::StatusText::ConstPtr &msg);
+        // void targetPolygonCallback(const geometry_msgs::Polygon::ConstPtr &msg);
+        void setpointResponse(json &json_msg);
+        void emergencyResponse(const std::string severity);
 
         void mapTfTimerCallback(const ros::TimerEvent&);
         void mapTfTimerCallbackNoGlobal(const ros::TimerEvent&);
@@ -65,7 +65,7 @@ class TaskManager {
         void mapYawCallback(const std_msgs::Float64::ConstPtr &msg);
 
         // Heartbeat
-        void uiHeartbeatCallback(const std_msgs::String::ConstPtr &msg);
+        void uiHeartbeatCallback(const json &msg);
         void heartbeatTimerCallback(const ros::TimerEvent&);
 
         void startNav2PointTask(messages_88::NavToPointGoal &nav_goal);
@@ -109,9 +109,10 @@ class TaskManager {
 
         // Hello Decco comms
         hello_decco_manager::HelloDeccoManager hello_decco_manager_;
-        ros::Subscriber target_polygon_subscriber_;
-        ros::Subscriber target_setpoint_subscriber_;
-        ros::Subscriber emergency_subscriber_;
+        ros::Subscriber mapver_sub_;
+        // ros::Subscriber target_polygon_subscriber_;
+        // ros::Subscriber target_setpoint_subscriber_;
+        // ros::Subscriber emergency_subscriber_;
 
         // Safety for enabling control
         bool enable_autonomy_;
@@ -154,8 +155,8 @@ class TaskManager {
         ros::ServiceServer geopoint_service_;
 
         // Heartbeat
-        ros::Publisher heartbeat_pub_;
-        ros::Subscriber ui_heartbeat_subscriber_;
+        // ros::Publisher heartbeat_pub_;
+        // ros::Subscriber ui_heartbeat_subscriber_;
         ros::Time last_ui_heartbeat_stamp_;
         float ui_hb_threshold_;
         ros::Timer heartbeat_timer_;
@@ -173,7 +174,7 @@ class TaskManager {
         std::string cmd_history_;
         messages_88::TaskStatus task_msg_;
         ros::Publisher task_pub_;
-        ros::Publisher task_json_pub_;
+        // ros::Publisher task_json_pub_;
         geometry_msgs::PoseStamped goal_;
         ros::Subscriber goal_sub_;
 
@@ -194,7 +195,7 @@ class TaskManager {
         ros::Subscriber mapir_sub_;
         ros::Subscriber attollo_sub_;
         ros::Subscriber rosbag_sub_;
-        ros::Publisher health_pub_;
+        // ros::Publisher health_pub_;
         std::string path_planner_topic_;
         std::string costmap_topic_;
         std::string lidar_topic_;
@@ -234,8 +235,10 @@ class TaskManager {
         ros::Subscriber burn_unit_sub_;
         int current_index_;
         std::string burn_dir_prefix_;
-        void makeBurnUnitJson(const std_msgs::String::ConstPtr &msg);
+        // void makeBurnUnitJson(const std_msgs::String::ConstPtr &msg);
         void makeBurnUnitJson(json burn_unit);
+
+        void packageFromMapversation(const std_msgs::String::ConstPtr &msg);
 
         void startBag();
         void stopBag();

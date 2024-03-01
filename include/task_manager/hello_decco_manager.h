@@ -33,7 +33,8 @@ class HelloDeccoManager {
         ~HelloDeccoManager();
 
         void makeBurnUnitJson(json msgJson, int utm_zone);
-        json polygonToBurnUnit(const geometry_msgs::Polygon &polygon);
+        json polygonToBurnUnit(const json &polygon);
+        // json polygonToBurnUnit(const geometry_msgs::Polygon &polygon);
         int initBurnUnit(geometry_msgs::Polygon &polygon);
         void updateBurnUnit(int index, std::string flight_status);
         void setFrames(std::string map_frame, std::string slam_frame);
@@ -43,6 +44,7 @@ class HelloDeccoManager {
             utm_x_offset_ = -utm_x;
             utm_y_offset_ = -utm_y;
         }
+        void packageToMapversation(std::string topic, json gossip);
 
     private:
         enum FlightStatus {
@@ -61,6 +63,9 @@ class HelloDeccoManager {
         tf2_ros::TransformListener tf_listener_;
         double utm_x_offset_;
         double utm_y_offset_;
+
+        // Mapversation
+        ros::Publisher mapver_pub_;
 
         json burn_unit_json_;
         ros::Publisher burn_unit_pub_;

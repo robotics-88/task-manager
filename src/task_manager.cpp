@@ -102,8 +102,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     mode_monitor_timer_ = private_nh_.createTimer(ros::Duration(1.0),
                                [this](const ros::TimerEvent&) { modeMonitor(); });
 
-    // Health pubs/subs
-    health_pub_ = nh_.advertise<std_msgs::String>("/mapversation/health_report", 10);
+    // Health subs
     path_planner_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(path_planner_topic_, 10, &TaskManager::pathPlannerCallback, this);
     costmap_sub_ = nh_.subscribe<map_msgs::OccupancyGridUpdate>(costmap_topic_, 10, &TaskManager::costmapCallback, this);
     lidar_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(lidar_topic_, 10, &TaskManager::lidarCallback, this);
@@ -119,11 +118,9 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     local_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("/mavros/setpoint_velocity/cmd_vel_unstamped", 10);
     vision_pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("/mavros/vision_pose/pose", 10);
 
-    // Heartbeat handling
-    heartbeat_pub_ = nh_.advertise<std_msgs::String>("/mapversation/monarch_heartbeat", 10);
+    // Heartbeat timer
     int heartbeat_hz = 1;
     heartbeat_timer_ = nh_.createTimer(ros::Duration(1.0 / heartbeat_hz), &TaskManager::heartbeatTimerCallback, this);
-    ui_heartbeat_subscriber_ = nh_.subscribe<std_msgs::String>("/mapversation/ui_heartbeat", 10, &TaskManager::uiHeartbeatCallback, this);
 
     // Recording
     start_record_pub_ = nh_.advertise<bag_recorder::Rosbag>("/record/start", 5);
@@ -137,18 +134,14 @@ TaskManager::TaskManager(ros::NodeHandle& node)
 
     // Task status pub
     task_pub_ = nh_.advertise<messages_88::TaskStatus>("task_status", 10);
-    task_json_pub_ = nh_.advertise<std_msgs::String>("/mapversation/task_status", 10);
     goal_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>(goal_topic, 10, &TaskManager::goalCallback, this);
     task_msg_.enable_autonomy = false;
     task_msg_.enable_exploration = false;
 
-    // Burn unit subscribers
-    burn_unit_sub_ = nh_.subscribe<std_msgs::String>("/mapversation/burn_unit_send", 10, &TaskManager::makeBurnUnitJson, this);
-    target_polygon_subscriber_ = nh_.subscribe<geometry_msgs::Polygon>("/mapversation/target_polygon", 10, &TaskManager::targetPolygonCallback, this);
-    target_setpoint_subscriber_ = nh_.subscribe<sensor_msgs::NavSatFix>("/mapversation/target_setpoint", 10, &TaskManager::targetSetpointCallback, this);
-    emergency_subscriber_ = nh_.subscribe<mavros_msgs::StatusText>("/mapversation/emergency", 10, &TaskManager::emergencyResponse, this);
+    // Mapversation subscriber
+    mapver_sub_ = nh_.subscribe<std_msgs::String>("/mapversation/to_decco", 10, &TaskManager::packageFromMapversation, this);
 
-    // Logs created in offline mode
+    // Logs created in offline mode (TODO, is this necessary anymore? Saving now should be part of postflight)
     vegetation_save_client_ = private_nh_.serviceClient<messages_88::Save>("/vegetation/save");
     tree_save_client_ = private_nh_.serviceClient<messages_88::Save>("/species_mapper/save");
     std::string data_folder = ros::package::getPath("task_manager_88") + "/logs/";
@@ -164,6 +157,26 @@ TaskManager::TaskManager(ros::NodeHandle& node)
 }
 
 TaskManager::~TaskManager(){}
+
+void TaskManager::packageFromMapversation(const std_msgs::String::ConstPtr &msg) {
+    json mapver_json = json::parse(msg->data);
+    std::string topic = mapver_json["topic"];
+    json gossip_json = mapver_json["gossip"];
+    if (topic == "burn_unit_send") {
+        makeBurnUnitJson(gossip_json);
+    }
+    else if (topic == "target_polygon") {
+        json burn_unit = hello_decco_manager_.polygonToBurnUnit(gossip_json);
+        makeBurnUnitJson(burn_unit);
+    }
+    else if (topic == "target_setpoint") {
+        setpointResponse(gossip_json);
+    }
+    else if (topic == "emergency") {
+        std::string severity = gossip_json["severity"];
+        emergencyResponse(severity);
+    }
+}
 
 void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
 
@@ -351,25 +364,23 @@ void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &sl
     }
 }
 
-void TaskManager::emergencyResponse(const mavros_msgs::StatusText::ConstPtr &msg) {
-    ROS_WARN("Emergency response initiated, level %d.", msg->severity);
+void TaskManager::emergencyResponse(const std::string severity) {
+    ROS_WARN("Emergency response initiated, level %s.", severity.c_str());
     // Immediately set to hover
     drone_state_manager_.setMode(loiter_mode_);
-    cmd_history_.append("Emergency init with severity " + std::to_string(msg->severity) + "\n");
+    cmd_history_.append("Emergency init with severity " + severity + "\n");
 
     // Then respond based on severity 
-    // (message definitions at http://docs.ros.org/en/noetic/api/mavros_msgs/html/msg/StatusText.html)
-    int level = msg->severity;
-    if (level == 5) {
+    if (severity == "PAUSE") {
         // NOTICE = PAUSE
         // TODO, tell exploration to stop searching frontiers. For now, will keep blacklisting them, but the drone is in loiter mode. Currently no way to pick back up and set to guided mode (here or in HD)
     }
-    else if (level == 0) {
+    else if (severity == "LAND") {
         // EMERGENCY = LAND IMMEDIATELY
         pauseOperations();
         drone_state_manager_.setMode(land_mode_);
     }
-    else if (level == 2) {
+    else if (severity == "RTL") {
         // CRITICAL = RTL
         pauseOperations();
         drone_state_manager_.setMode(rtl_mode_);
@@ -410,10 +421,7 @@ void TaskManager::heartbeatTimerCallback(const ros::TimerEvent&) {
             {"stamp", hb.header.stamp.toSec()}
         }}
     };
-    std::string s = j.dump();
-    std_msgs::String hb_string;
-    hb_string.data = s;
-    heartbeat_pub_.publish(hb_string);
+    hello_decco_manager_.packageToMapversation("decco_heartbeat", j);
 
     ros::Time now_time = ros::Time::now();
     float interval = (now_time - last_ui_heartbeat_stamp_).toSec();
@@ -425,7 +433,7 @@ void TaskManager::heartbeatTimerCallback(const ros::TimerEvent&) {
     }
 }
 
-void TaskManager::uiHeartbeatCallback(const std_msgs::String::ConstPtr &msg) {
+void TaskManager::uiHeartbeatCallback(const json &msg) {
     last_ui_heartbeat_stamp_ = ros::Time::now();
 }
 
@@ -633,9 +641,10 @@ void TaskManager::modeMonitor() {
     task_msg_.current_status.data = getStatusString();
     task_pub_.publish(task_msg_);
     json task_json = makeTaskJson();
-    std_msgs::String task_json_msg;
-    task_json_msg.data = task_json.dump();
-    task_json_pub_.publish(task_json_msg);
+    hello_decco_manager_.packageToMapversation("task_status", task_json);
+    // std_msgs::String task_json_msg;
+    // task_json_msg.data = task_json.dump();
+    // task_json_pub_.publish(task_json_msg);
 }
 
 void TaskManager::startBag() {
@@ -905,11 +914,7 @@ void TaskManager::publishHealth() {
     };
     healthObjects.push_back(j);
     jsonObjects["healthIndicators"] = healthObjects;
-
-    std::string s = jsonObjects.dump();
-    std_msgs::String health_string;
-    health_string.data = s;
-    health_pub_.publish(health_string);
+    hello_decco_manager_.packageToMapversation("health_report", jsonObjects);
 }
 
 void TaskManager::pathPlannerCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
@@ -941,23 +946,6 @@ void TaskManager::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) 
     goal_ = *msg;
 }
 
-void TaskManager::makeBurnUnitJson(const std_msgs::String::ConstPtr &msg) {
-    if (!enable_exploration_) {
-        ROS_WARN("Exploration disabled, burn unit ignored.");
-        return;
-    }
-    if (!map_tf_init_) {
-        ROS_WARN("Not ready for flight, try again after initialized.");
-        return;
-    }
-    json burn_unit = json::parse(msg->data);
-    std::string name = burn_unit["name"];
-    burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
-    hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
-    current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
-    getReadyForExplore();
-}
-
 void TaskManager::makeBurnUnitJson(json burn_unit) {
     if (!enable_exploration_) {
         ROS_WARN("Exploration disabled, burn unit ignored.");
@@ -974,17 +962,9 @@ void TaskManager::makeBurnUnitJson(json burn_unit) {
     getReadyForExplore();
 }
 
-// Below are purely test methods, to eventually be deprecated in favor of burn units
-void TaskManager::targetPolygonCallback(const geometry_msgs::Polygon::ConstPtr &msg) {
-    json burn_unit = hello_decco_manager_.polygonToBurnUnit(*msg);
-    makeBurnUnitJson(burn_unit);
-}
-
-void TaskManager::targetSetpointCallback(const sensor_msgs::NavSatFix::ConstPtr &msg) {
-    // ATM, this response is purely a testing function. All the drone should do is take off and hover.
-    ROS_INFO("setpoint received, ll: %f, %f", msg->latitude, msg->longitude);
+void TaskManager::setpointResponse(json &json_msg) {
+    // ATM, this response is purely a testing function. 
     startBag();
-    // TODO: check dist (need mavros sub position) below threshold, check mavros status, takeoff etc if needed, go to point
 }
 
 void TaskManager::mapYawCallback(const std_msgs::Float64::ConstPtr &msg) {
