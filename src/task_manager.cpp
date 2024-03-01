@@ -284,6 +284,15 @@ void TaskManager::mapTfTimerCallbackNoGlobal(const ros::TimerEvent&) {
     utm2map_tf_.transform.rotation.w = 1;
     static_tf_broadcaster_.sendTransform(utm2map_tf_);
 
+    double lat, lon;
+    hello_decco_manager_.utmToLL(utm_x, utm_y, home_utm_zone_, lat, lon);
+    sensor_msgs::NavSatFix nav_msg;
+    nav_msg.header.frame_id = "base_link";
+    nav_msg.header.stamp = ros::Time::now();
+    nav_msg.latitude = lat;
+    nav_msg.longitude = lon;
+    global_pose_pub_.publish(nav_msg);
+
     current_status_ = CurrentStatus::INITIALIZED;
     health_pub_timer_ = private_nh_.createTimer(health_check_s_,
                                [this](const ros::TimerEvent&) { publishHealth(); });

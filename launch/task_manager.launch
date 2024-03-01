@@ -22,6 +22,7 @@
     <arg name="rosbag_topic" default="/record/heartbeat"/>
 
      <!-- Record -->
+    <arg name="do_slam" default="true"/>
     <arg name="do_record" default="true"/>
     <arg name="user" value="$(env USER)"/>
     <arg name="data_directory" default="/home/$(arg user)/src/bags/"/>
