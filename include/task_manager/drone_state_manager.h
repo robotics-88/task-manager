@@ -52,6 +52,7 @@ class DroneStateManager {
         bool getMapYaw(double &yaw);
         double getCompass();
         bool getDroneInitalized() {return drone_initialized_;}
+        float getBatteryPercentage() {return battery_percentage_;}
 
         // Mavros subscriber callbacks
         void globalPositionCallback(const sensor_msgs::NavSatFix::ConstPtr &msg);
@@ -76,8 +77,13 @@ class DroneStateManager {
         void checkMsgRates(const ros::TimerEvent &event);
         void requestMavlinkStreams();
 
+        // Other methods
+        void calculateBatteryPercentage(float voltage, float current);
+        float findValidRoot(float a, float b, float c);
+
 
     private:
+
         ros::NodeHandle private_nh_;
         ros::NodeHandle nh_;
 
@@ -132,6 +138,8 @@ class DroneStateManager {
         sensor_msgs::NavSatFix current_ll_;
         geometry_msgs::PoseStamped current_pose_;
         sensor_msgs::Imu current_imu_;
+        sensor_msgs::BatteryState current_battery_;
+        float battery_percentage_ = -1.f;
         double home_compass_hdg_;
         double compass_hdg_;
         int compass_count_;
@@ -145,6 +153,7 @@ class DroneStateManager {
         ros::Duration service_wait_duration_;
         int detected_utm_zone_;
         bool utm_set_;
+        float battery_resistance_;
 
         // Message rate check stuff
         float all_stream_rate_;        

@@ -54,6 +54,7 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
   , service_wait_duration_(2.0)
   , detected_utm_zone_(-1)
   , utm_set_(false)
+  , battery_resistance_(0.0271)
   , msg_rate_timer_dt_(5.0)
   , imu_rate_(120.0)
   , local_pos_rate_(60.0)
@@ -63,6 +64,7 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
     private_nh_.param<float>("default_altitude_m", target_altitude_, target_altitude_);
     private_nh_.param<float>("max_altitude", max_altitude_, max_altitude_);
     private_nh_.param<float>("max_distance", max_distance_, max_distance_);
+    private_nh_.param<float>("battery_resistance", battery_resistance_, battery_resistance_);
     private_nh_.param<std::string>("mavros_global_pos_topic", mavros_global_pos_topic_, mavros_global_pos_topic_);
     private_nh_.param<std::string>("mavros_state_topic", mavros_state_topic_, mavros_state_topic_);
     private_nh_.param<std::string>("mavros_arming_topic", arming_topic_, arming_topic_);
@@ -499,9 +501,68 @@ void DroneStateManager::compassCallback(const std_msgs::Float64::ConstPtr & msg)
     compass_received_ = true;
 }
 
-// Currently, this is only being used as a proxy for the 'all streams' rate
 void DroneStateManager::batteryCallback(const sensor_msgs::BatteryState::ConstPtr &msg) {
+    current_battery_ = *msg;
     battery_count_++;
+
+    calculateBatteryPercentage(msg->voltage, msg->current);
+}
+
+void DroneStateManager::calculateBatteryPercentage(float voltage, float current) {
+
+    // Voltage compensated for voltage under load
+    float voltage_adj = voltage + current * battery_resistance_;
+
+    // Battery voltage to battery percentage conversion is not linear. 
+    // Use this piecewise function based on gathered data to estimate battery percentage.
+    if (voltage_adj >= 25.2) {
+        battery_percentage_ = 100.0;
+    }
+    else if (voltage_adj >= 22.95) {
+        // For this voltage range:
+        // voltage ~= 2.9*(1-percentage)^2 - 5.95*(1-percentage) + 25.2
+        // To get percentage, use quadratic formula. 
+        // 0 = 2.9*(1-percentage)^2 - 5.95*(1-percentage) + 25.2 - voltage
+        float a = 2.9;
+        float b = -5.95;
+        float c = 25.2 - voltage_adj;
+        battery_percentage_ = (1 - findValidRoot(a, b, c)) * 100;
+    }
+    else if (voltage_adj >= 22.213) {
+        // For this voltage range:
+        // voltage ~= -1.733*(1-percentage)+23.816
+        battery_percentage_ = (voltage_adj - 22.083) / 1.733 * 100;
+    }
+    else if (voltage_adj >= 21) {
+        // For this voltage range:
+        // voltage ~= -169.068 * (1-percentage)2 + 309.282(1-percentage)-119.214
+        // Solve as before
+        float a = -169.068;
+        float b = 309.282;
+        float c = -119.214 - voltage_adj;
+        battery_percentage_ = (1 - findValidRoot(a, b, c)) * 100;
+    }
+    else {
+        battery_percentage_ = 0.0;
+    }
+}
+
+float DroneStateManager::findValidRoot(float a, float b, float c) {
+    float discriminant = b*b - 4*a*c;
+    float x1, x2;
+    
+    if (discriminant < 0) {
+        ROS_WARN("Invalid battery calculation");
+        return 0.0;
+    }
+    else if (discriminant > 0) {
+        // Note: this is only one of the 2 real roots.
+        // However, this one is the correct one for the possible input values
+        return (-b - sqrt(discriminant)) / (2*a);
+    }
+    else if (discriminant == 0) {
+        return -b/(2*a);
+    }
 }
 
 void DroneStateManager::statusCallback(const mavros_msgs::State::ConstPtr & msg) {
