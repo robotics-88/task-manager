@@ -138,8 +138,7 @@ class DroneStateManager {
         sensor_msgs::NavSatFix current_ll_;
         geometry_msgs::PoseStamped current_pose_;
         sensor_msgs::Imu current_imu_;
-        sensor_msgs::BatteryState current_battery_;
-        float battery_percentage_ = -1.f;
+        float flight_time_remaining_;
         double home_compass_hdg_;
         double compass_hdg_;
         int compass_count_;
@@ -153,7 +152,15 @@ class DroneStateManager {
         ros::Duration service_wait_duration_;
         int detected_utm_zone_;
         bool utm_set_;
+
+        // Battery estimation stuff
+        sensor_msgs::BatteryState current_battery_;
+        float battery_percentage_ = -1.f;
+        std::vector<float> recent_currents_;
         float battery_resistance_;
+        float battery_size_;
+        float estimated_current_;
+        float estimated_flight_time_remaining_;
 
         // Message rate check stuff
         float all_stream_rate_;        
