@@ -535,10 +535,6 @@ void DroneStateManager::batteryCallback(const sensor_msgs::BatteryState::ConstPt
     float amp_hours_left = battery_size_ * battery_percentage_ / 100.f;
     float estimated_flight_time_remaining_ = amp_hours_left / estimated_current_ * 3600;
 
-    std::cout << "Estimated current: " << estimated_current_ << std::endl;
-    std::cout << "Amp hours left: " << amp_hours_left << std::endl;
-    std::cout << "Estimated flight time remaining: " << estimated_flight_time_remaining_ << std::endl;
-
 }
 
 void DroneStateManager::statusCallback(const mavros_msgs::State::ConstPtr & msg) {
