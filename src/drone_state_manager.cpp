@@ -533,9 +533,7 @@ void DroneStateManager::batteryCallback(const sensor_msgs::BatteryState::ConstPt
 
     // Calculate estimated flight time remaining based on battery percentage and current draw
     float amp_hours_left = battery_size_ * battery_percentage_ / 100.f;
-    float estimated_flight_time_remaining_ = amp_hours_left / estimated_current_;
-    // Convert to seconds and add safety factor of 0.9
-    estimated_flight_time_remaining_ *= 0.9 * 3600;
+    float estimated_flight_time_remaining_ = amp_hours_left / estimated_current_ * 3600;
 
     std::cout << "Estimated current: " << estimated_current_ << std::endl;
     std::cout << "Amp hours left: " << amp_hours_left << std::endl;
