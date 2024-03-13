@@ -4,6 +4,8 @@
     <arg name="slam_pose_topic" default="/decco/pose"/>
     <arg name="goal_topic" default="/mavros/setpoint_position/local"/> <!-- for mavros without OA, use /mavros/setpoint_position/local. default is /goal.-->
 
+    <arg name="do_slam" default="false"/>
+
     <arg name="enable_autonomy" default="false"/>
     <arg name="enable_exploration" default="false"/>
     <arg name="ardupilot" default="true"/>
@@ -69,5 +71,6 @@
         <param name="battery_resistance" value="0.0271"/> <!-- TODO get this dynamically from the drone -->
         <param name="battery_size" value="5.2"/> <!-- Battery size in amp hours -->
         <param name="estimated_current" value="25"/> <!-- Conservative starting estimate for current consumption -->
+        <param name="estimated_drone_speed" value="2.0"/> <!-- m/s -->
     </node>
 </launch>

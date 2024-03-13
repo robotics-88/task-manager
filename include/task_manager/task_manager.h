@@ -176,6 +176,7 @@ class TaskManager {
         ros::Publisher task_json_pub_;
         geometry_msgs::PoseStamped goal_;
         ros::Subscriber goal_sub_;
+        double estimated_drone_speed_;
 
         actionlib::SimpleActionClient<messages_88::ExploreAction> explore_action_client_;
 
@@ -248,6 +249,7 @@ class TaskManager {
         std::string getStatusString();
         void publishHealth();
         json makeTaskJson();
+        bool isBatteryOk();
 };
 
 }
