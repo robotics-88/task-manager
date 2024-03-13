@@ -8,6 +8,8 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 #include <ros/ros.h>
 
+#include <map>
+
 #include <actionlib/client/terminal_state.h>
 #include <geometry_msgs/Polygon.h>
 #include <geometry_msgs/PoseStamped.h>
@@ -40,6 +42,7 @@ class DroneStateManager {
         // State access methods
         void setAutonomyEnabled(bool enabled);
         void setExplorationEnabled(bool enabled);
+        geometry_msgs::PoseStamped getCurrentSlamPosition();
         geometry_msgs::PoseStamped getCurrentLocalPosition();
         sensor_msgs::NavSatFix getCurrentGlobalPosition();
         void waitForGlobal();
@@ -63,6 +66,7 @@ class DroneStateManager {
         void imuCallback(const sensor_msgs::Imu::ConstPtr &msg);
         void compassCallback(const std_msgs::Float64::ConstPtr & msg);
         void batteryCallback(const sensor_msgs::BatteryState::ConstPtr &msg);
+        void slamPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
 
         // Mavros state control
         bool setGuided();
@@ -89,9 +93,8 @@ class DroneStateManager {
         ros::NodeHandle nh_;
 
         bool offline_;
-
         bool simulate_;
-
+        bool do_slam_;
         bool autonomy_active_;
 
         // Safety for enabling control
@@ -120,6 +123,7 @@ class DroneStateManager {
         ros::Subscriber mavros_imu_subscriber_;
         ros::Subscriber mavros_compass_subscriber_;
         ros::Subscriber mavros_battery_subscriber_;
+        ros::Subscriber slam_pose_subscriber_;
 
         // Mavros service clients
         std::string arming_topic_;
@@ -162,6 +166,8 @@ class DroneStateManager {
         float battery_size_;
         float estimated_current_;
         float estimated_flight_time_remaining_;
+        // Slam pose
+        geometry_msgs::PoseStamped current_slam_pose_;
 
         // Message rate check stuff
         float all_stream_rate_;        
@@ -189,8 +195,16 @@ class DroneStateManager {
         bool geofence_clear_ok_ = false;
         bool mission_clear_ok_ = false;
         bool compass_init_ok_ = false;
-        bool heading_src_back_ok_ = false;
+        bool param_set_ok_ = false;
 
+        std::map<std::string, int> param_map_ = {
+            { "EK3_SRC1_POSXY", 3 },
+            { "EK3_SRC1_VELXY", 3 },
+            { "EK3_SRC1_POSZ", 1 },
+            { "EK3_SRC1_VELZ", 3 },
+            { "EK3_SRC1_YAW", 1 },
+            { "VISO_TYPE", 0 },
+        };
 
 };
 

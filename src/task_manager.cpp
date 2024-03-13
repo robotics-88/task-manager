@@ -61,7 +61,11 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , did_save_(false)
     , did_takeoff_(false)
     , explicit_global_params_(false)
+<<<<<<< HEAD
     , estimated_drone_speed_(2.0)
+=======
+    , do_slam_(false)
+>>>>>>> main
 {
     private_nh_.param<bool>("enable_autonomy", enable_autonomy_, enable_autonomy_);
     private_nh_.param<bool>("enable_exploration", enable_exploration_, enable_exploration_);
@@ -85,9 +89,13 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<bool>("offline", offline_, offline_);
     private_nh_.param<std::string>("data_directory", burn_dir_prefix_, burn_dir_prefix_);
     private_nh_.param<bool>("explicit_global", explicit_global_params_, explicit_global_params_);
+<<<<<<< HEAD
     private_nh_.param<double>("estimated_drone_speed", estimated_drone_speed_, estimated_drone_speed_);
 
     estimated_drone_speed_ = estimated_drone_speed_ < 1 ? 1.0 : estimated_drone_speed_; // This protects against a later potential div by 0
+=======
+    private_nh_.param<bool>("do_slam", do_slam_, do_slam_);
+>>>>>>> main
 
     hello_decco_manager_.setFrames(mavros_map_frame_, slam_map_frame_);
 
@@ -392,7 +400,7 @@ bool TaskManager::convert2Geo(messages_88::Geopoint::Request& req, messages_88::
 
 void TaskManager::heartbeatTimerCallback(const ros::TimerEvent&) {
     sensor_msgs::NavSatFix hb = drone_state_manager_.getCurrentGlobalPosition();
-    geometry_msgs::PoseStamped local = drone_state_manager_.getCurrentLocalPosition();
+    geometry_msgs::PoseStamped local = drone_state_manager_.getCurrentSlamPosition();
     geometry_msgs::Quaternion quat_flu = local.pose.orientation;
     double yaw = drone_state_manager_.getCompass();
     json j = {
@@ -464,7 +472,7 @@ void TaskManager::getReadyForExplore() {
     cmd_history_.append("Get ready to explore command received.\n ");
     bool needs_transit = false;
     geometry_msgs::PoseStamped target_position;
-    if (!isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition().pose.position)) {
+    if (!isInside(current_polygon_, drone_state_manager_.getCurrentSlamPosition().pose.position)) {
         cmd_history_.append("Transit to explore required.\n ");
         needs_transit = true;
         // Find nearest point on the polygon
@@ -522,7 +530,7 @@ void TaskManager::startNav2PointTask(messages_88::NavToPointGoal &nav_goal) {
     target.header.stamp = ros::Time::now();
     target.pose.position = point;
     local_pos_pub_.publish(target);
-    while (!(isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition().pose.position) || current_status_ == CurrentStatus::WAITING_TO_EXPLORE)) {
+    while (!(isInside(current_polygon_, drone_state_manager_.getCurrentSlamPosition().pose.position) || current_status_ == CurrentStatus::WAITING_TO_EXPLORE)) {
         ros::Duration(1.0).sleep();    
     }
 }
@@ -751,7 +759,7 @@ bool TaskManager::polygonDistanceOk(double &min_dist, geometry_msgs::PoseStamped
 
     // Compute intersection
     bool intersection1 = false, intersection2 = false;
-    geometry_msgs::Point my_position = drone_state_manager_.getCurrentLocalPosition().pose.position;
+    geometry_msgs::Point my_position = drone_state_manager_.getCurrentSlamPosition().pose.position;
     // Compute first edge
     double dx1 = closest_point.x - point1.x;
     double dy1 = closest_point.y - point1.y;
@@ -823,7 +831,7 @@ bool TaskManager::polygonDistanceOk(double &min_dist, geometry_msgs::PoseStamped
 void TaskManager::padNavTarget(geometry_msgs::PoseStamped &target) {
     // Add 2m to ensure fully inside polygon, otherwise exploration won't start
     float padding = 2.0;
-    geometry_msgs::Point my_position = drone_state_manager_.getCurrentLocalPosition().pose.position;
+    geometry_msgs::Point my_position = drone_state_manager_.getCurrentSlamPosition().pose.position;
     double dif_x = target.pose.position.x - my_position.x;
     double dif_y = target.pose.position.y - my_position.y;
     double norm = sqrt(std::pow(dif_x, 2) + std::pow(dif_y, 2));
@@ -863,7 +871,7 @@ void TaskManager::publishHealth() {
     auto healthObjects = json::array();
     // 1) Path planner
     bool path_healthy = (t - last_path_planner_stamp_ < health_check_s_);
-    if (!path_healthy) {
+    if (!path_healthy && do_slam_) {
         cmd_history_.append("Failsafe triggered by path unhealthy. \n");
         failsafe();
     }
@@ -875,7 +883,7 @@ void TaskManager::publishHealth() {
     healthObjects.push_back(j);
     // 2) SLAM position
     bool slam_healthy = (t - last_slam_pos_stamp_ < health_check_s_);
-    if (!slam_healthy) {
+    if (!slam_healthy && do_slam_) {
         cmd_history_.append("Failsafe triggered by SLAM unhealthy. \n");
         failsafe();
     }
