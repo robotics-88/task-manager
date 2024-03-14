@@ -61,11 +61,8 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , did_save_(false)
     , did_takeoff_(false)
     , explicit_global_params_(false)
-<<<<<<< HEAD
     , estimated_drone_speed_(2.0)
-=======
     , do_slam_(false)
->>>>>>> main
 {
     private_nh_.param<bool>("enable_autonomy", enable_autonomy_, enable_autonomy_);
     private_nh_.param<bool>("enable_exploration", enable_exploration_, enable_exploration_);
@@ -77,6 +74,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
 
     std::string goal_topic = "/mavros/setpoint_position/local";
     private_nh_.param<std::string>("goal_topic", goal_topic, goal_topic);
+    private_nh_.param<bool>("do_slam", do_slam_, do_slam_);
     private_nh_.param<bool>("do_record", do_record_, do_record_);
     private_nh_.param<std::string>("mavros_map_frame", mavros_map_frame_, mavros_map_frame_);
     private_nh_.param<std::string>("slam_map_frame", slam_map_frame_, slam_map_frame_);
@@ -89,13 +87,9 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<bool>("offline", offline_, offline_);
     private_nh_.param<std::string>("data_directory", burn_dir_prefix_, burn_dir_prefix_);
     private_nh_.param<bool>("explicit_global", explicit_global_params_, explicit_global_params_);
-<<<<<<< HEAD
     private_nh_.param<double>("estimated_drone_speed", estimated_drone_speed_, estimated_drone_speed_);
-
     estimated_drone_speed_ = estimated_drone_speed_ < 1 ? 1.0 : estimated_drone_speed_; // This protects against a later potential div by 0
-=======
-    private_nh_.param<bool>("do_slam", do_slam_, do_slam_);
->>>>>>> main
+    
 
     hello_decco_manager_.setFrames(mavros_map_frame_, slam_map_frame_);
 
@@ -171,6 +165,11 @@ TaskManager::TaskManager(ros::NodeHandle& node)
         ROS_INFO("Folder did not exist, creating directory: %s", log_dir_.c_str());
         boost::filesystem::create_directories(log_dir_);
     }
+
+    // Initialize home pos struct
+    home_pos_.header.frame_id = slam_map_frame_;
+    home_pos_.pose.position.x = 0;
+    home_pos_.pose.position.y = 0;
 
     initDroneStateManager();
 }
@@ -605,23 +604,21 @@ void TaskManager::modeMonitor() {
         did_takeoff_ = false; // Reset so can restart if another takeoff
     }
 
-    geometry_msgs::PoseStamped home_pos;
-    home_pos.header.frame_id = slam_map_frame_;
-    home_pos.header.stamp = ros::Time::now();
-    home_pos.pose.position.x = 0;
-    home_pos.pose.position.y = 0;
-    home_pos.pose.position.z = current_explore_goal_.altitude;
+    // Update home position
+    home_pos_.header.stamp = ros::Time::now();
+    home_pos_.pose.position.z = current_explore_goal_.altitude;
 
     // This is the primary state machine
     switch (current_status_) {
         case CurrentStatus::EXPLORING:
         {
-
+            // Check if we can make it home on current battery levels
             if (!isBatteryOk()) {
                 std::string action_string = "Battery level low, returning home";
                 ROS_WARN("%s", action_string.c_str());
                 cmd_history_.append(action_string);
                 pauseOperations();
+                doRtl88();
             }
             
             // Check action client status to see if complete
@@ -633,14 +630,13 @@ void TaskManager::modeMonitor() {
                 ROS_INFO("explore action client state: %s", explore_action_client_.getState().getText().c_str());
                 std::string action_string = "Exploration complete, action client status: " + explore_action_client_.getState().getText() + ", sending SLAM origin as position target. \n";
                 cmd_history_.append(action_string);
-                local_pos_pub_.publish(home_pos);
-                current_status_ = CurrentStatus::RTL_88;
+                doRtl88();
                 hello_decco_manager_.updateBurnUnit(current_index_, "COMPLETED");
             }
         }
         case CurrentStatus::RTL_88:
         {
-            if (drone_state_manager_.getCurrentLocalPosition().pose.position == home_pos.pose.position) {
+            if (drone_state_manager_.getCurrentLocalPosition().pose.position == home_pos_.pose.position) {
                 drone_state_manager_.setMode(land_mode_);
                 current_status_ = CurrentStatus::LANDING;
             }
@@ -658,6 +654,12 @@ void TaskManager::modeMonitor() {
     std_msgs::String task_json_msg;
     task_json_msg.data = task_json.dump();
     task_json_pub_.publish(task_json_msg);
+}
+
+void TaskManager::doRtl88() {
+    ROS_INFO("Doing RTL 88");
+    local_pos_pub_.publish(home_pos_);
+    current_status_ = CurrentStatus::RTL_88;
 }
 
 bool TaskManager::isBatteryOk() {

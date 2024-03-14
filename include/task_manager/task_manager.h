@@ -169,6 +169,7 @@ class TaskManager {
         ros::Publisher stop_record_pub_;
 
         // Drone state params
+        geometry_msgs::PoseStamped home_pos_;
         geometry_msgs::Polygon current_polygon_;
         ros::Timer mode_monitor_timer_;
         std::string cmd_history_;
@@ -251,6 +252,7 @@ class TaskManager {
         void publishHealth();
         json makeTaskJson();
         bool isBatteryOk();
+        void doRtl88();
 };
 
 }
