@@ -5,6 +5,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 #include "task_manager/drone_state_manager.h"
 #include "messages_88/ExploreAction.h"
+#include "messages_88/Battery.h"
 
 #include <mavros_msgs/MessageInterval.h>
 #include <mavros_msgs/ParamSet.h>
@@ -56,7 +57,7 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
   , utm_set_(false)
   , battery_resistance_(0.0271)
   , battery_size_(5.2)
-  , estimated_current_(25.0)
+  , estimated_current_(20.0)
   , msg_rate_timer_dt_(5.0)
   , imu_rate_(120.0)
   , local_pos_rate_(60.0)
@@ -113,6 +114,8 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
     // Slam pose subscriber
     slam_pose_subscriber_ = nh_.subscribe<geometry_msgs::PoseStamped>("/decco/pose", 10, &DroneStateManager::slamPoseCallback, this);
 
+    battery_pub_ = nh_.advertise<messages_88::Battery>("/decco/battery", 10);
+
     if (!offline_) {
         // Run initial mavlink stream request, just so we can get drone data immediately
         requestMavlinkStreams();
@@ -139,7 +142,7 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
     }
 
     // fill recent current vector with starting estimated current from param
-    for (int i; i < 10; i++) {
+    for (int i = 0; i < 10; i++) {
         recent_currents_.push_back(estimated_current_);
     }
 }
@@ -540,7 +543,10 @@ void DroneStateManager::batteryCallback(const sensor_msgs::BatteryState::ConstPt
     current_battery_ = *msg;
     battery_count_++;
 
-    calculateBatteryPercentage(msg->voltage, msg->current);
+    // Voltage compensated for voltage under load
+    float voltage_adj = msg->voltage + msg->current * battery_resistance_;
+
+    calculateBatteryPercentage(voltage_adj);
     
     // If current is below 5A, we likely have not taken off yet, so don't update current calculation
     if (msg->current > 5.f) {
@@ -555,13 +561,23 @@ void DroneStateManager::batteryCallback(const sensor_msgs::BatteryState::ConstPt
             sum += i;
         }
 
-        float estimated_current_ = sum / recent_currents_.size();
+        estimated_current_ = sum / recent_currents_.size();
     }
 
     // Calculate estimated flight time remaining based on battery percentage and current draw
     float amp_hours_left = battery_size_ * battery_percentage_ / 100.f;
     float estimated_flight_time_remaining_ = amp_hours_left / estimated_current_ * 3600;
 
+    // Publish custom battery message
+    messages_88::Battery batt_msg;
+    batt_msg.header.stamp = ros::Time::now();
+    batt_msg.voltage_adj = voltage_adj;
+    batt_msg.percentage = battery_percentage_;
+    batt_msg.estimated_current = estimated_current_;
+    batt_msg.amp_hours_left = amp_hours_left;
+    batt_msg.flight_time_remaining = estimated_flight_time_remaining_;
+
+    battery_pub_.publish(batt_msg);
 }
 
 void DroneStateManager::statusCallback(const mavros_msgs::State::ConstPtr & msg) {
@@ -725,10 +741,7 @@ bool DroneStateManager::getReadyForAction() {
     return guided && armed && (in_air_ || takeoff);
 }
 
-void DroneStateManager::calculateBatteryPercentage(float voltage, float current) {
-
-    // Voltage compensated for voltage under load
-    float voltage_adj = voltage + current * battery_resistance_;
+void DroneStateManager::calculateBatteryPercentage(float voltage_adj) {
 
     // Battery voltage to battery percentage conversion is not linear. 
     // Use this piecewise function based on gathered data to estimate battery percentage.

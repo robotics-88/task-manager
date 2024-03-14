@@ -83,7 +83,7 @@ class DroneStateManager {
         void requestMavlinkStreams();
 
         // Other methods
-        void calculateBatteryPercentage(float voltage, float current);
+        void calculateBatteryPercentage(float voltage_adj);
         float findValidRoot(float a, float b, float c);
 
 
@@ -166,6 +166,8 @@ class DroneStateManager {
         float battery_size_;
         float estimated_current_;
         float estimated_flight_time_remaining_;
+        ros::Publisher battery_pub_; // Publisher mostly for debug
+
         // Slam pose
         geometry_msgs::PoseStamped current_slam_pose_;
 
