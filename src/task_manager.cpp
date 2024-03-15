@@ -953,7 +953,9 @@ void TaskManager::makeBurnUnitJson(const std_msgs::String::ConstPtr &msg) {
         std::string burn_status_string = "No burn units subpolygons were incomplete, not exploring. \n";
         cmd_history_.append(burn_status_string);
     }
-    getReadyForExplore();
+    else {
+        getReadyForExplore();
+    }
 }
 
 void TaskManager::makeBurnUnitJson(json burn_unit) {
@@ -974,7 +976,9 @@ void TaskManager::makeBurnUnitJson(json burn_unit) {
         std::string burn_status_string = "No burn units subpolygons were incomplete, not exploring. \n";
         cmd_history_.append(burn_status_string);
     }
-    getReadyForExplore();
+    else {
+        getReadyForExplore();
+    }
 }
 
 // Below are purely test methods, to eventually be deprecated in favor of burn units
