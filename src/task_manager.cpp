@@ -948,7 +948,14 @@ void TaskManager::makeBurnUnitJson(const std_msgs::String::ConstPtr &msg) {
     burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
     hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
     current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
-    getReadyForExplore();
+    if (current_index_ < 0) {
+        ROS_WARN("No burn polygon was found, all are already complete.");
+        std::string burn_status_string = "No burn units subpolygons were incomplete, not exploring. \n";
+        cmd_history_.append(burn_status_string);
+    }
+    else {
+        getReadyForExplore();
+    }
 }
 
 void TaskManager::makeBurnUnitJson(json burn_unit) {
@@ -964,7 +971,14 @@ void TaskManager::makeBurnUnitJson(json burn_unit) {
     burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
     hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
     current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
-    getReadyForExplore();
+    if (current_index_ < 0) {
+        ROS_WARN("No burn polygon was found, all are already complete.");
+        std::string burn_status_string = "No burn units subpolygons were incomplete, not exploring. \n";
+        cmd_history_.append(burn_status_string);
+    }
+    else {
+        getReadyForExplore();
+    }
 }
 
 // Below are purely test methods, to eventually be deprecated in favor of burn units
