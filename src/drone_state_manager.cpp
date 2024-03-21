@@ -61,6 +61,7 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
   , msg_rate_timer_dt_(5.0)
   , imu_rate_(120.0)
   , local_pos_rate_(60.0)
+  , battery_rate_(10.0)
   , all_stream_rate_(5.0)
 {
     // Set params from launch file 
@@ -204,7 +205,7 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
         }
 
         // Check success
-        if (!all_stream_rate_ok_ || !imu_rate_ok_) {
+        if (!battery_rate_ok_ || !imu_rate_ok_) {
             if (attempts_ == 5) {
                 ROS_ERROR("MAVlink stream rates failed after 5 attempts");
                 drone_init_timer_.stop();
@@ -393,6 +394,10 @@ void DroneStateManager::requestMavlinkStreams() {
     msg_interval_srv.request.message_id = 32; // LOCAL_POSITION_NED
     msg_interval_srv.request.message_rate = local_pos_rate_ * stream_rate_modifier_;
     msg_interval_client.call(msg_interval_srv);
+
+    msg_interval_srv.request.message_id = 147; // BATTERY_STATUS
+    msg_interval_srv.request.message_rate = battery_rate_ * stream_rate_modifier_;
+    msg_interval_client.call(msg_interval_srv);
 }
 
 void DroneStateManager::initUTM(double &utm_x, double &utm_y) {
@@ -419,12 +424,12 @@ void DroneStateManager::checkMsgRates(const ros::TimerEvent &event) {
     }
 
     // Use battery message as proxy for all generic message streams
-    if (battery_count_ / msg_rate_timer_dt_ < all_stream_rate_ * 0.8) {
-        ROS_WARN("Warning, generic stream only sending at %f / %f hz", (battery_count_ / msg_rate_timer_dt_), all_stream_rate_);
-        all_stream_rate_ok_ = false;
+    if (battery_count_ / msg_rate_timer_dt_ < battery_rate_ * 0.8) {
+        ROS_WARN("Warning, battery only sending at %f / %f hz", (battery_count_ / msg_rate_timer_dt_), battery_rate_);
+        battery_rate_ok_ = false;
     }
     else {
-        all_stream_rate_ok_ = true;
+        battery_rate_ok_ = true;
     }
 
     // Also check local pos rate, but don't use this for initialization check b/c drone needs to initialize before
@@ -545,11 +550,39 @@ void DroneStateManager::batteryCallback(const sensor_msgs::BatteryState::ConstPt
 
     float current = -msg->current; // Mavros current is negative
 
-    // Voltage compensated for voltage under load
-    float voltage_adj = msg->voltage + current * battery_resistance_;
+    // If current is low, we can estimate battery percentage from voltage. 
+    // We use this 'last resting percent' as the starting point for calculations for 
+    // remaining battery life. 
+    if (current < 1.f) {
+        last_resting_percent_ = calculateBatteryPercentage(msg->voltage);
+        last_resting_percent_time_ = ros::Time::now();
+        current_drawn_since_resting_percent_ = 0.f;
+    }
 
-    calculateBatteryPercentage(voltage_adj);
-    
+    current_drawn_since_resting_percent_ += current * (ros::Time::now() - last_battery_measurement_).toSec() / 3600;
+    last_battery_measurement_ = ros::Time::now();
+
+    float battery_percent_drawn_since_resting_ = current_drawn_since_resting_percent_ / battery_size_ * 100.f;
+    float estimated_battery_percentage = last_resting_percent_ - battery_percent_drawn_since_resting_;
+    float amp_hours_left = battery_size_ * estimated_battery_percentage / 100.f;
+
+
+    // Use current estimate and remaining amp hours to determine how many seconds of flight time we have left
+    // If current is below 5A, we likely have not taken off yet, so don't update current calculation
+    if (current > 5.f) {
+        recent_currents_.push_back(current);
+        recent_currents_.erase(recent_currents_.begin());
+    }
+
+    // Calculate estimated current based on average of recent current measurements
+    if (recent_currents_.size() > 0) {
+        float sum = 0.f;
+        for (auto i : recent_currents_) {
+            sum += i;
+        }
+
+        estimated_current_ = sum / recent_currents_.size();
+    }
     // If current is below 5A, we likely have not taken off yet, so don't update current calculation
     if (current > 5.f) {
         recent_currents_.push_back(current);
@@ -566,15 +599,12 @@ void DroneStateManager::batteryCallback(const sensor_msgs::BatteryState::ConstPt
         estimated_current_ = sum / recent_currents_.size();
     }
 
-    // Calculate estimated flight time remaining based on battery percentage and current draw
-    float amp_hours_left = battery_size_ * battery_percentage_ / 100.f;
     float estimated_flight_time_remaining_ = amp_hours_left / estimated_current_ * 3600;
 
     // Publish custom battery message
     messages_88::Battery batt_msg;
     batt_msg.header.stamp = ros::Time::now();
-    batt_msg.voltage_adj = voltage_adj;
-    batt_msg.percentage = battery_percentage_;
+    batt_msg.percentage = estimated_battery_percentage;
     batt_msg.estimated_current = estimated_current_;
     batt_msg.amp_hours_left = amp_hours_left;
     batt_msg.flight_time_remaining = estimated_flight_time_remaining_;
@@ -743,58 +773,96 @@ bool DroneStateManager::getReadyForAction() {
     return guided && armed && (in_air_ || takeoff);
 }
 
-void DroneStateManager::calculateBatteryPercentage(float voltage_adj) {
+
+float DroneStateManager::calculateBatteryPercentage(float voltage) {
+
+    float battery_percentage = 0.f;
+
+    // Use voltage per cell as that is more flexible. Currently we can just hardcode 6 cell
+    voltage = voltage / 6.f;
 
     // Battery voltage to battery percentage conversion is not linear. 
     // Use this piecewise function based on gathered data to estimate battery percentage.
-    if (voltage_adj >= 25.2) {
-        battery_percentage_ = 100.0;
+    if (voltage >= 4.2) {
+        battery_percentage = 100.0;
     }
-    else if (voltage_adj >= 22.95) {
+    else if (voltage >= 3.85) {
         // For this voltage range:
-        // voltage ~= 2.9*(1-percentage)^2 - 5.95*(1-percentage) + 25.2
-        // To get percentage, use quadratic formula. 
-        // 0 = 2.9*(1-percentage)^2 - 5.95*(1-percentage) + 25.2 - voltage
-        float a = 2.9;
-        float b = -5.95;
-        float c = 25.2 - voltage_adj;
-        battery_percentage_ = (1 - findValidRoot(a, b, c)) * 100;
+        // voltage ~= 0.7*(percentage) + 3.5, so
+        battery_percentage = (voltage - 3.5) / 0.7 * 100;
     }
-    else if (voltage_adj >= 22.213) {
+    else if (voltage >= 3.7) {
         // For this voltage range:
-        // voltage ~= -1.733*(1-percentage)+23.816
-        battery_percentage_ = (voltage_adj - 22.083) / 1.733 * 100;
+        // voltage ~= 0.333*(percentage) + 3.683
+        battery_percentage = (voltage - 3.683) / 0.333 * 100;
     }
-    else if (voltage_adj >= 21) {
+    else if (voltage >= 3.5) {
         // For this voltage range:
-        // voltage ~= -169.068 * (1-percentage)2 + 309.282(1-percentage)-119.214
-        // Solve as before
-        float a = -169.068;
-        float b = 309.282;
-        float c = -119.214 - voltage_adj;
-        battery_percentage_ = (1 - findValidRoot(a, b, c)) * 100;
+        // voltage ~= 4*(percentage) + 3.5
+        battery_percentage = (voltage - 3.5) / 4 * 100;
     }
     else {
-        battery_percentage_ = 0.0;
+        battery_percentage = 0.0;
     }
+
+    return battery_percentage;
 }
 
-float DroneStateManager::findValidRoot(float a, float b, float c) {
-    float discriminant = b*b - 4*a*c;
-    float x1, x2;
+
+// These are old methods of getting battery percentage. They aren't currently used but I don't want to delete them just yet.
+
+// void DroneStateManager::calculateBatteryPercentage(float voltage_adj) {
+
+//     // Battery voltage to battery percentage conversion is not linear. 
+//     // Use this piecewise function based on gathered data to estimate battery percentage.
+//     if (voltage_adj >= 25.2) {
+//         battery_percentage_ = 100.0;
+//     }
+//     else if (voltage_adj >= 22.95) {
+//         // For this voltage range:
+//         // voltage ~= 2.9*(1-percentage)^2 - 5.95*(1-percentage) + 25.2
+//         // To get percentage, use quadratic formula. 
+//         // 0 = 2.9*(1-percentage)^2 - 5.95*(1-percentage) + 25.2 - voltage
+//         float a = 2.9;
+//         float b = -5.95;
+//         float c = 25.2 - voltage_adj;
+//         battery_percentage_ = (1 - findValidRoot(a, b, c)) * 100;
+//     }
+//     else if (voltage_adj >= 22.213) {
+//         // For this voltage range:
+//         // voltage ~= -1.733*(1-percentage)+23.816
+//         battery_percentage_ = (voltage_adj - 22.083) / 1.733 * 100;
+//     }
+//     else if (voltage_adj >= 21) {
+//         // For this voltage range:
+//         // voltage ~= -169.068 * (1-percentage)2 + 309.282(1-percentage)-119.214
+//         // Solve as before
+//         float a = -169.068;
+//         float b = 309.282;
+//         float c = -119.214 - voltage_adj;
+//         battery_percentage_ = (1 - findValidRoot(a, b, c)) * 100;
+//     }
+//     else {
+//         battery_percentage_ = 0.0;
+//     }
+// }
+
+// float DroneStateManager::findValidRoot(float a, float b, float c) {
+//     float discriminant = b*b - 4*a*c;
+//     float x1, x2;
     
-    if (discriminant < 0) {
-        ROS_WARN("Invalid battery calculation");
-        return 0.0;
-    }
-    else if (discriminant > 0) {
-        // Note: this is only one of the 2 real roots.
-        // However, this one is the correct one for the possible input values
-        return (-b - sqrt(discriminant)) / (2*a);
-    }
-    else if (discriminant == 0) {
-        return -b/(2*a);
-    }
-}
+//     if (discriminant < 0) {
+//         ROS_WARN("Invalid battery calculation");
+//         return 0.0;
+//     }
+//     else if (discriminant > 0) {
+//         // Note: this is only one of the 2 real roots.
+//         // However, this one is the correct one for the possible input values
+//         return (-b - sqrt(discriminant)) / (2*a);
+//     }
+//     else if (discriminant == 0) {
+//         return -b/(2*a);
+//     }
+// }
 
 }

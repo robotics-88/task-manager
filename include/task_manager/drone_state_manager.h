@@ -83,8 +83,8 @@ class DroneStateManager {
         void requestMavlinkStreams();
 
         // Other methods
-        void calculateBatteryPercentage(float voltage_adj);
-        float findValidRoot(float a, float b, float c);
+        float calculateBatteryPercentage(float voltage);
+        // float findValidRoot(float a, float b, float c);
 
 
     private:
@@ -160,7 +160,10 @@ class DroneStateManager {
 
         // Battery estimation stuff
         sensor_msgs::BatteryState current_battery_;
-        float battery_percentage_ = -1.f;
+        float last_resting_percent_;
+        ros::Time last_resting_percent_time_;
+        ros::Time last_battery_measurement_;
+        float current_drawn_since_resting_percent_;
         std::vector<float> recent_currents_;
         float battery_resistance_;
         float battery_size_;
@@ -172,7 +175,7 @@ class DroneStateManager {
         geometry_msgs::PoseStamped current_slam_pose_;
 
         // Message rate check stuff
-        float all_stream_rate_;        
+        float all_stream_rate_;
         float msg_rate_timer_dt_;
         ros::Timer msg_rate_timer_;
         float imu_rate_;
@@ -180,10 +183,11 @@ class DroneStateManager {
         float local_pos_rate_;
         int local_pos_count_;
         float stream_rate_modifier_;
+        float battery_rate_;
         int battery_count_;
 
         bool imu_rate_ok_ = false;
-        bool all_stream_rate_ok_ = false;
+        bool battery_rate_ok = false;
 
         // Initialization check stuff
         bool drone_initialized_ = false;
