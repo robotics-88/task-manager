@@ -62,6 +62,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , did_takeoff_(false)
     , explicit_global_params_(false)
     , estimated_drone_speed_(2.0)
+    , battery_failsafe_safety_factor_(2.0)
     , do_slam_(false)
 {
     private_nh_.param<bool>("enable_autonomy", enable_autonomy_, enable_autonomy_);
@@ -89,7 +90,8 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<bool>("explicit_global", explicit_global_params_, explicit_global_params_);
     private_nh_.param<double>("estimated_drone_speed", estimated_drone_speed_, estimated_drone_speed_);
     estimated_drone_speed_ = estimated_drone_speed_ < 1 ? 1.0 : estimated_drone_speed_; // This protects against a later potential div by 0
-    
+
+    private_nh_.param<double>("battery_failsafe_safety_factor", battery_failsafe_safety_factor_, battery_failsafe_safety_factor_);
 
     hello_decco_manager_.setFrames(mavros_map_frame_, slam_map_frame_);
 
@@ -668,7 +670,7 @@ bool TaskManager::isBatteryOk() {
     double time_to_home = distance / estimated_drone_speed_;
     double flight_time_remaining = drone_state_manager_.getFlightTimeRemaining();
 
-    return (flight_time_remaining > 2.0 * time_to_home);
+    return (flight_time_remaining > battery_failsafe_safety_factor_ * time_to_home);
 }
 
 void TaskManager::startBag() {

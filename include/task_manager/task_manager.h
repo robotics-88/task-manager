@@ -179,6 +179,7 @@ class TaskManager {
         geometry_msgs::PoseStamped goal_;
         ros::Subscriber goal_sub_;
         double estimated_drone_speed_;
+        double battery_failsafe_safety_factor_;
 
         actionlib::SimpleActionClient<messages_88::ExploreAction> explore_action_client_;
 

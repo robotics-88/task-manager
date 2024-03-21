@@ -543,14 +543,16 @@ void DroneStateManager::batteryCallback(const sensor_msgs::BatteryState::ConstPt
     current_battery_ = *msg;
     battery_count_++;
 
+    float current = -msg->current; // Mavros current is negative
+
     // Voltage compensated for voltage under load
-    float voltage_adj = msg->voltage + msg->current * battery_resistance_;
+    float voltage_adj = msg->voltage + current * battery_resistance_;
 
     calculateBatteryPercentage(voltage_adj);
     
     // If current is below 5A, we likely have not taken off yet, so don't update current calculation
-    if (msg->current > 5.f) {
-        recent_currents_.push_back(msg->current);
+    if (current > 5.f) {
+        recent_currents_.push_back(current);
         recent_currents_.erase(recent_currents_.begin());
     }
 
