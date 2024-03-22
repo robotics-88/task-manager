@@ -55,7 +55,6 @@ class DroneStateManager {
         bool getMapYaw(double &yaw);
         double getCompass();
         bool getDroneInitalized() {return drone_initialized_;}
-        float getBatteryPercentage() {return battery_percentage_;}
         float getFlightTimeRemaining() {return estimated_flight_time_remaining_;}
 
         // Mavros subscriber callbacks
@@ -187,7 +186,7 @@ class DroneStateManager {
         int battery_count_;
 
         bool imu_rate_ok_ = false;
-        bool battery_rate_ok = false;
+        bool battery_rate_ok_ = false;
 
         // Initialization check stuff
         bool drone_initialized_ = false;
