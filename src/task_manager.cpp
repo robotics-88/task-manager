@@ -589,9 +589,9 @@ void TaskManager::modeMonitor() {
     }
     if (is_armed_ && !armed) {
         cmd_history_.append("Disarm detected. \n ");
-        // Handle save bag during land (manual or auton)
+        // Handle save bag during disarm (manual or auton)
         stop();
-        is_armed_ = false; // Reset so can restart if another takeoff
+        is_armed_ = false; // Reset so can restart if another arming
     }
     geometry_msgs::PoseStamped home_pos;
     home_pos.header.frame_id = slam_map_frame_;
