@@ -209,6 +209,7 @@ class TaskManager {
         ros::ServiceClient tree_save_client_;
         bool did_save_;
         bool did_takeoff_;
+        bool is_armed_;
 
         ros::Publisher local_pos_pub_;
         ros::Publisher local_vel_pub_;

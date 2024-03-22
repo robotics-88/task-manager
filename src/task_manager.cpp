@@ -59,7 +59,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , mapir_topic_("/mapir_rgn/image_rect")
     , rosbag_topic_("/record/heartbeat")
     , did_save_(false)
-    , did_takeoff_(false)
+    , is_armed_(false)
     , explicit_global_params_(false)
     , do_slam_(false)
 {
@@ -577,22 +577,21 @@ void TaskManager::modeMonitor() {
     std::string mode = drone_state_manager_.getFlightMode();
     bool armed = drone_state_manager_.getIsArmed();
     bool in_air = drone_state_manager_.getIsInAir();
-    if (!did_takeoff_ && in_air) {
-        // Should have been set to true during takeoff, but just in case
-        cmd_history_.append("Manually set takeoff to true. \n ");
-        did_takeoff_ = true;
+    if (!is_armed_ && armed) {
+        cmd_history_.append("Manually set armed state to true. \n ");
+        is_armed_ = true;
     }
-    if (armed && !bag_active_) {
-        cmd_history_.append("Checking start bag record due to arming detected. In air: " + std::to_string(in_air) + ", flight mode: " + mode + "\n");
+    if (is_armed_ && !bag_active_) {
+        cmd_history_.append("Checking start bag record due to arming detected. Armed: " + std::to_string(armed) + ", flight mode: " + mode + "\n");
         // Handle recording during manual take off
         startBag();
         did_save_ = false;
     }
-    if (did_takeoff_ && !drone_state_manager_.getIsArmed()) {
+    if (is_armed_ && !armed) {
         cmd_history_.append("Disarm detected. \n ");
         // Handle save bag during land (manual or auton)
         stop();
-        did_takeoff_ = false; // Reset so can restart if another takeoff
+        is_armed_ = false; // Reset so can restart if another takeoff
     }
     geometry_msgs::PoseStamped home_pos;
     home_pos.header.frame_id = slam_map_frame_;
