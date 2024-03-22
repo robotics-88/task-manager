@@ -401,7 +401,7 @@ bool TaskManager::convert2Geo(messages_88::Geopoint::Request& req, messages_88::
 
 void TaskManager::heartbeatTimerCallback(const ros::TimerEvent&) {
     sensor_msgs::NavSatFix hb = drone_state_manager_.getCurrentGlobalPosition();
-    geometry_msgs::PoseStamped local = drone_state_manager_.getCurrentSlamPosition();
+    geometry_msgs::PoseStamped local = drone_state_manager_.getCurrentLocalPosition();
     geometry_msgs::Quaternion quat_flu = local.pose.orientation;
     double yaw = drone_state_manager_.getCompass();
     json j = {
@@ -473,7 +473,7 @@ void TaskManager::getReadyForExplore() {
     cmd_history_.append("Get ready to explore command received.\n ");
     bool needs_transit = false;
     geometry_msgs::PoseStamped target_position;
-    if (!isInside(current_polygon_, drone_state_manager_.getCurrentSlamPosition().pose.position)) {
+    if (!isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition().pose.position)) {
         cmd_history_.append("Transit to explore required.\n ");
         needs_transit = true;
         // Find nearest point on the polygon
@@ -531,7 +531,7 @@ void TaskManager::startNav2PointTask(messages_88::NavToPointGoal &nav_goal) {
     target.header.stamp = ros::Time::now();
     target.pose.position = point;
     local_pos_pub_.publish(target);
-    while (!(isInside(current_polygon_, drone_state_manager_.getCurrentSlamPosition().pose.position) || current_status_ == CurrentStatus::WAITING_TO_EXPLORE)) {
+    while (!(isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition().pose.position) || current_status_ == CurrentStatus::WAITING_TO_EXPLORE)) {
         ros::Duration(1.0).sleep();    
     }
 }
@@ -763,7 +763,7 @@ bool TaskManager::polygonDistanceOk(double &min_dist, geometry_msgs::PoseStamped
 
     // Compute intersection
     bool intersection1 = false, intersection2 = false;
-    geometry_msgs::Point my_position = drone_state_manager_.getCurrentSlamPosition().pose.position;
+    geometry_msgs::Point my_position = drone_state_manager_.getCurrentLocalPosition().pose.position;
     // Compute first edge
     double dx1 = closest_point.x - point1.x;
     double dy1 = closest_point.y - point1.y;
@@ -835,7 +835,7 @@ bool TaskManager::polygonDistanceOk(double &min_dist, geometry_msgs::PoseStamped
 void TaskManager::padNavTarget(geometry_msgs::PoseStamped &target) {
     // Add 2m to ensure fully inside polygon, otherwise exploration won't start
     float padding = 2.0;
-    geometry_msgs::Point my_position = drone_state_manager_.getCurrentSlamPosition().pose.position;
+    geometry_msgs::Point my_position = drone_state_manager_.getCurrentLocalPosition().pose.position;
     double dif_x = target.pose.position.x - my_position.x;
     double dif_y = target.pose.position.y - my_position.y;
     double norm = sqrt(std::pow(dif_x, 2) + std::pow(dif_y, 2));
