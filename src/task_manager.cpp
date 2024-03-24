@@ -97,6 +97,8 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<bool>("do_mapir_rgb", do_mapir_rgb_, do_mapir_rgb_);
     private_nh_.param<bool>("do_attollo", do_attollo_, do_attollo_);
     private_nh_.param<bool>("do_thermal_cam", do_thermal_, do_thermal_);
+    int lidar_type;
+    private_nh_.param<int>("lidar_type", lidar_type, lidar_type);
 
     hello_decco_manager_.setFrames(mavros_map_frame_, slam_map_frame_);
 
@@ -121,7 +123,12 @@ TaskManager::TaskManager(ros::NodeHandle& node)
         path_planner_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(path_planner_topic_, 10, &TaskManager::pathPlannerCallback, this);
     }
     costmap_sub_ = nh_.subscribe<map_msgs::OccupancyGridUpdate>(costmap_topic_, 10, &TaskManager::costmapCallback, this);
-    lidar_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(lidar_topic_, 10, &TaskManager::lidarCallback, this);
+    if (lidar_type == 2) {
+        lidar_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(lidar_topic_, 10, &TaskManager::pointcloudCallback, this);
+    }
+    else if (lidar_type == 4) {
+        lidar_sub_ = nh_.subscribe<livox_ros_driver::CustomMsg>(lidar_topic_, 10, &TaskManager::livoxCallback, this);
+    }
     if (do_mapir_) {
         mapir_sub_ = nh_.subscribe<sensor_msgs::Image>(mapir_topic_, 10, &TaskManager::mapirCallback, this);
     }
@@ -957,8 +964,11 @@ void TaskManager::costmapCallback(const map_msgs::OccupancyGridUpdate::ConstPtr 
     last_costmap_stamp_ = msg->header.stamp;
 }
 
-void TaskManager::lidarCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
-    // TODO do we want to change this to point to raw pointcloud? If registered, not independent from SLAM position, but raw requires handling multiple data types.
+void TaskManager::pointcloudCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
+    last_lidar_stamp_ =  msg->header.stamp;
+}
+
+void TaskManager::livoxCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg) {
     last_lidar_stamp_ =  msg->header.stamp;
 }
 

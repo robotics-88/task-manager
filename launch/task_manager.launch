@@ -12,6 +12,7 @@
     <arg name="do_attollo" default="true"/>
     <arg name="do_thermal_cam" default="false"/>
     <arg name="thermal_type" default="0"/>
+    <arg name="lidar_type" default="4"/> <!-- 2 = Velodyne, 4 = Mid360-->
 
     <arg name="enable_autonomy" default="false"/>
     <arg name="enable_exploration" default="false"/>
@@ -88,5 +89,6 @@
         <param name="do_mapir_rgb" value="$(arg do_mapir_rgb)"/>
         <param name="do_attollo" value="$(arg do_attollo)"/>
         <param name="do_thermal_cam" value="$(arg do_thermal_cam)"/>
+        <param name="lidar_type" value="$(arg lidar_type)"/>
     </node>
 </launch>

@@ -13,6 +13,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <costmap_2d/costmap_2d.h>
 #include <geometry_msgs/Polygon.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <livox_ros_driver/CustomMsg.h>
 #include <message_filters/subscriber.h>
 #include <message_filters/sync_policies/approximate_time.h>
 #include <map_msgs/OccupancyGridUpdate.h>
@@ -80,7 +81,8 @@ class TaskManager {
         // Health subscribers, unused except to verify publishing
         void pathPlannerCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
         void costmapCallback(const map_msgs::OccupancyGridUpdate::ConstPtr &msg);
-        void lidarCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
+        void pointcloudCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
+        void livoxCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg);
         void mapirCallback(const sensor_msgs::ImageConstPtr &msg);
         void attolloCallback(const sensor_msgs::ImageConstPtr &msg);
         void thermalCallback(const sensor_msgs::ImageConstPtr &msg);

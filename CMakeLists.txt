@@ -7,6 +7,7 @@ find_package(catkin REQUIRED COMPONENTS
   actionlib_msgs
   bag_recorder
   geometry_msgs
+  livox_ros_driver
   mavros_msgs
   messages_88
   roscpp
