@@ -865,6 +865,18 @@ void TaskManager::publishHealth() {
         {"isHealthy", (t - last_lidar_stamp_ < health_check_s_)}
     };
     if (do_slam_) {
+        // SLAM position
+        bool slam_healthy = (t - last_slam_pos_stamp_ < health_check_s_);
+        if (!slam_healthy) {
+            cmd_history_.append("Failsafe triggered by SLAM unhealthy. \n");
+            failsafe();
+        }
+        j = {
+            {"name", "slamPosition"},
+            {"label", "SLAM position"},
+            {"isHealthy", slam_healthy}
+        };
+        healthObjects.push_back(j);
         j = {
             {"name", "pathPlanner"},
             {"label", "Path planner"},
@@ -886,18 +898,6 @@ void TaskManager::publishHealth() {
         };
         healthObjects.push_back(j);
     }
-    // 2) SLAM position
-    bool slam_healthy = (t - last_slam_pos_stamp_ < health_check_s_);
-    if (!slam_healthy && do_slam_) {
-        cmd_history_.append("Failsafe triggered by SLAM unhealthy. \n");
-        failsafe();
-    }
-    j = {
-        {"name", "slamPosition"},
-        {"label", "SLAM position"},
-        {"isHealthy", slam_healthy}
-    };
-    healthObjects.push_back(j);
     // LiDAR
     j = {
         {"name", "lidar"},
@@ -932,13 +932,15 @@ void TaskManager::publishHealth() {
         };
         healthObjects.push_back(j);
     }
-    // 7) ROS bag
-    j = {
-        {"name", "rosbag"},
-        {"label", "ROS bag"},
-        {"isHealthy", (t - last_rosbag_stamp_ < health_check_s_)}
-    };
-    healthObjects.push_back(j);
+    // ROS bag
+    if (is_armed_) {
+        j = {
+            {"name", "rosbag"},
+            {"label", "ROS bag"},
+            {"isHealthy", (t - last_rosbag_stamp_ < health_check_s_)}
+        };
+        healthObjects.push_back(j);
+    }
     jsonObjects["healthIndicators"] = healthObjects;
 
     std::string s = jsonObjects.dump();
