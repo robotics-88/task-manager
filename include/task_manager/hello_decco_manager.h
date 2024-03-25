@@ -77,15 +77,16 @@ class HelloDeccoManager {
         std::vector<geometry_msgs::Polygon> subpolygons_; // Flight units
         double flightleg_area_m2_;
 
-        void polygonInitializer(const geometry_msgs::Polygon &msg);
+        void polygonInitializer(const geometry_msgs::Polygon &msg, bool make_legs);
         geometry_msgs::Polygon polygonFromJson(json jsonPolygon);
 
         // Polygon mgmt
-        bool polygonToMap(const geometry_msgs::Polygon &polygon);
+        geometry_msgs::Polygon polygonToMap(const geometry_msgs::Polygon &polygon);
         bool polygonToGeofence(const geometry_msgs::Polygon &polygon);
         int polygonNumFlights(const geometry_msgs::Polygon &polygon);
         int concaveToMinimalConvexPolygons();
         void visualizeLegs();
+        void visualizePolygon();
         geometry_msgs::Polygon transformPolygon(const geometry_msgs::Polygon &map_poly);
 };
 

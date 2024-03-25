@@ -60,6 +60,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , rosbag_topic_("/record/heartbeat")
     , did_save_(false)
     , did_takeoff_(false)
+    , is_armed_(false)
     , explicit_global_params_(false)
     , estimated_drone_speed_(2.0)
     , battery_failsafe_safety_factor_(2.0)
@@ -588,22 +589,21 @@ void TaskManager::modeMonitor() {
     std::string mode = drone_state_manager_.getFlightMode();
     bool armed = drone_state_manager_.getIsArmed();
     bool in_air = drone_state_manager_.getIsInAir();
-    if (!did_takeoff_ && in_air) {
-        // Should have been set to true during takeoff, but just in case
-        cmd_history_.append("Manually set takeoff to true. \n ");
-        did_takeoff_ = true;
+    if (!is_armed_ && armed) {
+        cmd_history_.append("Manually set armed state to true. \n ");
+        is_armed_ = true;
     }
-    if (armed && !bag_active_) {
-        cmd_history_.append("Checking start bag record due to arming detected. In air: " + std::to_string(in_air) + ", flight mode: " + mode + "\n");
+    if (is_armed_ && !bag_active_) {
+        cmd_history_.append("Checking start bag record due to arming detected. Armed: " + std::to_string(armed) + ", flight mode: " + mode + "\n");
         // Handle recording during manual take off
         startBag();
         did_save_ = false;
     }
-    if (did_takeoff_ && !drone_state_manager_.getIsArmed()) {
+    if (is_armed_ && !armed) {
         cmd_history_.append("Disarm detected. \n ");
-        // Handle save bag during land (manual or auton)
+        // Handle save bag during disarm (manual or auton)
         stop();
-        did_takeoff_ = false; // Reset so can restart if another takeoff
+        is_armed_ = false; // Reset so can restart if another arming
     }
 
     // Update home position
@@ -990,7 +990,14 @@ void TaskManager::makeBurnUnitJson(const std_msgs::String::ConstPtr &msg) {
     burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
     hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
     current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
-    getReadyForExplore();
+    if (current_index_ < 0) {
+        ROS_WARN("No burn polygon was found, all are already complete.");
+        std::string burn_status_string = "No burn units subpolygons were incomplete, not exploring. \n";
+        cmd_history_.append(burn_status_string);
+    }
+    else {
+        getReadyForExplore();
+    }
 }
 
 void TaskManager::makeBurnUnitJson(json burn_unit) {
@@ -1006,7 +1013,14 @@ void TaskManager::makeBurnUnitJson(json burn_unit) {
     burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
     hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
     current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
-    getReadyForExplore();
+    if (current_index_ < 0) {
+        ROS_WARN("No burn polygon was found, all are already complete.");
+        std::string burn_status_string = "No burn units subpolygons were incomplete, not exploring. \n";
+        cmd_history_.append(burn_status_string);
+    }
+    else {
+        getReadyForExplore();
+    }
 }
 
 // Below are purely test methods, to eventually be deprecated in favor of burn units
