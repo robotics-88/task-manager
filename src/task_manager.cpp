@@ -862,7 +862,7 @@ void TaskManager::publishHealth() {
     jsonObjects["header"] = header;
 
     auto healthObjects = json::array();
-    // 1) Path planner
+    // 1) Path planner. TODO, replace with ROS node binding
     bool path_healthy = (t - last_path_planner_stamp_ < health_check_s_);
     if (!path_healthy && do_slam_) {
         cmd_history_.append("Failsafe triggered by path unhealthy. \n");
@@ -907,13 +907,6 @@ void TaskManager::publishHealth() {
         };
         healthObjects.push_back(j);
     }
-    // LiDAR
-    j = {
-        {"name", "lidar"},
-        {"label", "LiDAR"},
-        {"isHealthy", (t - last_lidar_stamp_ < health_check_s_)}
-    };
-    healthObjects.push_back(j);
     // MAPIR
     if (do_mapir_ || do_mapir_rgb_) {
         j = {
