@@ -29,6 +29,7 @@ namespace task_manager
 TaskManager::TaskManager(ros::NodeHandle& node)
     : private_nh_("~")
     , nh_(node)
+    , simulate_(false)
     , offline_(false)
     , hello_decco_manager_(node)
     , enable_autonomy_(false)
@@ -90,6 +91,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<std::string>("thermal_topic", thermal_topic_, thermal_topic_);
     private_nh_.param<std::string>("rosbag_topic", rosbag_topic_, rosbag_topic_);
     private_nh_.param<bool>("offline", offline_, offline_);
+    private_nh_.param<bool>("simulate", simulate_, simulate_);
     private_nh_.param<std::string>("data_directory", burn_dir_prefix_, burn_dir_prefix_);
     private_nh_.param<bool>("explicit_global", explicit_global_params_, explicit_global_params_);
     private_nh_.param<bool>("do_slam", do_slam_, do_slam_);
@@ -940,7 +942,7 @@ void TaskManager::publishHealth() {
         healthObjects.push_back(j);
     }
     // ROS bag
-    if (is_armed_) {
+    if (is_armed_ && !simulate_) {
         j = {
             {"name", "rosbag"},
             {"label", "ROS bag"},

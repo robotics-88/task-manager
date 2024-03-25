@@ -105,6 +105,8 @@ class TaskManager {
         ros::NodeHandle private_nh_;
         ros::NodeHandle nh_;
 
+        bool simulate_;
+
         // Offline handling
         bool offline_;
         ros::Publisher map_yaw_pub_;
