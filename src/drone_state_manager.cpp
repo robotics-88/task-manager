@@ -599,7 +599,7 @@ void DroneStateManager::batteryCallback(const sensor_msgs::BatteryState::ConstPt
         estimated_current_ = sum / recent_currents_.size();
     }
 
-    float estimated_flight_time_remaining_ = amp_hours_left / estimated_current_ * 3600;
+    estimated_flight_time_remaining_ = amp_hours_left / estimated_current_ * 3600;
 
     // Publish custom battery message
     messages_88::Battery batt_msg;
