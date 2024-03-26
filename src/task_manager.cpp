@@ -305,6 +305,7 @@ void TaskManager::mapTfTimerCallbackNoGlobal(const ros::TimerEvent&) {
 
 void TaskManager::failsafe() {
     cmd_history_.append("Failsafe init. \n");
+    ROS_WARN("Failsafe init");
     drone_state_manager_.setMode(land_mode_);
     stop();
 }
@@ -636,15 +637,17 @@ void TaskManager::modeMonitor() {
                 hello_decco_manager_.updateBurnUnit(current_index_, "COMPLETED");
             }
         }
+        break;
+
         case CurrentStatus::RTL_88:
         {
             if (drone_state_manager_.getCurrentLocalPosition().pose.position == home_pos_.pose.position) {
+                ROS_INFO("RTL_88 completed, landing");
                 drone_state_manager_.setMode(land_mode_);
                 current_status_ = CurrentStatus::LANDING;
             }
         }
-        default:
-        {}
+        break;
     }
 
 
@@ -1054,6 +1057,7 @@ json TaskManager::makeTaskJson() {
     j["minAltitude"] = min_altitude_;
     j["maxAltitude"] = max_altitude_;
     j["targetAltitude"] = target_altitude_;
+    j["flightMinLeft"] = drone_state_manager_.getFlightTimeRemaining() / 60.f;
     return j;
 }
 

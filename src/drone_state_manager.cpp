@@ -568,23 +568,8 @@ void DroneStateManager::batteryCallback(const sensor_msgs::BatteryState::ConstPt
 
 
     // Use current estimate and remaining amp hours to determine how many seconds of flight time we have left
-    // If current is below 5A, we likely have not taken off yet, so don't update current calculation
-    if (current > 5.f) {
-        recent_currents_.push_back(current);
-        recent_currents_.erase(recent_currents_.begin());
-    }
-
-    // Calculate estimated current based on average of recent current measurements
-    if (recent_currents_.size() > 0) {
-        float sum = 0.f;
-        for (auto i : recent_currents_) {
-            sum += i;
-        }
-
-        estimated_current_ = sum / recent_currents_.size();
-    }
-    // If current is below 5A, we likely have not taken off yet, so don't update current calculation
-    if (current > 5.f) {
+    // If current is below 5A, it is likely not accurate in reflecting hover current, so don't update current calculation
+    if (current > 5.0) {
         recent_currents_.push_back(current);
         recent_currents_.erase(recent_currents_.begin());
     }

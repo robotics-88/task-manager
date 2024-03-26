@@ -167,7 +167,7 @@ class DroneStateManager {
         float battery_resistance_;
         float battery_size_;
         float estimated_current_;
-        float estimated_flight_time_remaining_;
+        float estimated_flight_time_remaining_ = 0.f;
         ros::Publisher battery_pub_; // Publisher mostly for debug
 
         // Slam pose
