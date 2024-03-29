@@ -56,6 +56,7 @@ class DroneStateManager {
         double getCompass();
         bool getDroneInitalized() {return drone_initialized_;}
         float getFlightTimeRemaining() {return estimated_flight_time_remaining_;}
+        float getBatteryPercentage() {return battery_percentage_;}
 
         // Mavros subscriber callbacks
         void globalPositionCallback(const sensor_msgs::NavSatFix::ConstPtr &msg);
@@ -164,7 +165,7 @@ class DroneStateManager {
         ros::Time last_battery_measurement_;
         float current_drawn_since_resting_percent_;
         std::vector<float> recent_currents_;
-        float battery_resistance_;
+        float battery_percentage_ = 0.f;
         float battery_size_;
         float estimated_current_;
         float estimated_flight_time_remaining_ = 0.f;

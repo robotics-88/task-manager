@@ -69,10 +69,9 @@
         <param name="utm_y" value="$(arg utm_y)"/>
         <param name="utm_x" value="$(arg utm_x)"/>
         <param name="utm_zone" value="$(arg utm_zone)"/>
-        <param name="battery_resistance" value="0.0271"/> <!-- TODO get this dynamically from the drone -->
         <param name="battery_size" value="5.2"/> <!-- Battery size in amp hours -->
         <param name="estimated_current" value="20"/> <!-- Starting estimate for current consumption -->
         <param name="estimated_drone_speed" value="2.0"/> <!-- m/s -->
-        <param name="battery_failsafe_safety_factor" value="10.0"/>
+        <param name="battery_failsafe_safety_factor" value="5.0"/>
     </node>
 </launch>

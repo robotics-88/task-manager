@@ -55,7 +55,6 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
   , service_wait_duration_(2.0)
   , detected_utm_zone_(-1)
   , utm_set_(false)
-  , battery_resistance_(0.0271)
   , battery_size_(5.2)
   , estimated_current_(20.0)
   , msg_rate_timer_dt_(5.0)
@@ -68,7 +67,6 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
     private_nh_.param<float>("default_altitude_m", target_altitude_, target_altitude_);
     private_nh_.param<float>("max_altitude", max_altitude_, max_altitude_);
     private_nh_.param<float>("max_distance", max_distance_, max_distance_);
-    private_nh_.param<float>("battery_resistance", battery_resistance_, battery_resistance_);
     private_nh_.param<float>("battery_size", battery_size_, battery_size_);
     private_nh_.param<float>("estimated_current", estimated_current_, estimated_current_);
     private_nh_.param<std::string>("mavros_global_pos_topic", mavros_global_pos_topic_, mavros_global_pos_topic_);
@@ -563,8 +561,8 @@ void DroneStateManager::batteryCallback(const sensor_msgs::BatteryState::ConstPt
     last_battery_measurement_ = ros::Time::now();
 
     float battery_percent_drawn_since_resting_ = current_drawn_since_resting_percent_ / battery_size_ * 100.f;
-    float estimated_battery_percentage = last_resting_percent_ - battery_percent_drawn_since_resting_;
-    float amp_hours_left = battery_size_ * estimated_battery_percentage / 100.f;
+    battery_percentage_ = last_resting_percent_ - battery_percent_drawn_since_resting_;
+    float amp_hours_left = battery_size_ * battery_percentage_ / 100.f;
 
 
     // Use current estimate and remaining amp hours to determine how many seconds of flight time we have left
@@ -589,7 +587,7 @@ void DroneStateManager::batteryCallback(const sensor_msgs::BatteryState::ConstPt
     // Publish custom battery message
     messages_88::Battery batt_msg;
     batt_msg.header.stamp = ros::Time::now();
-    batt_msg.percentage = estimated_battery_percentage;
+    batt_msg.percentage = battery_percentage_;
     batt_msg.estimated_current = estimated_current_;
     batt_msg.amp_hours_left = amp_hours_left;
     batt_msg.flight_time_remaining = estimated_flight_time_remaining_;
