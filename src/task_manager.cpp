@@ -29,6 +29,7 @@ namespace task_manager
 TaskManager::TaskManager(ros::NodeHandle& node)
     : private_nh_("~")
     , nh_(node)
+    , simulate_(false)
     , offline_(false)
     , hello_decco_manager_(node)
     , enable_autonomy_(false)
@@ -56,7 +57,10 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , path_planner_topic_("/kd_pointcloud_accumulated")
     , costmap_topic_("/costmap_node/costmap/costmap")
     , lidar_topic_("/cloud_registered")
-    , mapir_topic_("/mapir_rgn/image_rect")
+    , thermal_topic_("/thermal_cam/image_rect_color")
+    , attollo_topic_("/mapir_rgn/image_rect")
+    , mapir_topic_("/mapir_rgn/image_rect_color")
+    , mapir_rgb_topic_("/mapir_rgn/image_rect_color")
     , rosbag_topic_("/record/heartbeat")
     , did_save_(false)
     , did_takeoff_(false)
@@ -84,15 +88,29 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<std::string>("slam_pose_topic", slam_pose_topic_, slam_pose_topic_);
     private_nh_.param<std::string>("costmap_topic", costmap_topic_, costmap_topic_);
     private_nh_.param<std::string>("lidar_topic", lidar_topic_, lidar_topic_);
+    private_nh_.param<std::string>("attollo_topic", attollo_topic_, attollo_topic_);
     private_nh_.param<std::string>("mapir_topic", mapir_topic_, mapir_topic_);
+    private_nh_.param<std::string>("mapir_rgb_topic", mapir_rgb_topic_, mapir_rgb_topic_);
+    private_nh_.param<std::string>("thermal_topic", thermal_topic_, thermal_topic_);
     private_nh_.param<std::string>("rosbag_topic", rosbag_topic_, rosbag_topic_);
     private_nh_.param<bool>("offline", offline_, offline_);
+    private_nh_.param<bool>("simulate", simulate_, simulate_);
     private_nh_.param<std::string>("data_directory", burn_dir_prefix_, burn_dir_prefix_);
     private_nh_.param<bool>("explicit_global", explicit_global_params_, explicit_global_params_);
+<<<<<<< HEAD
     private_nh_.param<double>("estimated_drone_speed", estimated_drone_speed_, estimated_drone_speed_);
     estimated_drone_speed_ = estimated_drone_speed_ < 1 ? 1.0 : estimated_drone_speed_; // This protects against a later potential div by 0
 
     private_nh_.param<double>("battery_failsafe_safety_factor", battery_failsafe_safety_factor_, battery_failsafe_safety_factor_);
+=======
+    private_nh_.param<bool>("do_slam", do_slam_, do_slam_);
+    private_nh_.param<bool>("do_mapir", do_mapir_, do_mapir_);
+    private_nh_.param<bool>("do_mapir_rgb", do_mapir_rgb_, do_mapir_rgb_);
+    private_nh_.param<bool>("do_attollo", do_attollo_, do_attollo_);
+    private_nh_.param<bool>("do_thermal_cam", do_thermal_, do_thermal_);
+    int lidar_type;
+    private_nh_.param<int>("lidar_type", lidar_type, lidar_type);
+>>>>>>> main
 
     hello_decco_manager_.setFrames(mavros_map_frame_, slam_map_frame_);
 
@@ -113,11 +131,28 @@ TaskManager::TaskManager(ros::NodeHandle& node)
 
     // Health pubs/subs
     health_pub_ = nh_.advertise<std_msgs::String>("/mapversation/health_report", 10);
-    path_planner_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(path_planner_topic_, 10, &TaskManager::pathPlannerCallback, this);
+    if (do_slam_) {
+        path_planner_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(path_planner_topic_, 10, &TaskManager::pathPlannerCallback, this);
+    }
     costmap_sub_ = nh_.subscribe<map_msgs::OccupancyGridUpdate>(costmap_topic_, 10, &TaskManager::costmapCallback, this);
-    lidar_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(lidar_topic_, 10, &TaskManager::lidarCallback, this);
-    mapir_sub_ = nh_.subscribe<sensor_msgs::Image>(mapir_topic_, 10, &TaskManager::mapirCallback, this);
-    attollo_sub_ = nh_.subscribe<sensor_msgs::Image>("/attollo_cam/image_rect", 10, &TaskManager::attolloCallback, this);
+    if (lidar_type == 2) {
+        lidar_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(lidar_topic_, 10, &TaskManager::pointcloudCallback, this);
+    }
+    else if (lidar_type == 4) {
+        lidar_sub_ = nh_.subscribe<livox_ros_driver::CustomMsg>(lidar_topic_, 10, &TaskManager::livoxCallback, this);
+    }
+    if (do_mapir_) {
+        mapir_sub_ = nh_.subscribe<sensor_msgs::Image>(mapir_topic_, 10, &TaskManager::mapirCallback, this);
+    }
+    else if (do_mapir_rgb_) {
+        mapir_sub_ = nh_.subscribe<sensor_msgs::Image>(mapir_rgb_topic_, 10, &TaskManager::mapirCallback, this);
+    }
+    if (do_attollo_) {
+        attollo_sub_ = nh_.subscribe<sensor_msgs::Image>(attollo_topic_, 10, &TaskManager::attolloCallback, this);
+    }
+    if (do_thermal_) {
+        thermal_sub_ = nh_.subscribe<sensor_msgs::Image>(thermal_topic_, 10, &TaskManager::thermalCallback, this);
+    }
     rosbag_sub_ = nh_.subscribe<std_msgs::String>(rosbag_topic_, 10, &TaskManager::rosbagCallback, this);
 
     // Geo/map state services
@@ -876,72 +911,87 @@ void TaskManager::publishHealth() {
     jsonObjects["header"] = header;
 
     auto healthObjects = json::array();
-    // 1) Path planner
+    // 1) Path planner. TODO, replace with ROS node binding
     bool path_healthy = (t - last_path_planner_stamp_ < health_check_s_);
     if (!path_healthy && do_slam_) {
         cmd_history_.append("Failsafe triggered by path unhealthy. \n");
         failsafe();
     }
     json j = {
-        {"name", "pathPlanner"},
-        {"label", "Path planner"},
-        {"isHealthy", path_healthy}
-    };
-    healthObjects.push_back(j);
-    // 2) SLAM position
-    bool slam_healthy = (t - last_slam_pos_stamp_ < health_check_s_);
-    if (!slam_healthy && do_slam_) {
-        cmd_history_.append("Failsafe triggered by SLAM unhealthy. \n");
-        failsafe();
-    }
-    j = {
-        {"name", "slamPosition"},
-        {"label", "SLAM position"},
-        {"isHealthy", slam_healthy}
-    };
-    healthObjects.push_back(j);
-    // 3) costmap
-    j = {
-        {"name", "costmap"},
-        {"label", "Costmap"},
-        {"isHealthy", (t - last_costmap_stamp_ < health_check_s_)}
-    };
-    healthObjects.push_back(j);
-    // 4) LiDAR
-    j = {
         {"name", "lidar"},
         {"label", "LiDAR"},
         {"isHealthy", (t - last_lidar_stamp_ < health_check_s_)}
     };
-    healthObjects.push_back(j);
-    // 5) MAPIR
-    j = {
-        {"name", "mapir"},
-        {"label", "MAPIR Camera"},
-        {"isHealthy", (t - last_mapir_stamp_ < health_check_s_)}
-    };
-    healthObjects.push_back(j);
-    // 5) Attollo
-    j = {
-        {"name", "attollo"},
-        {"label", "Attollo Camera"},
-        {"isHealthy", (t - last_attollo_stamp_ < health_check_s_)}
-    };
-    healthObjects.push_back(j);
-    // 6) Explore
-    j = {
-        {"name", "explore"},
-        {"label", "Explore Service"},
-        {"isHealthy", explore_healthy}
-    };
-    healthObjects.push_back(j);
-    // 7) ROS bag
-    j = {
-        {"name", "rosbag"},
-        {"label", "ROS bag"},
-        {"isHealthy", (t - last_rosbag_stamp_ < health_check_s_)}
-    };
-    healthObjects.push_back(j);
+    if (do_slam_) {
+        // SLAM position
+        bool slam_healthy = (t - last_slam_pos_stamp_ < health_check_s_);
+        if (!slam_healthy) {
+            cmd_history_.append("Failsafe triggered by SLAM unhealthy. \n");
+            failsafe();
+        }
+        j = {
+            {"name", "slamPosition"},
+            {"label", "SLAM position"},
+            {"isHealthy", slam_healthy}
+        };
+        healthObjects.push_back(j);
+        j = {
+            {"name", "pathPlanner"},
+            {"label", "Path planner"},
+            {"isHealthy", path_healthy}
+        };
+        healthObjects.push_back(j);
+        // costmap
+        j = {
+            {"name", "costmap"},
+            {"label", "Costmap"},
+            {"isHealthy", (t - last_costmap_stamp_ < health_check_s_)}
+        };
+        healthObjects.push_back(j);
+        // 6) Explore
+        j = {
+            {"name", "explore"},
+            {"label", "Explore Service"},
+            {"isHealthy", explore_healthy}
+        };
+        healthObjects.push_back(j);
+    }
+    // MAPIR
+    if (do_mapir_ || do_mapir_rgb_) {
+        j = {
+            {"name", "mapir"},
+            {"label", "MAPIR Camera"},
+            {"isHealthy", (t - last_mapir_stamp_ < health_check_s_)}
+        };
+        healthObjects.push_back(j);
+    }
+    // Attollo
+    if (do_attollo_) {
+        j = {
+            {"name", "attollo"},
+            {"label", "Attollo Camera"},
+            {"isHealthy", (t - last_attollo_stamp_ < health_check_s_)}
+        };
+        healthObjects.push_back(j);
+    }
+    // Thermal
+    if (do_thermal_) {
+        j = {
+            {"name", "thermal"},
+            {"label", "Thermal Camera"},
+            {"isHealthy", (t - last_thermal_stamp_ < health_check_s_)}
+        };
+        healthObjects.push_back(j);
+    }
+    // ROS bag
+    if (is_armed_ && !simulate_) {
+        j = {
+            {"name", "rosbag"},
+            {"label", "ROS bag"},
+            {"isHealthy", (t - last_rosbag_stamp_ < health_check_s_)}
+        };
+        healthObjects.push_back(j);
+    }
     jsonObjects["healthIndicators"] = healthObjects;
 
     std::string s = jsonObjects.dump();
@@ -958,8 +1008,11 @@ void TaskManager::costmapCallback(const map_msgs::OccupancyGridUpdate::ConstPtr 
     last_costmap_stamp_ = msg->header.stamp;
 }
 
-void TaskManager::lidarCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
-    // TODO do we want to change this to point to raw pointcloud? If registered, not independent from SLAM position, but raw requires handling multiple data types.
+void TaskManager::pointcloudCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
+    last_lidar_stamp_ =  msg->header.stamp;
+}
+
+void TaskManager::livoxCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg) {
     last_lidar_stamp_ =  msg->header.stamp;
 }
 
@@ -969,6 +1022,10 @@ void TaskManager::mapirCallback(const sensor_msgs::ImageConstPtr &msg) {
 
 void TaskManager::attolloCallback(const sensor_msgs::ImageConstPtr &msg) {
     last_attollo_stamp_ = msg->header.stamp;
+}
+
+void TaskManager::thermalCallback(const sensor_msgs::ImageConstPtr &msg) {
+    last_thermal_stamp_ = msg->header.stamp;
 }
 
 void TaskManager::rosbagCallback(const std_msgs::StringConstPtr &msg) {

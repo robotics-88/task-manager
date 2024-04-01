@@ -13,6 +13,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <costmap_2d/costmap_2d.h>
 #include <geometry_msgs/Polygon.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <livox_ros_driver/CustomMsg.h>
 #include <message_filters/subscriber.h>
 #include <message_filters/sync_policies/approximate_time.h>
 #include <map_msgs/OccupancyGridUpdate.h>
@@ -80,9 +81,11 @@ class TaskManager {
         // Health subscribers, unused except to verify publishing
         void pathPlannerCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
         void costmapCallback(const map_msgs::OccupancyGridUpdate::ConstPtr &msg);
-        void lidarCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
+        void pointcloudCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
+        void livoxCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg);
         void mapirCallback(const sensor_msgs::ImageConstPtr &msg);
         void attolloCallback(const sensor_msgs::ImageConstPtr &msg);
+        void thermalCallback(const sensor_msgs::ImageConstPtr &msg);
         void rosbagCallback(const std_msgs::StringConstPtr &msg);
         void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
 
@@ -101,6 +104,8 @@ class TaskManager {
 
         ros::NodeHandle private_nh_;
         ros::NodeHandle nh_;
+
+        bool simulate_;
 
         // Offline handling
         bool offline_;
@@ -183,13 +188,18 @@ class TaskManager {
 
         actionlib::SimpleActionClient<messages_88::ExploreAction> explore_action_client_;
 
-        // Health params and subscribers (for topics not already present)
+        // Health params, bools, and subscribers (for topics not already present)
+        bool do_attollo_;
+        bool do_mapir_;
+        bool do_mapir_rgb_;
+        bool do_thermal_;
         ros::Duration health_check_s_;
         ros::Time last_path_planner_stamp_;
         ros::Time last_slam_pos_stamp_;
         ros::Time last_costmap_stamp_;
         ros::Time last_lidar_stamp_;
         ros::Time last_mapir_stamp_;
+        ros::Time last_thermal_stamp_;
         ros::Time last_attollo_stamp_;
         ros::Time last_rosbag_stamp_;
         ros::Subscriber path_planner_sub_;
@@ -198,11 +208,15 @@ class TaskManager {
         ros::Subscriber mapir_sub_;
         ros::Subscriber attollo_sub_;
         ros::Subscriber rosbag_sub_;
+        ros::Subscriber thermal_sub_;
         ros::Publisher health_pub_;
         std::string path_planner_topic_;
         std::string costmap_topic_;
         std::string lidar_topic_;
+        std::string attollo_topic_;
+        std::string mapir_rgb_topic_;
         std::string mapir_topic_;
+        std::string thermal_topic_;
         std::string rosbag_topic_;
         ros::Timer health_pub_timer_;
 
