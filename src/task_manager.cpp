@@ -204,6 +204,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     home_pos_.header.frame_id = slam_map_frame_;
     home_pos_.pose.position.x = 0;
     home_pos_.pose.position.y = 0;
+    home_pos_.pose.position.z = target_altitude_;
 
     initDroneStateManager();
 }
@@ -640,7 +641,6 @@ void TaskManager::modeMonitor() {
 
     // Update home position
     home_pos_.header.stamp = ros::Time::now();
-    home_pos_.pose.position.z = current_explore_goal_.altitude;
 
     // This is the primary state machine
     switch (current_status_) {
