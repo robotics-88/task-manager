@@ -1057,7 +1057,7 @@ json TaskManager::makeTaskJson() {
     j["minAltitude"] = min_altitude_;
     j["maxAltitude"] = max_altitude_;
     j["targetAltitude"] = target_altitude_;
-    j["flightMinLeft"] = (int)drone_state_manager_.getFlightTimeRemaining() / 60.f;
+    j["flightMinLeft"] = (int)(drone_state_manager_.getFlightTimeRemaining() / 60.f);
     return j;
 }
 
