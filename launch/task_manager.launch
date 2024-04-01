@@ -4,6 +4,16 @@
     <arg name="slam_pose_topic" default="/decco/pose"/>
     <arg name="goal_topic" default="/mavros/setpoint_position/local"/> <!-- for mavros without OA, use /mavros/setpoint_position/local. default is /goal.-->
 
+    <arg name="do_slam" default="false"/>
+
+    <!-- Which hardware to add to health report -->
+    <arg name="do_mapir" default="true"/>
+    <arg name="do_mapir_rgb" default="false"/>
+    <arg name="do_attollo" default="true"/>
+    <arg name="do_thermal_cam" default="false"/>
+    <arg name="thermal_type" default="0"/>
+    <arg name="lidar_type" default="4"/> <!-- 2 = Velodyne, 4 = Mid360-->
+
     <arg name="enable_autonomy" default="false"/>
     <arg name="enable_exploration" default="false"/>
     <arg name="ardupilot" default="true"/>
@@ -18,8 +28,13 @@
     <arg name="path_planner_topic" default="/kd_pointcloud_accumulated"/>
     <arg name="costmap_topic" default="/costmap_node/costmap/costmap_updates"/>
     <arg name="lidar_topic" default="/livox/lidar"/>
-    <arg name="mapir_topic" default="/mapir_rgn/image_rect"/>
+    <arg name="attollo_topic" default="/attollo_cam/image_rect"/>
+    <arg name="mapir_topic" default="/mapir_rgn/image_rect_color"/>
+    <arg name="mapir_rgb_topic" default="/mapir_rgb/image_rect_color"/>
     <arg name="rosbag_topic" default="/record/heartbeat"/>
+
+    <arg name="thermal_topic" default="/thermal_cam/image_rect_color" if="$(eval thermal_type == 0)"/>
+    <arg name="thermal_topic" default="/seek_thermal/image_rect_color" if="$(eval thermal_type == 1)"/>
 
      <!-- Record -->
     <arg name="do_slam" default="true"/>
@@ -38,6 +53,7 @@
     <arg name="utm_zone" default="15"/>
     
     <node pkg="task_manager_88" type="task_manager" name="task_manager" output="screen">
+        <param name="do_slam" value="$(arg do_slam)"/>
         <param name="enable_autonomy" value="$(arg enable_autonomy)"/>
         <param name="enable_exploration" value="$(arg enable_exploration)"/>
         <param name="goal_topic" value="$(arg goal_topic)"/>
@@ -50,6 +66,9 @@
         <param name="costmap_topic" value="$(arg costmap_topic)"/>
         <param name="lidar_topic" value="$(arg lidar_topic)"/>
         <param name="mapir_topic" value="$(arg mapir_topic)"/>
+        <param name="mapir_rgb_topic" value="$(arg mapir_rgb_topic)"/>
+        <param name="attollo_topic" value="$(arg attollo_topic)"/>
+        <param name="thermal_topic" value="$(arg thermal_topic)"/>
         <param name="rosbag_topic" value="$(arg rosbag_topic)"/>
         <param name="default_altitude_m" value="$(arg default_altitude_m)"/>
         <param name="min_altitude" value="$(arg min_altitude)"/>
@@ -67,5 +86,14 @@
         <param name="utm_y" value="$(arg utm_y)"/>
         <param name="utm_x" value="$(arg utm_x)"/>
         <param name="utm_zone" value="$(arg utm_zone)"/>
+        <param name="battery_size" value="5.2"/> <!-- Battery size in amp hours -->
+        <param name="estimated_current" value="20"/> <!-- Starting estimate for current consumption -->
+        <param name="estimated_drone_speed" value="2.0"/> <!-- m/s -->
+        <param name="battery_failsafe_safety_factor" value="2.0"/>
+        <param name="do_mapir" value="$(arg do_mapir)"/>
+        <param name="do_mapir_rgb" value="$(arg do_mapir_rgb)"/>
+        <param name="do_attollo" value="$(arg do_attollo)"/>
+        <param name="do_thermal_cam" value="$(arg do_thermal_cam)"/>
+        <param name="lidar_type" value="$(arg lidar_type)"/>
     </node>
 </launch>

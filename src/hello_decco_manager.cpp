@@ -55,19 +55,32 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
     // TODO check trip type to decide what data is recording? Or do that on the HD side?
     // Parse data
     burn_unit_json_ = msgJson;
+    std::cout << "burn json received as: \n" << burn_unit_json_.dump(4) << std::endl;
     std_msgs::String burn_string;
+    geometry_msgs::Polygon poly = polygonFromJson(burn_unit_json_["polygon"]);
     // Check if already filled in
     int num_flights = burn_unit_json_["trips"][0]["flights"].size();
-    if (num_flights > 1 || (num_flights == 1 && burn_unit_json_["trips"][0]["flights"][0]["subpolygon"].size() > 3)) {
+    if (num_flights >= 1 && burn_unit_json_["trips"][0]["flights"][0]["subpolygon"].size() >= 3) {
         // Already filled in, pass directly to TM
-        std::cout << "burn json was: \n" << burn_unit_json_.dump(4) << std::endl;
         std::string s = burn_unit_json_.dump();
         burn_string.data = s;
+        polygonInitializer(poly, false);
+        // Fill in subpolygon array
+        subpolygons_.clear();
+        geometry_msgs::Polygon ll_poly;
+        for (auto subpoly_point: burn_unit_json_["trips"][0]["flights"][0]["subpolygon"]) {
+            geometry_msgs::Point32 ll_point;
+            ll_point.x = subpoly_point[0];
+            ll_point.y = subpoly_point[1];
+            ll_poly.points.push_back(ll_point);
+        }
+        geometry_msgs::Polygon poly = polygonToMap(ll_poly);
+        subpolygons_.push_back(poly);
+        std::cout << "burn json was: \n" << burn_unit_json_.dump(4) << std::endl;
     }
     else {
         // Need to fill in
-        geometry_msgs::Polygon poly = polygonFromJson(burn_unit_json_["polygon"]);
-        polygonInitializer(poly); // TODO use index to decide which flight leg to send to explore
+        polygonInitializer(poly, true);
         json flightLegArray;
         for (int ii = 0; ii < subpolygons_.size(); ii++) {
             json flight_leg;
@@ -97,34 +110,41 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
     }
 }
 
-void HelloDeccoManager::polygonInitializer(const geometry_msgs::Polygon &msg) {
-    // Convert polygon to map coordinates and store
-    if (!polygonToMap(msg)) {
-        ROS_WARN("Failed to convert polygon to map, polygon ignored.");
-        return;
-    }
+void HelloDeccoManager::polygonInitializer(const geometry_msgs::Polygon &msg, bool make_legs) {
+    // Convert polygon to map coordinates and visualize
+    map_region_ = polygonToMap(msg);
+    visualizePolygon();
 
     if (!polygonToGeofence(msg)) {
         ROS_WARN("Failed to convert polygon to geofence");
     }
 
-    int num_legs = polygonNumFlights(msg);
-    ROS_INFO("Polygon for exploration will take %d flights to complete.", num_legs);
+    if (make_legs) {
+        int num_legs = polygonNumFlights(msg);
+        ROS_INFO("Polygon for exploration will take %d flights to complete.", num_legs);
+    }
 }
 
 int HelloDeccoManager::initBurnUnit(geometry_msgs::Polygon &polygon) {
     // Iterate through subpolygons to get first not done
     int ind = 0;
     geometry_msgs::Polygon poly;
+    bool found = false;
     for (auto& flight : burn_unit_json_["trips"][0]["flights"]) {
         if (flight["status"] == "NOT_STARTED") {
             poly = subpolygons_.at(ind);
             ROS_INFO("will do polygon %d", ind);
+            found = true;
             break;
         }
         ind++;
     }
-    polygon = transformPolygon(poly);
+    if (found) {
+        polygon = transformPolygon(poly);
+    }
+    else {
+        ind = -1;
+    }
     return ind;
 }
 
@@ -157,8 +177,7 @@ geometry_msgs::Polygon HelloDeccoManager::polygonFromJson(json jsonPolygon) {
     return polygon;
 }
 
-
-bool HelloDeccoManager::polygonToMap(const geometry_msgs::Polygon &polygon) {
+void HelloDeccoManager::visualizePolygon() {
     visualization_msgs::Marker m;
     m.scale.x = 2.0;
     m.header.frame_id = mavros_map_frame_;
@@ -171,29 +190,32 @@ bool HelloDeccoManager::polygonToMap(const geometry_msgs::Polygon &polygon) {
     m.color.b = 0.0;
     m.id = 0;
 
-    for (int ii = 0; ii < polygon.points.size(); ii++) {
-        GeographicLib::GeoCoords coord(polygon.points.at(ii).x, polygon.points.at(ii).y);
-        geometry_msgs::Point32 poly_point;
-        poly_point.x = coord.Easting() + utm_x_offset_;
-        poly_point.y = coord.Northing() + utm_y_offset_;
-        map_region_.points.push_back(poly_point);
-
+    for (int ii = 0; ii < map_region_.points.size(); ii++) {
         // Add marker
         geometry_msgs::Point p;
-        p.x = coord.Easting() + utm_x_offset_;
-        p.y = coord.Northing() + utm_y_offset_;
+        p.x = map_region_.points.at(ii).x;
+        p.y = map_region_.points.at(ii).y;
         m.points.push_back(p);
-
-        ROS_INFO("map point was (%f, %f)", poly_point.x, poly_point.y);
-
-        // Add cvx polygon point
-        vertices_.push_back(cxd::Vec2({p.x, p.y}));
     }
     // Repost first marker at end to close the loop
     geometry_msgs::Point p = m.points.at(0);
     m.points.push_back(p);
     map_region_pub_.publish(m);
-    return true;
+}
+
+geometry_msgs::Polygon HelloDeccoManager::polygonToMap(const geometry_msgs::Polygon &polygon) {
+    // Converts lat/lon polygon to local map polygon
+    geometry_msgs::Polygon map_polygon;
+    for (int ii = 0; ii < polygon.points.size(); ii++) {
+        GeographicLib::GeoCoords coord(polygon.points.at(ii).x, polygon.points.at(ii).y);
+        geometry_msgs::Point32 poly_point;
+        poly_point.x = coord.Easting() + utm_x_offset_;
+        poly_point.y = coord.Northing() + utm_y_offset_;
+        map_polygon.points.push_back(poly_point);
+
+        ROS_INFO("map point was (%f, %f)", poly_point.x, poly_point.y);
+    }
+    return map_polygon;
 }
 
 bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::Polygon &polygon) {
