@@ -97,12 +97,9 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<bool>("simulate", simulate_, simulate_);
     private_nh_.param<std::string>("data_directory", burn_dir_prefix_, burn_dir_prefix_);
     private_nh_.param<bool>("explicit_global", explicit_global_params_, explicit_global_params_);
-<<<<<<< HEAD
     private_nh_.param<double>("estimated_drone_speed", estimated_drone_speed_, estimated_drone_speed_);
     estimated_drone_speed_ = estimated_drone_speed_ < 1 ? 1.0 : estimated_drone_speed_; // This protects against a later potential div by 0
-
     private_nh_.param<double>("battery_failsafe_safety_factor", battery_failsafe_safety_factor_, battery_failsafe_safety_factor_);
-=======
     private_nh_.param<bool>("do_slam", do_slam_, do_slam_);
     private_nh_.param<bool>("do_mapir", do_mapir_, do_mapir_);
     private_nh_.param<bool>("do_mapir_rgb", do_mapir_rgb_, do_mapir_rgb_);
@@ -110,7 +107,6 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<bool>("do_thermal_cam", do_thermal_, do_thermal_);
     int lidar_type;
     private_nh_.param<int>("lidar_type", lidar_type, lidar_type);
->>>>>>> main
 
     hello_decco_manager_.setFrames(mavros_map_frame_, slam_map_frame_);
 
