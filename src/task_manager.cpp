@@ -1047,30 +1047,6 @@ void TaskManager::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) 
     goal_ = *msg;
 }
 
-void TaskManager::makeBurnUnitJson(const std_msgs::String::ConstPtr &msg) {
-    if (!enable_exploration_) {
-        ROS_WARN("Exploration disabled, burn unit ignored.");
-        return;
-    }
-    if (!map_tf_init_) {
-        ROS_WARN("Not ready for flight, try again after initialized.");
-        return;
-    }
-    json burn_unit = json::parse(msg->data);
-    std::string name = burn_unit["name"];
-    burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
-    hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
-    current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
-    if (current_index_ < 0) {
-        ROS_WARN("No burn polygon was found, all are already complete.");
-        std::string burn_status_string = "No burn units subpolygons were incomplete, not exploring. \n";
-        cmd_history_.append(burn_status_string);
-    }
-    else {
-        getReadyForExplore();
-    }
-}
-
 void TaskManager::makeBurnUnitJson(json burn_unit) {
     if (!enable_exploration_) {
         ROS_WARN("Exploration disabled, burn unit ignored.");
