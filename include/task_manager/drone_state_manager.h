@@ -179,12 +179,12 @@ class DroneStateManager {
         float msg_rate_timer_dt_;
         ros::Timer msg_rate_timer_;
         float imu_rate_;
-        int imu_count_;
+        int imu_count_ = 0;
         float local_pos_rate_;
-        int local_pos_count_;
+        int local_pos_count_ = 0;
         float stream_rate_modifier_;
         float battery_rate_;
-        int battery_count_;
+        int battery_count_ = 0;
 
         bool imu_rate_ok_ = false;
         bool battery_rate_ok_ = false;
