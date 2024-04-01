@@ -4,8 +4,6 @@
     <arg name="slam_pose_topic" default="/decco/pose"/>
     <arg name="goal_topic" default="/mavros/setpoint_position/local"/> <!-- for mavros without OA, use /mavros/setpoint_position/local. default is /goal.-->
 
-    <arg name="do_slam" default="false"/>
-
     <!-- Which hardware to add to health report -->
     <arg name="do_mapir" default="true"/>
     <arg name="do_mapir_rgb" default="false"/>
