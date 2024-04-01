@@ -55,6 +55,8 @@ class DroneStateManager {
         bool getMapYaw(double &yaw);
         double getCompass();
         bool getDroneInitalized() {return drone_initialized_;}
+        float getFlightTimeRemaining() {return estimated_flight_time_remaining_;}
+        float getBatteryPercentage() {return battery_percentage_;}
 
         // Mavros subscriber callbacks
         void globalPositionCallback(const sensor_msgs::NavSatFix::ConstPtr &msg);
@@ -80,8 +82,13 @@ class DroneStateManager {
         void checkMsgRates(const ros::TimerEvent &event);
         void requestMavlinkStreams();
 
+        // Other methods
+        float calculateBatteryPercentage(float voltage);
+        // float findValidRoot(float a, float b, float c);
+
 
     private:
+
         ros::NodeHandle private_nh_;
         ros::NodeHandle nh_;
 
@@ -136,6 +143,7 @@ class DroneStateManager {
         sensor_msgs::NavSatFix current_ll_;
         geometry_msgs::PoseStamped current_pose_;
         sensor_msgs::Imu current_imu_;
+        float flight_time_remaining_;
         double home_compass_hdg_;
         double compass_hdg_;
         int compass_count_;
@@ -150,22 +158,36 @@ class DroneStateManager {
         int detected_utm_zone_;
         bool utm_set_;
 
+        // Battery estimation stuff
+        sensor_msgs::BatteryState current_battery_;
+        float last_resting_percent_;
+        ros::Time last_resting_percent_time_;
+        ros::Time last_battery_measurement_;
+        float current_drawn_since_resting_percent_;
+        std::vector<float> recent_currents_;
+        float battery_percentage_ = 0.f;
+        float battery_size_;
+        float estimated_current_;
+        float estimated_flight_time_remaining_ = 0.f;
+        ros::Publisher battery_pub_; // Publisher mostly for debug
+
         // Slam pose
         geometry_msgs::PoseStamped current_slam_pose_;
 
         // Message rate check stuff
-        float all_stream_rate_;        
+        float all_stream_rate_;
         float msg_rate_timer_dt_;
         ros::Timer msg_rate_timer_;
         float imu_rate_;
-        int imu_count_;
+        int imu_count_ = 0;
         float local_pos_rate_;
-        int local_pos_count_;
+        int local_pos_count_ = 0;
         float stream_rate_modifier_;
-        int battery_count_;
+        float battery_rate_;
+        int battery_count_ = 0;
 
         bool imu_rate_ok_ = false;
-        bool all_stream_rate_ok_ = false;
+        bool battery_rate_ok_ = false;
 
         // Initialization check stuff
         bool drone_initialized_ = false;

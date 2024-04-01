@@ -174,6 +174,7 @@ class TaskManager {
         ros::Publisher stop_record_pub_;
 
         // Drone state params
+        geometry_msgs::PoseStamped home_pos_;
         geometry_msgs::Polygon current_polygon_;
         ros::Timer mode_monitor_timer_;
         std::string cmd_history_;
@@ -182,6 +183,8 @@ class TaskManager {
         ros::Publisher task_json_pub_;
         geometry_msgs::PoseStamped goal_;
         ros::Subscriber goal_sub_;
+        double estimated_drone_speed_;
+        double battery_failsafe_safety_factor_;
 
         actionlib::SimpleActionClient<messages_88::ExploreAction> explore_action_client_;
 
@@ -264,6 +267,8 @@ class TaskManager {
         std::string getStatusString();
         void publishHealth();
         json makeTaskJson();
+        bool isBatteryOk();
+        void doRtl88();
 };
 
 }
