@@ -159,10 +159,7 @@ void HelloDeccoManager::updateBurnUnit(int index, std::string flight_status) {
         burn_unit_json_["trips"][0]["flights"][index]["endTime"] = std::to_string(end_time_);
         burn_unit_json_["trips"][0]["flights"][index]["duration"] = std::to_string(end_time_ - start_time_);
     }
-    std::string s = burn_unit_json_.dump();
-    std_msgs::String burn_string;
-    burn_string.data = s;
-    burn_unit_pub_.publish(burn_string);
+    packageToMapversation("burn_unit_receive", burn_unit_json_);
     std::cout << "burn json filled in: \n" << burn_unit_json_.dump(4) << std::endl;
 }
 
