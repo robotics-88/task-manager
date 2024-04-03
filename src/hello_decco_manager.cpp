@@ -44,7 +44,9 @@ void HelloDeccoManager::setFrames(std::string map_frame, std::string slam_frame)
 void HelloDeccoManager::packageToMapversation(std::string topic, json gossip) {
     json msg_json;
     msg_json["topic"] = topic;
-    msg_json["gossip"] = gossip;
+    json stamped_gossip = gossip;
+    stamped_gossip["stamp"] = ros::Time::now().toSec();
+    msg_json["gossip"] = stamped_gossip;
     std::string s = msg_json.dump();
     std_msgs::String msg_string;
     msg_string.data = s;
