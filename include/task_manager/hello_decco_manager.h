@@ -68,7 +68,6 @@ class HelloDeccoManager {
         ros::Publisher mapver_pub_;
 
         json burn_unit_json_;
-        ros::Publisher burn_unit_pub_;
         ros::Publisher map_region_pub_;
         int start_time_;
         int end_time_;
