@@ -28,7 +28,7 @@ HelloDeccoManager::HelloDeccoManager(ros::NodeHandle& node)
     private_nh_.param<double>("flightleg_area_acres", flightleg_acres, flightleg_acres);
     flightleg_area_m2_ = 4046.86 * flightleg_acres;
 
-    burn_unit_pub_ = nh_.advertise<std_msgs::String>("/mapversation/burn_unit_receive", 10);
+    mapver_pub_ = nh_.advertise<std_msgs::String>("/mapversation/to_hello_decco", 10);
     mavros_geofence_client_ = nh_.serviceClient<mavros_msgs::WaypointPush>("/mavros/geofence/push");
     map_region_pub_ = nh_.advertise<visualization_msgs::Marker>("/map_region", 10, true);
 }
@@ -39,6 +39,18 @@ HelloDeccoManager::~HelloDeccoManager() {
 void HelloDeccoManager::setFrames(std::string map_frame, std::string slam_frame) {
     mavros_map_frame_ = map_frame;
     slam_map_frame_ = slam_frame;
+}
+
+void HelloDeccoManager::packageToMapversation(std::string topic, json gossip) {
+    json msg_json;
+    msg_json["topic"] = topic;
+    json stamped_gossip = gossip;
+    stamped_gossip["stamp"] = ros::Time::now().toSec();
+    msg_json["gossip"] = stamped_gossip;
+    std::string s = msg_json.dump();
+    std_msgs::String msg_string;
+    msg_string.data = s;
+    mapver_pub_.publish(msg_string); // Mapversation to Hello Decco
 }
 
 void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
@@ -95,9 +107,7 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
             // GOnna end up with a blank first leg, fix it
         }
         burn_unit_json_["trips"][0]["flights"] = flightLegArray;
-        std::string s = burn_unit_json_.dump();
-        burn_string.data = s;
-        burn_unit_pub_.publish(burn_string); // Hello Decco
+        packageToMapversation("burn_unit_receive", burn_unit_json_);
         std::cout << "burn json filled in: \n" << burn_unit_json_.dump(4) << std::endl;
     }
 }
@@ -151,10 +161,7 @@ void HelloDeccoManager::updateBurnUnit(int index, std::string flight_status) {
         burn_unit_json_["trips"][0]["flights"][index]["endTime"] = std::to_string(end_time_);
         burn_unit_json_["trips"][0]["flights"][index]["duration"] = std::to_string(end_time_ - start_time_);
     }
-    std::string s = burn_unit_json_.dump();
-    std_msgs::String burn_string;
-    burn_string.data = s;
-    burn_unit_pub_.publish(burn_string);
+    packageToMapversation("burn_unit_receive", burn_unit_json_);
     std::cout << "burn json filled in: \n" << burn_unit_json_.dump(4) << std::endl;
 }
 
@@ -388,7 +395,7 @@ void HelloDeccoManager::utmToLL(const double utm_x, const double utm_y, const in
     GeographicLib::UTMUPS::Reverse(zone, true, utm_x, utm_y, lat, lon, gamma, k);
 }
 
-json HelloDeccoManager::polygonToBurnUnit(const geometry_msgs::Polygon &polygon) {
+json HelloDeccoManager::polygonToBurnUnit(const json &polygon) {
     json burn_unit = R"({
         "id" : 1,
         "orgId" : 1,
@@ -414,15 +421,7 @@ json HelloDeccoManager::polygonToBurnUnit(const geometry_msgs::Polygon &polygon)
             }
         ]
         })"_json;
-
-    json polygon_json;
-    for (int jj = 0; jj < polygon.points.size(); jj++) {
-        json ll;
-        ll.push_back(polygon.points.at(jj).x);
-        ll.push_back(polygon.points.at(jj).y);
-        polygon_json.push_back(ll);
-    }
-    burn_unit["polygon"] = polygon_json;
+    burn_unit["polygon"] = polygon;
     return burn_unit;
 }
 

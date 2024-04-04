@@ -4,8 +4,6 @@
     <arg name="slam_pose_topic" default="/decco/pose"/>
     <arg name="goal_topic" default="/mavros/setpoint_position/local"/> <!-- for mavros without OA, use /mavros/setpoint_position/local. default is /goal.-->
 
-    <arg name="do_slam" default="false"/>
-
     <!-- Which hardware to add to health report -->
     <arg name="do_mapir" default="true"/>
     <arg name="do_mapir_rgb" default="false"/>
@@ -37,6 +35,7 @@
     <arg name="thermal_topic" default="/seek_thermal/image_rect_color" if="$(eval thermal_type == 1)"/>
 
      <!-- Record -->
+    <arg name="do_slam" default="true"/>
     <arg name="do_record" default="true"/>
     <arg name="user" value="$(env USER)"/>
     <arg name="data_directory" default="/home/$(arg user)/src/bags/"/>
