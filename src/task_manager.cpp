@@ -15,6 +15,9 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <geometry_msgs/Twist.h>
 #include <ros/package.h>
 
+#include <pcl_ros/point_cloud.h>
+#include <pcl_ros/transforms.h>
+
 inline static bool operator==(const geometry_msgs::Point& one,
                               const geometry_msgs::Point& two)
 {
@@ -125,6 +128,9 @@ TaskManager::TaskManager(ros::NodeHandle& node)
 
     mode_monitor_timer_ = private_nh_.createTimer(ros::Duration(1.0),
                                [this](const ros::TimerEvent&) { modeMonitor(); });
+
+    pointcloud_repub_ = nh_.advertise<sensor_msgs::PointCloud2>("/cloud_registered_map", 10);
+    registered_cloud_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>("/cloud_registered", 10, &TaskManager::registeredPclCallback, this);
 
     // Health pubs/subs
     health_pub_ = nh_.advertise<std_msgs::String>("/mapversation/health_report", 10);
@@ -280,6 +286,17 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
     geometry_msgs::Quaternion quat;
     tf2::convert(quat_tf, quat);
     map_to_slam_tf_.transform.rotation = quat;
+
+    // Save inverse
+    tf2::Transform map2, slam2;
+    tf2::convert(map_to_slam_tf_.transform, map2);
+    slam2 = map2.inverse();
+    geometry_msgs::Transform slam2_tf;
+    tf2::convert(slam2, slam2_tf);
+    slam_to_map_tf_.header.frame_id = slam_map_frame_;
+    slam_to_map_tf_.header.stamp = map_to_slam_tf_.header.stamp;
+    slam_to_map_tf_.child_frame_id = mavros_map_frame_;
+    slam_to_map_tf_.transform = slam2_tf;
 
     // Send transform and stop timer
     static_tf_broadcaster_.sendTransform(map_to_slam_tf_);
@@ -1025,6 +1042,22 @@ void TaskManager::publishHealth() {
     }
     jsonObjects["healthIndicators"] = healthObjects;
     hello_decco_manager_.packageToMapversation("health_report", jsonObjects);
+}
+
+void TaskManager::registeredPclCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
+    if (!map_tf_init_) {
+        return;
+    }
+    pcl::PointCloud<pcl::PointXYZ>::Ptr reg_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::PointCloud<pcl::PointXYZ>::Ptr map_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::fromROSMsg (*msg, *reg_cloud);
+
+    pcl_ros::transformPointCloud(*reg_cloud, *map_cloud, map_to_slam_tf_.transform);
+
+    sensor_msgs::PointCloud2 map_cloud_ros;
+    pcl::toROSMsg(*map_cloud, map_cloud_ros);
+    map_cloud_ros.header.frame_id = mavros_map_frame_;
+    pointcloud_repub_.publish(map_cloud_ros);
 }
 
 void TaskManager::pathPlannerCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {

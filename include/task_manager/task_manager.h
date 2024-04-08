@@ -78,6 +78,9 @@ class TaskManager {
         void deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose);
         bool pauseOperations();
 
+        // Pointcloud republisher
+        void registeredPclCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
+
         // Health subscribers, unused except to verify publishing
         void pathPlannerCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
         void costmapCallback(const map_msgs::OccupancyGridUpdate::ConstPtr &msg);
@@ -156,6 +159,11 @@ class TaskManager {
         std::string slam_pose_topic_;
         message_filters::Subscriber<geometry_msgs::PoseStamped> mavros_pose_sub_;
         message_filters::Subscriber<geometry_msgs::PoseStamped> slam_pose_sub_;
+
+        // PCL republisher
+        ros::Subscriber registered_cloud_sub_;
+        ros::Publisher pointcloud_repub_;
+        geometry_msgs::TransformStamped slam_to_map_tf_;
 
         // Drone state and services
         drone_state_manager::DroneStateManager drone_state_manager_;

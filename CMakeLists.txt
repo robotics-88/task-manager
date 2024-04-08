@@ -10,6 +10,7 @@ find_package(catkin REQUIRED COMPONENTS
   livox_ros_driver
   mavros_msgs
   messages_88
+  pcl_ros
   roscpp
   roslib
   sensor_msgs
@@ -20,6 +21,7 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 find_package(GeographicLib REQUIRED)
+find_package(PCL REQUIRED)
 
 ###################################
 ## catkin specific configuration ##
@@ -36,17 +38,18 @@ catkin_package(
 ###########
 # c++11 support required
 include(CheckCXXCompilerFlag)
-check_cxx_compiler_flag("-std=c++11" COMPILER_SUPPORTS_CXX11)
-if(COMPILER_SUPPORTS_CXX11)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+check_cxx_compiler_flag("-std=c++14" COMPILER_SUPPORTS_CXX14)
+if(COMPILER_SUPPORTS_CXX14)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
 else()
-  message(FATAL_ERROR "The compiler ${CMAKE_CXX_COMPILER} has no C++11 support. Please use a different C++ compiler.")
+  message(FATAL_ERROR "The compiler ${CMAKE_CXX_COMPILER} has no C++114support. Please use a different C++ compiler.")
 endif()
 
 ## Specify additional locations of header files
 include_directories(
   ${catkin_INCLUDE_DIRS}
   ${GeographicLib_INCLUDE_DIRS}
+	${PCL_INCLUDE_DIRS}
   include
 )
 
@@ -63,6 +66,7 @@ add_executable(task_manager
 target_link_libraries(task_manager 
   ${catkin_LIBRARIES}
   ${GeographicLib_LIBRARIES}
+	${PCL_LIBRARY_DIRS}
 )
 
 #############
