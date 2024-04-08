@@ -1,5 +1,6 @@
 <launch>
     <arg name="mavros_map_frame" default="map"/>
+    <arg name="base_frame" default="base_link"/>
     <arg name="slam_map_frame" default="slam_map"/>
     <arg name="slam_pose_topic" default="/decco/pose"/>
     <arg name="goal_topic" default="/mavros/setpoint_position/local"/> <!-- for mavros without OA, use /mavros/setpoint_position/local. default is /goal.-->
@@ -58,6 +59,7 @@
         <param name="do_record" value="$(arg do_record)"/>
         <param name="data_directory" value="$(arg data_directory)"/>
         <param name="mavros_map_frame" value="$(arg mavros_map_frame)"/>
+        <param name="base_frame" value="$(arg base_frame)"/>
         <param name="slam_map_frame" value="$(arg slam_map_frame)"/>
         <param name="path_planner_topic" value="$(arg path_planner_topic)"/>
         <param name="slam_pose_topic" value="$(arg slam_pose_topic)"/>

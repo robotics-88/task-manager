@@ -144,6 +144,12 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
     for (int i = 0; i < 10; i++) {
         recent_currents_.push_back(estimated_current_);
     }
+
+    // Initialize mavros IMU to 0s
+    mavros_imu_init_.orientation.x = 0;
+    mavros_imu_init_.orientation.y = 0;
+    mavros_imu_init_.orientation.z = 0;
+    mavros_imu_init_.orientation.w = 0;
 }
 
 DroneStateManager::~DroneStateManager() {
@@ -516,6 +522,14 @@ double DroneStateManager::getCompass() {
     return compass_hdg_;
 }
 
+bool DroneStateManager::getImu(sensor_msgs::Imu &imu) {
+    if (imu_count_ < imu_init_threshold_) 
+        return false;
+    
+    imu = mavros_imu_init_;
+    return true;
+}
+
 void DroneStateManager::slamPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
     current_slam_pose_ = *msg;
 }
@@ -535,6 +549,18 @@ void DroneStateManager::localPositionCallback(const geometry_msgs::PoseStamped::
 void DroneStateManager::imuCallback(const sensor_msgs::Imu::ConstPtr &msg) {
     current_imu_ = *msg;
     imu_count_++;
+    if (imu_count_ < imu_init_threshold_) {
+        mavros_imu_init_.orientation.x += current_imu_.orientation.x;
+        mavros_imu_init_.orientation.y += current_imu_.orientation.y;
+        mavros_imu_init_.orientation.z += current_imu_.orientation.z;
+        mavros_imu_init_.orientation.w += current_imu_.orientation.w;
+    }
+    else if (imu_count_ == imu_init_threshold_) {
+        mavros_imu_init_.orientation.x /= imu_init_threshold_;
+        mavros_imu_init_.orientation.y /= imu_init_threshold_;
+        mavros_imu_init_.orientation.z /= imu_init_threshold_;
+        mavros_imu_init_.orientation.w /= imu_init_threshold_;
+    }
 }
 
 void DroneStateManager::compassCallback(const std_msgs::Float64::ConstPtr & msg) {

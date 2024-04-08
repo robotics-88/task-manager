@@ -83,6 +83,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<bool>("do_slam", do_slam_, do_slam_);
     private_nh_.param<bool>("do_record", do_record_, do_record_);
     private_nh_.param<std::string>("mavros_map_frame", mavros_map_frame_, mavros_map_frame_);
+    private_nh_.param<std::string>("base_frame", mavros_base_frame_, mavros_base_frame_);
     private_nh_.param<std::string>("slam_map_frame", slam_map_frame_, slam_map_frame_);
     private_nh_.param<std::string>("path_planner_topic", path_planner_topic_, path_planner_topic_);
     private_nh_.param<std::string>("slam_pose_topic", slam_pose_topic_, slam_pose_topic_);
@@ -250,6 +251,20 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
         ros::topic::waitForMessage<std_msgs::Float64>("map_yaw", nh_);
     }
 
+
+    // Get roll, pitch for map stabilization
+    sensor_msgs::Imu mavros_init_imu;
+    ros::Rate r(0.1);
+    while (!drone_state_manager_.getImu(mavros_init_imu)) {
+        r.sleep();
+        std::cout << "waiting for IMU initial" << std::endl;
+    }
+    tf2::Quaternion quatmav(mavros_init_imu.orientation.x, mavros_init_imu.orientation.y, mavros_init_imu.orientation.z, mavros_init_imu.orientation.w);
+    tf2::Matrix3x3 m(quatmav);
+    double roll, pitch, yaw;
+    m.getRPY(roll, pitch, yaw);
+    std::cout << "roll: " << roll << ", pitch: " << pitch << ", yaw: " << yaw << std::endl;
+
     // Fill in data
     map_to_slam_tf_.header.frame_id = mavros_map_frame_;
     map_to_slam_tf_.header.stamp = ros::Time::now();
@@ -259,7 +274,8 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
     map_to_slam_tf_.transform.translation.z = 0.0;
 
     tf2::Quaternion quat_tf;
-    quat_tf.setRPY(0.0, 0.0, map_yaw_);
+    quat_tf.setRPY(roll, pitch, map_yaw_); // TODO, get rid of map_yaw_? It's the same as IMU yaw. Also confirm IMU is ok and not being affected by param setup on launch
+    quat_tf.normalize();
 
     geometry_msgs::Quaternion quat;
     tf2::convert(quat_tf, quat);

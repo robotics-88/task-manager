@@ -142,6 +142,7 @@ class TaskManager {
 
         // Frames
         std::string mavros_map_frame_;
+        std::string mavros_base_frame_;
         std::string slam_map_frame_;
         geometry_msgs::TransformStamped map_to_slam_tf_;
         ros::Subscriber decco_pose_sub_;
