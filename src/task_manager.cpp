@@ -436,7 +436,7 @@ void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &sl
         double lat, lon;
         hello_decco_manager_.utmToLL(point_out.point.x, point_out.point.y, home_utm_zone_, lat, lon);
         sensor_msgs::NavSatFix nav_msg;
-        nav_msg.header.frame_id = "base_link";
+        nav_msg.header.frame_id = mavros_base_frame_;
         nav_msg.header.stamp = slam_pose->header.stamp;
         nav_msg.latitude = lat;
         nav_msg.longitude = lon;
