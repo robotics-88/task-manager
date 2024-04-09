@@ -65,7 +65,6 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , mapir_topic_("/mapir_rgn/image_rect_color")
     , mapir_rgb_topic_("/mapir_rgn/image_rect_color")
     , rosbag_topic_("/record/heartbeat")
-    , did_save_(false)
     , did_takeoff_(false)
     , is_armed_(false)
     , explicit_global_params_(false)
@@ -188,18 +187,6 @@ TaskManager::TaskManager(ros::NodeHandle& node)
 
     // Mapversation subscriber
     mapver_sub_ = nh_.subscribe<std_msgs::String>("/mapversation/to_decco", 10, &TaskManager::packageFromMapversation, this);
-
-    // Logs created in offline mode (TODO, is this necessary anymore? Saving now should be part of postflight)
-    vegetation_save_client_ = private_nh_.serviceClient<messages_88::Save>("/vegetation/save");
-    tree_save_client_ = private_nh_.serviceClient<messages_88::Save>("/species_mapper/save");
-    std::string data_folder = ros::package::getPath("task_manager_88") + "/logs/";
-    std::string time_local = boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time());
-    time_local.replace(time_local.find(" "), 1, "_");
-    log_dir_ = data_folder + time_local + "/";
-    if ((do_record_ || offline_) && !boost::filesystem::exists(log_dir_)) {
-        ROS_INFO("Folder did not exist, creating directory: %s", log_dir_.c_str());
-        boost::filesystem::create_directories(log_dir_);
-    }
 
     // Initialize home pos struct
     home_pos_.header.frame_id = mavros_map_frame_;
@@ -654,18 +641,10 @@ void TaskManager::startExploreTask() {
 
     current_status_ = CurrentStatus::EXPLORING;
     explore_action_client_.sendGoal(current_explore_goal_);
-    did_save_ = false;
 }
 
 void TaskManager::stop() {
     stopBag();
-    if (!did_save_) {
-        messages_88::Save save_msg;
-        save_msg.request.directory.data = log_dir_;
-        vegetation_save_client_.call(save_msg);
-        tree_save_client_.call(save_msg);
-        did_save_ = true;
-    }
     pauseOperations();
 }
 
@@ -681,7 +660,6 @@ void TaskManager::modeMonitor() {
         cmd_history_.append("Checking start bag record due to arming detected. Armed: " + std::to_string(armed) + ", flight mode: " + mode + "\n");
         // Handle recording during manual take off
         startBag();
-        did_save_ = false;
     }
     if (is_armed_ && !armed) {
         cmd_history_.append("Disarm detected. \n ");

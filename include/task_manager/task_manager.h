@@ -230,11 +230,7 @@ class TaskManager {
         std::string rosbag_topic_;
         ros::Timer health_pub_timer_;
 
-        // Saving
-        std::string log_dir_;
-        ros::ServiceClient vegetation_save_client_;
-        ros::ServiceClient tree_save_client_;
-        bool did_save_;
+        // State
         bool did_takeoff_;
         bool is_armed_;
 
