@@ -129,6 +129,7 @@ void HelloDeccoManager::polygonInitializer(const geometry_msgs::Polygon &msg, bo
 
 int HelloDeccoManager::initBurnUnit(geometry_msgs::Polygon &polygon) {
     // Iterate through subpolygons to get first not done
+    // TODO not needed anymore? HD only sends the next flight?
     int ind = 0;
     geometry_msgs::Polygon poly;
     bool found = false;
@@ -142,7 +143,7 @@ int HelloDeccoManager::initBurnUnit(geometry_msgs::Polygon &polygon) {
         ind++;
     }
     if (found) {
-        polygon = transformPolygon(poly);
+        polygon = poly;
     }
     else {
         ind = -1;
@@ -353,23 +354,23 @@ int HelloDeccoManager::concaveToMinimalConvexPolygons() {
     return num_legs;
 }
 
-geometry_msgs::Polygon HelloDeccoManager::transformPolygon(const geometry_msgs::Polygon &map_poly) {
-    geometry_msgs::Polygon slam_map_poly;
-    geometry_msgs::TransformStamped tf = tf_buffer_.lookupTransform(slam_map_frame_, mavros_map_frame_, ros::Time(0));
-    for (int nn = 0; nn < map_poly.points.size(); nn++) {
-        geometry_msgs::PointStamped point_tf;
-        geometry_msgs::PointStamped map_pt;
-        map_pt.point.x = map_poly.points.at(nn).x;
-        map_pt.point.y = map_poly.points.at(nn).y;
-        map_pt.header.frame_id = mavros_map_frame_;
-        tf2::doTransform(map_pt, point_tf, tf);
-        geometry_msgs::Point32 point;
-        point.x = point_tf.point.x;
-        point.y = point_tf.point.y;
-        slam_map_poly.points.push_back(point);
-    }
-    return slam_map_poly;
-}
+// geometry_msgs::Polygon HelloDeccoManager::transformPolygon(const geometry_msgs::Polygon &geo_poly) {
+//     geometry_msgs::Polygon map_poly;
+//     geometry_msgs::TransformStamped tf = tf_buffer_.lookupTransform(slam_map_frame_, mavros_map_frame_, ros::Time(0));
+//     for (int nn = 0; nn < geo_poly.points.size(); nn++) {
+//         geometry_msgs::PointStamped point_tf;
+//         geometry_msgs::PointStamped map_pt;
+//         map_pt.point.x = geo_poly.points.at(nn).x;
+//         map_pt.point.y = geo_poly.points.at(nn).y;
+//         map_pt.header.frame_id = mavros_map_frame_;
+//         tf2::doTransform(map_pt, point_tf, tf);
+//         geometry_msgs::Point32 point;
+//         point.x = point_tf.point.x;
+//         point.y = point_tf.point.y;
+//         map_poly.points.push_back(point);
+//     }
+//     return map_poly;
+// }
 
 void HelloDeccoManager::mapToGeopoint(const geometry_msgs::PointStamped &point_in, geometry_msgs::PointStamped &point_out, double yaw) {
     // TODO init tf at the start, doesn't change

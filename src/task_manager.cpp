@@ -202,7 +202,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     }
 
     // Initialize home pos struct
-    home_pos_.header.frame_id = slam_map_frame_;
+    home_pos_.header.frame_id = mavros_map_frame_;
     home_pos_.pose.position.x = 0;
     home_pos_.pose.position.y = 0;
     home_pos_.pose.position.z = target_altitude_;
