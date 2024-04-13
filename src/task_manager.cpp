@@ -38,6 +38,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , enable_autonomy_(false)
     , enable_exploration_(false)
     , ardupilot_(true)
+    , use_failsafes_(false)
     , target_altitude_(2.0)
     , min_altitude_(2.0)
     , max_altitude_(10.0)
@@ -75,6 +76,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<bool>("enable_autonomy", enable_autonomy_, enable_autonomy_);
     private_nh_.param<bool>("enable_exploration", enable_exploration_, enable_exploration_);
     private_nh_.param<bool>("ardupilot", ardupilot_, ardupilot_);
+    private_nh_.param<bool>("use_failsafes", use_failsafes_, use_failsafes_);
     private_nh_.param<float>("default_altitude_m", target_altitude_, target_altitude_);
     private_nh_.param<float>("min_altitude", min_altitude_, min_altitude_);
     private_nh_.param<float>("max_altitude", max_altitude_, max_altitude_);
@@ -379,10 +381,12 @@ void TaskManager::mapTfTimerCallbackNoGlobal(const ros::TimerEvent&) {
 }
 
 void TaskManager::failsafe() {
-    cmd_history_.append("Failsafe init. \n");
-    ROS_WARN("Failsafe init");
-    drone_state_manager_.setMode(land_mode_);
-    stop();
+    cmd_history_.append("Failsafe init. Failsafes active?" + std::to_string(use_failsafes_) + "\n");
+    ROS_WARN("Failsafe init. Failsafes active? %d", use_failsafes_);
+    if (use_failsafes_) {
+        drone_state_manager_.setMode(land_mode_);
+        stop();
+    }
 }
 
 void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose) {

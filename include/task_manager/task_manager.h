@@ -127,6 +127,7 @@ class TaskManager {
         bool enable_autonomy_;
         bool enable_exploration_;
         bool ardupilot_;
+        bool use_failsafes_;
 
         // Control defaults
         float target_altitude_;

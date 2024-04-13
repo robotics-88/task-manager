@@ -15,6 +15,7 @@
 
     <arg name="enable_autonomy" default="false"/>
     <arg name="enable_exploration" default="false"/>
+    <arg name="use_failsafes" default="false"/>
     <arg name="ardupilot" default="true"/>
     
     <arg name="default_altitude_m" default="2.0"/>
@@ -55,6 +56,7 @@
         <param name="do_slam" value="$(arg do_slam)"/>
         <param name="enable_autonomy" value="$(arg enable_autonomy)"/>
         <param name="enable_exploration" value="$(arg enable_exploration)"/>
+        <param name="use_failsafes" value="$(arg use_failsafes)"/>
         <param name="goal_topic" value="$(arg goal_topic)"/>
         <param name="do_record" value="$(arg do_record)"/>
         <param name="data_directory" value="$(arg data_directory)"/>
