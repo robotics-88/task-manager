@@ -57,6 +57,7 @@ class DroneStateManager {
         bool getDroneInitalized() {return drone_initialized_;}
         float getFlightTimeRemaining() {return estimated_flight_time_remaining_;}
         float getBatteryPercentage() {return battery_percentage_;}
+        bool getImu(sensor_msgs::Imu &imu);
 
         // Mavros subscriber callbacks
         void globalPositionCallback(const sensor_msgs::NavSatFix::ConstPtr &msg);
@@ -188,6 +189,8 @@ class DroneStateManager {
 
         bool imu_rate_ok_ = false;
         bool battery_rate_ok_ = false;
+        sensor_msgs::Imu mavros_imu_init_;
+        int imu_init_threshold_ = 100;
 
         // Initialization check stuff
         bool drone_initialized_ = false;

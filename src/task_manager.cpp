@@ -15,6 +15,9 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <geometry_msgs/Twist.h>
 #include <ros/package.h>
 
+#include <pcl_ros/point_cloud.h>
+#include <pcl_ros/transforms.h>
+
 inline static bool operator==(const geometry_msgs::Point& one,
                               const geometry_msgs::Point& two)
 {
@@ -35,6 +38,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , enable_autonomy_(false)
     , enable_exploration_(false)
     , ardupilot_(true)
+    , use_failsafes_(false)
     , target_altitude_(2.0)
     , min_altitude_(2.0)
     , max_altitude_(10.0)
@@ -72,6 +76,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<bool>("enable_autonomy", enable_autonomy_, enable_autonomy_);
     private_nh_.param<bool>("enable_exploration", enable_exploration_, enable_exploration_);
     private_nh_.param<bool>("ardupilot", ardupilot_, ardupilot_);
+    private_nh_.param<bool>("use_failsafes", use_failsafes_, use_failsafes_);
     private_nh_.param<float>("default_altitude_m", target_altitude_, target_altitude_);
     private_nh_.param<float>("min_altitude", min_altitude_, min_altitude_);
     private_nh_.param<float>("max_altitude", max_altitude_, max_altitude_);
@@ -82,6 +87,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<bool>("do_slam", do_slam_, do_slam_);
     private_nh_.param<bool>("do_record", do_record_, do_record_);
     private_nh_.param<std::string>("mavros_map_frame", mavros_map_frame_, mavros_map_frame_);
+    private_nh_.param<std::string>("base_frame", mavros_base_frame_, mavros_base_frame_);
     private_nh_.param<std::string>("slam_map_frame", slam_map_frame_, slam_map_frame_);
     private_nh_.param<std::string>("path_planner_topic", path_planner_topic_, path_planner_topic_);
     private_nh_.param<std::string>("slam_pose_topic", slam_pose_topic_, slam_pose_topic_);
@@ -128,6 +134,9 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     health_pub_ = nh_.advertise<std_msgs::String>("/mapversation/health_report", 10);
     if (do_slam_) {
         path_planner_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(path_planner_topic_, 10, &TaskManager::pathPlannerCallback, this);
+        // Pointcloud republisher only if SLAM running
+        pointcloud_repub_ = nh_.advertise<sensor_msgs::PointCloud2>("/cloud_registered_map", 10);
+        registered_cloud_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>("/cloud_registered", 10, &TaskManager::registeredPclCallback, this);
     }
     costmap_sub_ = nh_.subscribe<map_msgs::OccupancyGridUpdate>(costmap_topic_, 10, &TaskManager::costmapCallback, this);
     if (lidar_type == 2) {
@@ -182,7 +191,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     mapver_sub_ = nh_.subscribe<std_msgs::String>("/mapversation/to_decco", 10, &TaskManager::packageFromMapversation, this);
 
     // Initialize home pos struct
-    home_pos_.header.frame_id = slam_map_frame_;
+    home_pos_.header.frame_id = mavros_map_frame_;
     home_pos_.pose.position.x = 0;
     home_pos_.pose.position.y = 0;
     home_pos_.pose.position.z = target_altitude_;
@@ -237,6 +246,20 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
         ros::topic::waitForMessage<std_msgs::Float64>("map_yaw", nh_);
     }
 
+
+    // Get roll, pitch for map stabilization
+    sensor_msgs::Imu mavros_init_imu;
+    ros::Rate r(0.1);
+    while (!drone_state_manager_.getImu(mavros_init_imu)) {
+        r.sleep();
+        std::cout << "waiting for IMU initial" << std::endl;
+    }
+    tf2::Quaternion quatmav(mavros_init_imu.orientation.x, mavros_init_imu.orientation.y, mavros_init_imu.orientation.z, mavros_init_imu.orientation.w);
+    tf2::Matrix3x3 m(quatmav);
+    double roll, pitch, yaw;
+    m.getRPY(roll, pitch, yaw);
+    std::cout << "roll: " << roll << ", pitch: " << pitch << ", yaw: " << yaw << std::endl;
+
     // Fill in data
     map_to_slam_tf_.header.frame_id = mavros_map_frame_;
     map_to_slam_tf_.header.stamp = ros::Time::now();
@@ -246,11 +269,23 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
     map_to_slam_tf_.transform.translation.z = 0.0;
 
     tf2::Quaternion quat_tf;
-    quat_tf.setRPY(0.0, 0.0, map_yaw_);
+    quat_tf.setRPY(roll, pitch, map_yaw_); // TODO, get rid of map_yaw_? It's the same as IMU yaw. Also confirm IMU is ok and not being affected by param setup on launch
+    quat_tf.normalize();
 
     geometry_msgs::Quaternion quat;
     tf2::convert(quat_tf, quat);
     map_to_slam_tf_.transform.rotation = quat;
+
+    // Save inverse
+    tf2::Transform map2, slam2;
+    tf2::convert(map_to_slam_tf_.transform, map2);
+    slam2 = map2.inverse();
+    geometry_msgs::Transform slam2_tf;
+    tf2::convert(slam2, slam2_tf);
+    slam_to_map_tf_.header.frame_id = slam_map_frame_;
+    slam_to_map_tf_.header.stamp = map_to_slam_tf_.header.stamp;
+    slam_to_map_tf_.child_frame_id = mavros_map_frame_;
+    slam_to_map_tf_.transform = slam2_tf;
 
     // Send transform and stop timer
     static_tf_broadcaster_.sendTransform(map_to_slam_tf_);
@@ -346,10 +381,12 @@ void TaskManager::mapTfTimerCallbackNoGlobal(const ros::TimerEvent&) {
 }
 
 void TaskManager::failsafe() {
-    cmd_history_.append("Failsafe init. \n");
-    ROS_WARN("Failsafe init");
-    drone_state_manager_.setMode(land_mode_);
-    stop();
+    cmd_history_.append("Failsafe init. Failsafes active?" + std::to_string(use_failsafes_) + "\n");
+    ROS_WARN("Failsafe init. Failsafes active? %d", use_failsafes_);
+    if (use_failsafes_) {
+        drone_state_manager_.setMode(land_mode_);
+        stop();
+    }
 }
 
 void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose) {
@@ -390,7 +427,7 @@ void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &sl
         double lat, lon;
         hello_decco_manager_.utmToLL(point_out.point.x, point_out.point.y, home_utm_zone_, lat, lon);
         sensor_msgs::NavSatFix nav_msg;
-        nav_msg.header.frame_id = "base_link";
+        nav_msg.header.frame_id = mavros_base_frame_;
         nav_msg.header.stamp = slam_pose->header.stamp;
         nav_msg.latitude = lat;
         nav_msg.longitude = lon;
@@ -987,6 +1024,22 @@ void TaskManager::publishHealth() {
     }
     jsonObjects["healthIndicators"] = healthObjects;
     hello_decco_manager_.packageToMapversation("health_report", jsonObjects);
+}
+
+void TaskManager::registeredPclCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
+    if (!map_tf_init_) {
+        return;
+    }
+    pcl::PointCloud<pcl::PointXYZ>::Ptr reg_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::PointCloud<pcl::PointXYZ>::Ptr map_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::fromROSMsg (*msg, *reg_cloud);
+
+    pcl_ros::transformPointCloud(*reg_cloud, *map_cloud, map_to_slam_tf_.transform);
+
+    sensor_msgs::PointCloud2 map_cloud_ros;
+    pcl::toROSMsg(*map_cloud, map_cloud_ros);
+    map_cloud_ros.header.frame_id = mavros_map_frame_;
+    pointcloud_repub_.publish(map_cloud_ros);
 }
 
 void TaskManager::pathPlannerCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
