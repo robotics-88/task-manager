@@ -17,6 +17,9 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <message_filters/subscriber.h>
 #include <message_filters/sync_policies/approximate_time.h>
 #include <map_msgs/OccupancyGridUpdate.h>
+#include <pcl_ros/point_cloud.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
@@ -115,12 +118,13 @@ class TaskManager {
         ros::Publisher map_yaw_pub_;
         ros::Subscriber map_yaw_sub_;
 
+        // UTM PCD saving
+        bool save_pcd_;
+        pcl::PointCloud<pcl::PointXYZI>::Ptr pcl_save_;
+
         // Hello Decco comms
         hello_decco_manager::HelloDeccoManager hello_decco_manager_;
         ros::Subscriber mapver_sub_;
-        // ros::Subscriber target_polygon_subscriber_;
-        // ros::Subscriber target_setpoint_subscriber_;
-        // ros::Subscriber emergency_subscriber_;
 
         // Safety for enabling control
         bool do_slam_;

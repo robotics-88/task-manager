@@ -15,7 +15,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <geometry_msgs/Twist.h>
 #include <ros/package.h>
 
-#include <pcl_ros/point_cloud.h>
 #include <pcl_ros/transforms.h>
 
 inline static bool operator==(const geometry_msgs::Point& one,
@@ -34,6 +33,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , nh_(node)
     , simulate_(false)
     , offline_(false)
+    , save_pcd_(false)
     , hello_decco_manager_(node)
     , enable_autonomy_(false)
     , enable_exploration_(false)
@@ -100,6 +100,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<std::string>("rosbag_topic", rosbag_topic_, rosbag_topic_);
     private_nh_.param<bool>("offline", offline_, offline_);
     private_nh_.param<bool>("simulate", simulate_, simulate_);
+    private_nh_.param<bool>("save_pcd", save_pcd_, save_pcd_);
     private_nh_.param<std::string>("data_directory", burn_dir_prefix_, burn_dir_prefix_);
     private_nh_.param<bool>("explicit_global", explicit_global_params_, explicit_global_params_);
     private_nh_.param<double>("estimated_drone_speed", estimated_drone_speed_, estimated_drone_speed_);
@@ -176,6 +177,9 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     stop_record_pub_ = nh_.advertise<std_msgs::String>("/record/stop", 5);
     if (offline_) {
         map_yaw_sub_ = nh_.subscribe<std_msgs::Float64>("map_yaw", 10, &TaskManager::mapYawCallback, this);
+        if (save_pcd_) {
+            pcl_save_ .reset(new pcl::PointCloud<pcl::PointXYZI>());
+        }
     }
     else {
         map_yaw_pub_ = nh_.advertise<std_msgs::Float64>("map_yaw", 5, true);
@@ -199,7 +203,24 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     initDroneStateManager();
 }
 
-TaskManager::~TaskManager(){}
+TaskManager::~TaskManager(){
+    if (offline_ && save_pcd_) {
+        if (pcl_save_->size() > 0) {
+            std::string file_name = "scans.pcd";
+            std::string all_points_dir(ros::package::getPath("task_manager_88") + "/PCD/");
+            if (!boost::filesystem::exists(all_points_dir)) {
+                boost::filesystem::create_directory(all_points_dir);
+            }
+            all_points_dir += file_name;
+            pcl::PCDWriter pcd_writer;
+            std::cout << "current scan saved to /PCD/" << file_name<<std::endl;
+            pcd_writer.writeBinary(all_points_dir, *pcl_save_);
+        }
+        else {
+            std::cout << "No pointclouds to save" << std::endl;
+        }
+    }
+}
 
 void TaskManager::packageFromMapversation(const std_msgs::String::ConstPtr &msg) {
     json mapver_json = json::parse(msg->data);
@@ -1030,8 +1051,8 @@ void TaskManager::registeredPclCallback(const sensor_msgs::PointCloud2ConstPtr &
     if (!map_tf_init_) {
         return;
     }
-    pcl::PointCloud<pcl::PointXYZ>::Ptr reg_cloud(new pcl::PointCloud<pcl::PointXYZ>());
-    pcl::PointCloud<pcl::PointXYZ>::Ptr map_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::PointCloud<pcl::PointXYZI>::Ptr reg_cloud(new pcl::PointCloud<pcl::PointXYZI>());
+    pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud(new pcl::PointCloud<pcl::PointXYZI>());
     pcl::fromROSMsg (*msg, *reg_cloud);
 
     pcl_ros::transformPointCloud(*reg_cloud, *map_cloud, map_to_slam_tf_.transform);
@@ -1040,6 +1061,13 @@ void TaskManager::registeredPclCallback(const sensor_msgs::PointCloud2ConstPtr &
     pcl::toROSMsg(*map_cloud, map_cloud_ros);
     map_cloud_ros.header.frame_id = mavros_map_frame_;
     pointcloud_repub_.publish(map_cloud_ros);
+
+    if (offline_ & save_pcd_) {
+        pcl::PointCloud<pcl::PointXYZI>::Ptr utm_cloud(new pcl::PointCloud<pcl::PointXYZI>());
+
+        pcl_ros::transformPointCloud(*map_cloud, *utm_cloud, utm2map_tf_.transform);
+        *pcl_save_ += *utm_cloud;
+    }
 }
 
 void TaskManager::pathPlannerCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {

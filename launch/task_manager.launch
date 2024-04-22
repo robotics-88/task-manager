@@ -44,6 +44,7 @@
 
     <arg name="simulate" default="false"/>
     <arg name="offline" default="false"/>
+    <arg name="save_pcd" default="false"/>
 
     <!-- Params for the case when UTM and map yaw need to be set manually from prior bag -->
     <arg name="explicit_global" default="false"/>
@@ -83,6 +84,7 @@
         <param name="local_pos_rate" value="60"/>
         <param name="simulate" value="$(arg simulate)"/>
         <param name="offline" value="$(arg offline)"/>
+        <param name="save_pcd" value="$(arg save_pcd)"/>
         <param name="explicit_global" value="$(arg explicit_global)"/>
         <param name="map_yaw" value="$(arg map_yaw)"/>
         <param name="utm_y" value="$(arg utm_y)"/>
