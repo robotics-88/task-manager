@@ -15,6 +15,8 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <geometry_msgs/Twist.h>
 #include <ros/package.h>
 
+#include <mavros_msgs/BasicID.h>
+
 #include <pcl_ros/point_cloud.h>
 #include <pcl_ros/transforms.h>
 
@@ -166,6 +168,9 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     local_pos_pub_ = nh_.advertise<geometry_msgs::PoseStamped>(goal_topic, 10);
     local_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("/mavros/setpoint_velocity/cmd_vel_unstamped", 10);
     vision_pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("/mavros/vision_pose/pose", 10);
+
+    // Remote ID
+    odid_basic_id_pub_ = nh_.advertise<mavros_msgs::BasicID>("/mavros/open_drone_id/basic_id", 10);
 
     // Heartbeat timer
     int heartbeat_hz = 1;
@@ -653,6 +658,15 @@ void TaskManager::stop() {
 }
 
 void TaskManager::modeMonitor() {
+
+    mavros_msgs::BasicID basic_id;
+
+    basic_id.id_type = mavros_msgs::BasicID::MAV_ODID_ID_TYPE_SERIAL_NUMBER;
+    basic_id.ua_type = mavros_msgs::BasicID::MAV_ODID_UA_TYPE_HELICOPTER_OR_MULTIROTOR;
+    basic_id.uas_id = "hellohello";
+
+    odid_basic_id_pub_.publish(basic_id);
+
     std::string mode = drone_state_manager_.getFlightMode();
     bool armed = drone_state_manager_.getIsArmed();
     bool in_air = drone_state_manager_.getIsInAir();

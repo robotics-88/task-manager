@@ -238,6 +238,9 @@ class TaskManager {
         ros::Publisher local_pos_pub_;
         ros::Publisher local_vel_pub_;
 
+        // Remote ID
+        ros::Publisher odid_basic_id_pub_;
+
         // Goal details
         geometry_msgs::Point current_target_;
         messages_88::ExploreGoal current_explore_goal_;
