@@ -69,6 +69,8 @@ class TaskManager {
         void uiHeartbeatCallback(const json &msg);
         void heartbeatTimerCallback(const ros::TimerEvent&);
 
+        void odidTimerCallback(const ros::TimerEvent &);
+
         void startNav2PointTask(messages_88::NavToPointGoal &nav_goal);
         void sendExploreTask(messages_88::ExploreGoal &goal);
         void startExploreTask();
@@ -240,6 +242,11 @@ class TaskManager {
 
         // Remote ID
         ros::Publisher odid_basic_id_pub_;
+        ros::Publisher odid_operator_id_pub_;
+        ros::Publisher odid_self_id_pub_;
+        ros::Publisher odid_system_pub_;
+        ros::Publisher odid_system_update_pub_;
+        ros::Timer odid_timer_;
 
         // Goal details
         geometry_msgs::Point current_target_;
@@ -258,6 +265,8 @@ class TaskManager {
         bool explicit_global_params_;
         ros::Publisher global_pose_pub_;
         geometry_msgs::TransformStamped utm2map_tf_;
+        double home_lat_;
+        double home_lon_;
 
         // Burn unit handling
         ros::Subscriber burn_unit_sub_;

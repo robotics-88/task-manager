@@ -16,6 +16,10 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <ros/package.h>
 
 #include <mavros_msgs/BasicID.h>
+#include <mavros_msgs/OperatorID.h>
+#include <mavros_msgs/SelfID.h>
+#include <mavros_msgs/System.h>
+#include <mavros_msgs/SystemUpdate.h>
 
 #include <pcl_ros/point_cloud.h>
 #include <pcl_ros/transforms.h>
@@ -171,6 +175,11 @@ TaskManager::TaskManager(ros::NodeHandle& node)
 
     // Remote ID
     odid_basic_id_pub_ = nh_.advertise<mavros_msgs::BasicID>("/mavros/open_drone_id/basic_id", 10);
+    odid_operator_id_pub_ = nh_.advertise<mavros_msgs::OperatorID>("/mavros/open_drone_id/operator_id", 10);
+    odid_self_id_pub_ = nh_.advertise<mavros_msgs::SelfID>("/mavros/open_drone_id/self_id", 10);
+    odid_system_pub_ = nh_.advertise<mavros_msgs::System>("/mavros/open_drone_id/system", 10);
+    odid_system_update_pub_ = nh_.advertise<mavros_msgs::SystemUpdate>("/mavros/open_drone_id/system_update", 10);
+    odid_timer_ = nh_.createTimer(ros::Duration(1.0), &TaskManager::odidTimerCallback, this);
 
     // Heartbeat timer
     int heartbeat_hz = 1;
@@ -371,13 +380,12 @@ void TaskManager::mapTfTimerCallbackNoGlobal(const ros::TimerEvent&) {
     utm2map_tf_.transform.rotation.w = 1;
     static_tf_broadcaster_.sendTransform(utm2map_tf_);
 
-    double lat, lon;
-    hello_decco_manager_.utmToLL(utm_x, utm_y, home_utm_zone_, lat, lon);
+    hello_decco_manager_.utmToLL(utm_x, utm_y, home_utm_zone_, home_lat_, home_lon_);
     sensor_msgs::NavSatFix nav_msg;
     nav_msg.header.frame_id = "base_link";
     nav_msg.header.stamp = ros::Time::now();
-    nav_msg.latitude = lat;
-    nav_msg.longitude = lon;
+    nav_msg.latitude = home_lat_;
+    nav_msg.longitude = home_lon_;
     global_pose_pub_.publish(nav_msg);
 
     current_status_ = CurrentStatus::INITIALIZED;
@@ -508,6 +516,43 @@ void TaskManager::heartbeatTimerCallback(const ros::TimerEvent&) {
         // TODO fill in pause msg
         // emergency_client_.call(emergency);
     }
+}
+
+void TaskManager::odidTimerCallback(const ros::TimerEvent&) {
+
+    // Basic ID
+    mavros_msgs::BasicID basic_id;
+    basic_id.header.stamp = ros::Time::now();
+    basic_id.id_type = mavros_msgs::BasicID::MAV_ODID_ID_TYPE_SERIAL_NUMBER;
+    basic_id.ua_type = mavros_msgs::BasicID::MAV_ODID_UA_TYPE_HELICOPTER_OR_MULTIROTOR;
+    basic_id.uas_id = "hellohello"; // TODO get serial number
+    odid_basic_id_pub_.publish(basic_id);
+
+    // Operator ID
+    mavros_msgs::OperatorID operator_id;
+    operator_id.header.stamp = ros::Time::now();
+    operator_id.operator_id_type = mavros_msgs::OperatorID::MAV_ODID_OPERATOR_ID_TYPE_CAA;
+    operator_id.operator_id = "12341234"; // TODO get operator ID
+    odid_operator_id_pub_.publish(operator_id);
+
+    // Self ID
+    mavros_msgs::SelfID self_id;
+    self_id.header.stamp = ros::Time::now();
+    self_id.description_type = mavros_msgs::SelfID::MAV_ODID_DESC_TYPE_TEXT; // TODO get emergency status
+    self_id.description = getStatusString();
+    odid_self_id_pub_.publish(self_id);
+
+    // System
+    // This should probably just be published at startup, and System Update published here
+    mavros_msgs::System system;
+    system.header.stamp = ros::Time::now();
+    system.operator_location_type = mavros_msgs::System::MAV_ODID_OPERATOR_LOCATION_TYPE_TAKEOFF; // TODO dynamic operator location
+    system.classification_type = mavros_msgs::System::MAV_ODID_CLASSIFICATION_TYPE_UNDECLARED;
+    system.operator_latitude = 47.6756 * 1E7; // TODO get from UI
+    system.operator_longitude = -122.3942 * 1E7;
+    system.operator_altitude_geo = 15.5; // TODO make this real
+    system.timestamp = ros::Time::now().toSec(); // TODO make this real
+    odid_system_pub_.publish(system);
 }
 
 void TaskManager::uiHeartbeatCallback(const json &msg) {
@@ -658,14 +703,6 @@ void TaskManager::stop() {
 }
 
 void TaskManager::modeMonitor() {
-
-    mavros_msgs::BasicID basic_id;
-
-    basic_id.id_type = mavros_msgs::BasicID::MAV_ODID_ID_TYPE_SERIAL_NUMBER;
-    basic_id.ua_type = mavros_msgs::BasicID::MAV_ODID_UA_TYPE_HELICOPTER_OR_MULTIROTOR;
-    basic_id.uas_id = "hellohello";
-
-    odid_basic_id_pub_.publish(basic_id);
 
     std::string mode = drone_state_manager_.getFlightMode();
     bool armed = drone_state_manager_.getIsArmed();
