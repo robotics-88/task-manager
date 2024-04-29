@@ -211,6 +211,8 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     home_pos_.pose.position.z = target_altitude_;
 
     initDroneStateManager();
+
+    initRemoteID();
 }
 
 TaskManager::~TaskManager(){}
@@ -394,9 +396,11 @@ void TaskManager::mapTfTimerCallbackNoGlobal(const ros::TimerEvent&) {
 }
 
 void TaskManager::failsafe() {
+    in_failsafe_ = true;
     cmd_history_.append("Failsafe init. Failsafes active?" + std::to_string(use_failsafes_) + "\n");
     ROS_WARN("Failsafe init. Failsafes active? %d", use_failsafes_);
     if (use_failsafes_) {
+        in_failsafe_ = true;
         drone_state_manager_.setMode(land_mode_);
         stop();
     }
@@ -518,41 +522,30 @@ void TaskManager::heartbeatTimerCallback(const ros::TimerEvent&) {
     }
 }
 
+// Publish the ODID messages that require updates
 void TaskManager::odidTimerCallback(const ros::TimerEvent&) {
-
-    // Basic ID
-    mavros_msgs::BasicID basic_id;
-    basic_id.header.stamp = ros::Time::now();
-    basic_id.id_type = mavros_msgs::BasicID::MAV_ODID_ID_TYPE_SERIAL_NUMBER;
-    basic_id.ua_type = mavros_msgs::BasicID::MAV_ODID_UA_TYPE_HELICOPTER_OR_MULTIROTOR;
-    basic_id.uas_id = "hellohello"; // TODO get serial number
-    odid_basic_id_pub_.publish(basic_id);
-
-    // Operator ID
-    mavros_msgs::OperatorID operator_id;
-    operator_id.header.stamp = ros::Time::now();
-    operator_id.operator_id_type = mavros_msgs::OperatorID::MAV_ODID_OPERATOR_ID_TYPE_CAA;
-    operator_id.operator_id = "12341234"; // TODO get operator ID
-    odid_operator_id_pub_.publish(operator_id);
 
     // Self ID
     mavros_msgs::SelfID self_id;
     self_id.header.stamp = ros::Time::now();
-    self_id.description_type = mavros_msgs::SelfID::MAV_ODID_DESC_TYPE_TEXT; // TODO get emergency status
-    self_id.description = getStatusString();
+    if (in_failsafe_) {
+        self_id.description_type = mavros_msgs::SelfID::MAV_ODID_DESC_TYPE_EMERGENCY;
+        self_id.description = "FAILSAFE. LANDING NOW";
+    }
+    else {
+        self_id.description_type = mavros_msgs::SelfID::MAV_ODID_DESC_TYPE_TEXT;
+        self_id.description = getStatusString();
+    }
     odid_self_id_pub_.publish(self_id);
 
-    // System
-    // This should probably just be published at startup, and System Update published here
-    mavros_msgs::System system;
-    system.header.stamp = ros::Time::now();
-    system.operator_location_type = mavros_msgs::System::MAV_ODID_OPERATOR_LOCATION_TYPE_TAKEOFF; // TODO dynamic operator location
-    system.classification_type = mavros_msgs::System::MAV_ODID_CLASSIFICATION_TYPE_UNDECLARED;
-    system.operator_latitude = 47.6756 * 1E7; // TODO get from UI
-    system.operator_longitude = -122.3942 * 1E7;
-    system.operator_altitude_geo = 15.5; // TODO make this real
-    system.timestamp = ros::Time::now().toSec(); // TODO make this real
-    odid_system_pub_.publish(system);
+    // SystemUpdate
+    mavros_msgs::SystemUpdate system_update;
+    system_update.header.stamp = ros::Time::now();
+    system_update.operator_latitude = 47.6756 * 1E7; // TODO get from UI
+    system_update.operator_longitude = -122.3942 * 1E7;
+    system_update.operator_altitude_geo = 15.5; // TODO make this real
+    system_update.timestamp = ros::Time::now().toSec(); // TODO make this real
+    odid_system_update_pub_.publish(system_update);
 }
 
 void TaskManager::uiHeartbeatCallback(const json &msg) {
@@ -587,6 +580,37 @@ void TaskManager::initDroneStateManager() {
         guided_mode_ = "OFFBOARD";
         drone_state_manager_.setMode("POSCTL");
     }
+}
+
+// Publish remote ID messages that only need to be published once on startup
+void TaskManager::initRemoteID() {
+
+    // Basic ID
+    mavros_msgs::BasicID basic_id;
+    basic_id.header.stamp = ros::Time::now();
+    basic_id.id_type = mavros_msgs::BasicID::MAV_ODID_ID_TYPE_CAA_REGISTRATION_ID;
+    basic_id.ua_type = mavros_msgs::BasicID::MAV_ODID_UA_TYPE_HELICOPTER_OR_MULTIROTOR;
+    basic_id.uas_id = "hellohello"; // TODO get serial number
+    odid_basic_id_pub_.publish(basic_id);
+
+    // Operator ID
+    mavros_msgs::OperatorID operator_id;
+    operator_id.header.stamp = ros::Time::now();
+    operator_id.operator_id_type = mavros_msgs::OperatorID::MAV_ODID_OPERATOR_ID_TYPE_CAA;
+    operator_id.operator_id = "12341234"; // TODO get operator ID
+    odid_operator_id_pub_.publish(operator_id);
+
+    // System
+    // This should probably just be published at startup, and System Update published here
+    mavros_msgs::System system;
+    system.header.stamp = ros::Time::now();
+    system.operator_location_type = mavros_msgs::System::MAV_ODID_OPERATOR_LOCATION_TYPE_TAKEOFF; // TODO dynamic operator location
+    system.classification_type = mavros_msgs::System::MAV_ODID_CLASSIFICATION_TYPE_UNDECLARED;
+    system.operator_latitude = 47.6756 * 1E7; // TODO get from UI
+    system.operator_longitude = -122.3942 * 1E7;
+    system.operator_altitude_geo = 15.5; // TODO make this real
+    system.timestamp = ros::Time::now().toSec(); // TODO make this real
+    odid_system_pub_.publish(system);
 }
 
 bool TaskManager::getReadyForAction() {

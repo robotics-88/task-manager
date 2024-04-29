@@ -52,6 +52,7 @@ class TaskManager {
         ~TaskManager();
 
         void initDroneStateManager();
+        void initRemoteID();
         bool getReadyForAction();
         void getReadyForExplore();
         bool convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp);
@@ -236,6 +237,7 @@ class TaskManager {
         // State
         bool did_takeoff_;
         bool is_armed_;
+        bool in_failsafe_ = false;
 
         ros::Publisher local_pos_pub_;
         ros::Publisher local_vel_pub_;
