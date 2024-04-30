@@ -240,20 +240,27 @@ void TaskManager::packageFromMapversation(const std_msgs::String::ConstPtr &msg)
 
 void TaskManager::handleRemoteID(json &json) {
 
+    // Unpack JSON here for convenience
+    std::string uas_id_str = json["uas_id"].is_null() ? "" : json["uas_id"];
+    std::string operator_id_str = json["operator_id"].is_null() ? "" : json["operator_id"];
+    float operator_latitude = json["operator_latitude"];
+    float operator_longitude = json["operator_longitude"];
+    float operator_altitude_geo = json["operator_altitude_geo"];
+
     if (!init_remote_id_message_sent_) {
         // Basic ID
         mavros_msgs::BasicID basic_id;
         basic_id.header.stamp = ros::Time::now();
         basic_id.id_type = mavros_msgs::BasicID::MAV_ODID_ID_TYPE_CAA_REGISTRATION_ID;
         basic_id.ua_type = mavros_msgs::BasicID::MAV_ODID_UA_TYPE_HELICOPTER_OR_MULTIROTOR;
-        basic_id.uas_id = json["uas_id"];
+        basic_id.uas_id = uas_id_str;
         odid_basic_id_pub_.publish(basic_id);
 
         // Operator ID
         mavros_msgs::OperatorID operator_id;
         operator_id.header.stamp = ros::Time::now();
         operator_id.operator_id_type = mavros_msgs::OperatorID::MAV_ODID_OPERATOR_ID_TYPE_CAA;
-        operator_id.operator_id = json["operator_id"];
+        operator_id.operator_id = operator_id_str;
         odid_operator_id_pub_.publish(operator_id);
 
         // System
@@ -262,23 +269,21 @@ void TaskManager::handleRemoteID(json &json) {
         system.header.stamp = ros::Time::now();
         system.operator_location_type = mavros_msgs::System::MAV_ODID_OPERATOR_LOCATION_TYPE_TAKEOFF; // TODO dynamic operator location
         system.classification_type = mavros_msgs::System::MAV_ODID_CLASSIFICATION_TYPE_UNDECLARED;
-        system.operator_latitude = (double)json["operator_latitude"] * 1E7;
-        system.operator_longitude = (double)json["operator_longitude"] * 1E7;
-        system.operator_altitude_geo = (double)json["operator_altitude_geo"];
+        system.operator_latitude = operator_latitude * 1E7;
+        system.operator_longitude = operator_longitude * 1E7;
+        system.operator_altitude_geo = operator_altitude_geo;
         system.timestamp = ros::Time::now().toSec(); // TODO make this real
         odid_system_pub_.publish(system);
 
         init_remote_id_message_sent_ = true;
     }
 
-    std::cout << "Latitude: " << json["operator_latitude"] << std::endl;
-
     // SystemUpdate
     mavros_msgs::SystemUpdate system_update;
     system_update.header.stamp = ros::Time::now();
-    system_update.operator_latitude = (double)json["operator_latitude"] * 1E7;
-    system_update.operator_longitude = (double)json["operator_longitude"] * 1E7;
-    system_update.operator_altitude_geo = (double)json["operator_altitude_geo"];
+    system_update.operator_latitude = operator_latitude * 1E7;
+    system_update.operator_longitude = operator_longitude * 1E7;
+    system_update.operator_altitude_geo = operator_altitude_geo;
     system_update.timestamp = ros::Time::now().toSec(); // TODO make this real
     odid_system_update_pub_.publish(system_update);
 
