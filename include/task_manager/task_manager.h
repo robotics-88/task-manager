@@ -52,12 +52,12 @@ class TaskManager {
         ~TaskManager();
 
         void initDroneStateManager();
-        void initRemoteID();
         bool getReadyForAction();
         void getReadyForExplore();
         bool convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp);
 
         // void targetPolygonCallback(const geometry_msgs::Polygon::ConstPtr &msg);
+        void handleRemoteID(json &json);
         void setpointResponse(json &json_msg);
         void emergencyResponse(const std::string severity);
 
@@ -249,6 +249,7 @@ class TaskManager {
         ros::Publisher odid_system_pub_;
         ros::Publisher odid_system_update_pub_;
         ros::Timer odid_timer_;
+        bool init_remote_id_message_sent_ = false;
 
         // Goal details
         geometry_msgs::Point current_target_;
