@@ -250,6 +250,7 @@ class TaskManager {
         ros::Publisher odid_system_update_pub_;
         ros::Timer odid_timer_;
         bool init_remote_id_message_sent_ = false;
+        int last_updated_timestamp = 0;
 
         // Goal details
         geometry_msgs::Point current_target_;

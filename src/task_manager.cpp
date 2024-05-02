@@ -243,10 +243,11 @@ void TaskManager::handleRemoteID(json &json) {
     // Unpack JSON here for convenience
     std::string uas_id_str = json["uas_id"].is_null() ? "" : json["uas_id"];
     std::string operator_id_str = json["operator_id"].is_null() ? "" : json["operator_id"];
-    float operator_latitude = json["operator_latitude"];
-    float operator_longitude = json["operator_longitude"];
-    float operator_altitude_geo = json["operator_altitude_geo"];
-
+    float operator_latitude = json["operator_latitude"].is_number_float() ? (float)json["operator_latitude"] : 0.f;
+    float operator_longitude = json["operator_longitude"].is_number_float() ? (float)json["operator_longitude"] : 0.f;
+    float operator_altitude_geo = json["operator_altitude_geo"].is_number_float() ? (float)json["operator_altitude_geo"] : 0.f;
+    int timestamp = json["timestamp"].is_number_integer() ? (int)json["timestamp"] : 0; 
+    
     if (!init_remote_id_message_sent_) {
         // Basic ID
         mavros_msgs::BasicID basic_id;
@@ -272,7 +273,7 @@ void TaskManager::handleRemoteID(json &json) {
         system.operator_latitude = operator_latitude * 1E7;
         system.operator_longitude = operator_longitude * 1E7;
         system.operator_altitude_geo = operator_altitude_geo;
-        system.timestamp = ros::Time::now().toSec(); // TODO make this real
+        system.timestamp = timestamp;
         odid_system_pub_.publish(system);
 
         init_remote_id_message_sent_ = true;
@@ -284,7 +285,13 @@ void TaskManager::handleRemoteID(json &json) {
     system_update.operator_latitude = operator_latitude * 1E7;
     system_update.operator_longitude = operator_longitude * 1E7;
     system_update.operator_altitude_geo = operator_altitude_geo;
-    system_update.timestamp = ros::Time::now().toSec(); // TODO make this real
+    if (timestamp > last_updated_timestamp) {
+        system_update.timestamp = timestamp;
+        last_updated_timestamp = timestamp;
+    }
+    else {
+        system_update.timestamp = ros::Time::now().toSec();
+    }
     odid_system_update_pub_.publish(system_update);
 
 }
