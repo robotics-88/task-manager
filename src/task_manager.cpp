@@ -34,6 +34,8 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , simulate_(false)
     , offline_(false)
     , save_pcd_(false)
+    , save_pcd_frame_("utm")
+    , utm_tf_init_(false)
     , hello_decco_manager_(node)
     , enable_autonomy_(false)
     , enable_exploration_(false)
@@ -101,6 +103,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<bool>("offline", offline_, offline_);
     private_nh_.param<bool>("simulate", simulate_, simulate_);
     private_nh_.param<bool>("save_pcd", save_pcd_, save_pcd_);
+    private_nh_.param<std::string>("save_pcd_frame", save_pcd_frame_, save_pcd_frame_);
     private_nh_.param<std::string>("data_directory", burn_dir_prefix_, burn_dir_prefix_);
     private_nh_.param<bool>("explicit_global", explicit_global_params_, explicit_global_params_);
     private_nh_.param<double>("estimated_drone_speed", estimated_drone_speed_, estimated_drone_speed_);
@@ -206,7 +209,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
 TaskManager::~TaskManager(){
     if (offline_ && save_pcd_) {
         if (pcl_save_->size() > 0) {
-            std::string file_name = "scans.pcd";
+            std::string file_name = save_pcd_frame_ + ".pcd";
             std::string all_points_dir(ros::package::getPath("task_manager_88") + "/PCD/");
             if (!boost::filesystem::exists(all_points_dir)) {
                 boost::filesystem::create_directory(all_points_dir);
@@ -339,6 +342,7 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
     utm2map_tf_.transform.rotation.z = 0;
     utm2map_tf_.transform.rotation.w = 1;
     static_tf_broadcaster_.sendTransform(utm2map_tf_);
+    utm_tf_init_ = true;
 
     current_status_ = CurrentStatus::INITIALIZED;
     health_pub_timer_ = private_nh_.createTimer(health_check_s_,
@@ -1063,11 +1067,14 @@ void TaskManager::registeredPclCallback(const sensor_msgs::PointCloud2ConstPtr &
     map_cloud_ros.header.frame_id = mavros_map_frame_;
     pointcloud_repub_.publish(map_cloud_ros);
 
-    if (offline_ & save_pcd_) {
-        pcl::PointCloud<pcl::PointXYZI>::Ptr utm_cloud(new pcl::PointCloud<pcl::PointXYZI>());
-
-        pcl_ros::transformPointCloud(*map_cloud, *utm_cloud, utm2map_tf_.transform);
-        *pcl_save_ += *utm_cloud;
+    if (utm_tf_init_ && offline_ & save_pcd_) {
+        pcl::PointCloud<pcl::PointXYZI>::Ptr cloud = map_cloud;
+        if (save_pcd_frame_ == "utm") {
+            pcl::PointCloud<pcl::PointXYZI>::Ptr utm_cloud(new pcl::PointCloud<pcl::PointXYZI>());
+            pcl_ros::transformPointCloud(*map_cloud, *utm_cloud, utm2map_tf_.transform);
+            cloud = utm_cloud;
+        }
+        *pcl_save_ += *cloud;
     }
 }
 

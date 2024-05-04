@@ -120,7 +120,9 @@ class TaskManager {
 
         // UTM PCD saving
         bool save_pcd_;
+        std::string save_pcd_frame_;
         pcl::PointCloud<pcl::PointXYZI>::Ptr pcl_save_;
+        bool utm_tf_init_;
 
         // Hello Decco comms
         hello_decco_manager::HelloDeccoManager hello_decco_manager_;
