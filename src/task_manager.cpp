@@ -290,7 +290,8 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
     map_to_slam_tf_.transform.translation.z = 0.0;
 
     tf2::Quaternion quat_tf;
-    quat_tf.setRPY(roll, pitch, map_yaw_); // TODO, get rid of map_yaw_? It's the same as IMU yaw. Also confirm IMU is ok and not being affected by param setup on launch
+    quat_tf.setRPY(roll, pitch, yaw); // TODO, get rid of map_yaw record topic? It's the same as IMU yaw which is also recorded.
+    map_yaw_ = yaw;
     quat_tf.normalize();
 
     geometry_msgs::Quaternion quat;
