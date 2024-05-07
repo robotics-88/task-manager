@@ -57,8 +57,10 @@ class TaskManager {
         bool convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp);
 
         // void targetPolygonCallback(const geometry_msgs::Polygon::ConstPtr &msg);
+        // mapversation data responses
         void setpointResponse(json &json_msg);
         void emergencyResponse(const std::string severity);
+        void remoteIDResponse(json &json);
 
         void mapTfTimerCallback(const ros::TimerEvent&);
         void mapTfTimerCallbackNoGlobal(const ros::TimerEvent&);
@@ -68,6 +70,8 @@ class TaskManager {
         // Heartbeat
         void uiHeartbeatCallback(const json &msg);
         void heartbeatTimerCallback(const ros::TimerEvent&);
+
+        void odidTimerCallback(const ros::TimerEvent &);
 
         void startNav2PointTask(messages_88::NavToPointGoal &nav_goal);
         void sendExploreTask(messages_88::ExploreGoal &goal);
@@ -234,9 +238,21 @@ class TaskManager {
         // State
         bool did_takeoff_;
         bool is_armed_;
+        bool in_failsafe_ = false;
 
         ros::Publisher local_pos_pub_;
         ros::Publisher local_vel_pub_;
+
+        // Remote ID
+        ros::Publisher odid_basic_id_pub_;
+        ros::Publisher odid_operator_id_pub_;
+        ros::Publisher odid_self_id_pub_;
+        ros::Publisher odid_system_pub_;
+        ros::Publisher odid_system_update_pub_;
+        ros::Timer odid_timer_;
+        bool init_remote_id_message_sent_ = false;
+        int last_updated_timestamp = 0;
+        std::string operator_id_ = "";
 
         // Goal details
         geometry_msgs::Point current_target_;
@@ -255,6 +271,8 @@ class TaskManager {
         bool explicit_global_params_;
         ros::Publisher global_pose_pub_;
         geometry_msgs::TransformStamped utm2map_tf_;
+        double home_lat_;
+        double home_lon_;
 
         // Burn unit handling
         ros::Subscriber burn_unit_sub_;
