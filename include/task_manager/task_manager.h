@@ -57,9 +57,10 @@ class TaskManager {
         bool convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp);
 
         // void targetPolygonCallback(const geometry_msgs::Polygon::ConstPtr &msg);
-        void handleRemoteID(json &json);
+        // mapversation data responses
         void setpointResponse(json &json_msg);
         void emergencyResponse(const std::string severity);
+        void remoteIDResponse(json &json);
 
         void mapTfTimerCallback(const ros::TimerEvent&);
         void mapTfTimerCallbackNoGlobal(const ros::TimerEvent&);

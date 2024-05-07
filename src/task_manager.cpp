@@ -234,11 +234,62 @@ void TaskManager::packageFromMapversation(const std_msgs::String::ConstPtr &msg)
         emergencyResponse(severity);
     }
     else if (topic == "heartbeat") {
-        handleRemoteID(gossip_json);
+        remoteIDResponse(gossip_json);
     }
 }
 
-void TaskManager::handleRemoteID(json &json) {
+void TaskManager::makeBurnUnitJson(json burn_unit) {
+    if (!enable_exploration_) {
+        ROS_WARN("Exploration disabled, burn unit ignored.");
+        return;
+    }
+    if (!map_tf_init_) {
+        ROS_WARN("Not ready for flight, try again after initialized.");
+        return;
+    }
+    std::string name = burn_unit["name"];
+    burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
+    hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
+    current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
+    if (current_index_ < 0) {
+        ROS_WARN("No burn polygon was found, all are already complete.");
+        std::string burn_status_string = "No burn units subpolygons were incomplete, not exploring. \n";
+        cmd_history_.append(burn_status_string);
+    }
+    else {
+        getReadyForExplore();
+    }
+}
+
+void TaskManager::setpointResponse(json &json_msg) {
+    // ATM, this response is purely a testing function. 
+    startBag();
+}
+
+void TaskManager::emergencyResponse(const std::string severity) {
+    ROS_WARN("Emergency response initiated, level %s.", severity.c_str());
+    // Immediately set to hover
+    drone_state_manager_.setMode(loiter_mode_);
+    cmd_history_.append("Emergency init with severity " + severity + "\n");
+
+    // Then respond based on severity 
+    if (severity == "PAUSE") {
+        // NOTICE = PAUSE
+        // TODO, tell exploration to stop searching frontiers. For now, will keep blacklisting them, but the drone is in loiter mode. Currently no way to pick back up and set to guided mode (here or in HD)
+    }
+    else if (severity == "LAND") {
+        // EMERGENCY = LAND IMMEDIATELY
+        pauseOperations();
+        drone_state_manager_.setMode(land_mode_);
+    }
+    else if (severity == "RTL") {
+        // CRITICAL = RTL
+        pauseOperations();
+        drone_state_manager_.setMode(rtl_mode_);
+    }
+}
+
+void TaskManager::remoteIDResponse(json &json) {
 
     // Unpack JSON here for convenience
     std::string uas_id_str = json["uas_id"].is_null() ? "" : json["uas_id"];
@@ -509,29 +560,6 @@ void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &sl
         nav_msg.longitude = lon;
         global_pose_pub_.publish(nav_msg);
 
-    }
-}
-
-void TaskManager::emergencyResponse(const std::string severity) {
-    ROS_WARN("Emergency response initiated, level %s.", severity.c_str());
-    // Immediately set to hover
-    drone_state_manager_.setMode(loiter_mode_);
-    cmd_history_.append("Emergency init with severity " + severity + "\n");
-
-    // Then respond based on severity 
-    if (severity == "PAUSE") {
-        // NOTICE = PAUSE
-        // TODO, tell exploration to stop searching frontiers. For now, will keep blacklisting them, but the drone is in loiter mode. Currently no way to pick back up and set to guided mode (here or in HD)
-    }
-    else if (severity == "LAND") {
-        // EMERGENCY = LAND IMMEDIATELY
-        pauseOperations();
-        drone_state_manager_.setMode(land_mode_);
-    }
-    else if (severity == "RTL") {
-        // CRITICAL = RTL
-        pauseOperations();
-        drone_state_manager_.setMode(rtl_mode_);
     }
 }
 
@@ -1170,34 +1198,6 @@ void TaskManager::rosbagCallback(const std_msgs::StringConstPtr &msg) {
 
 void TaskManager::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
     goal_ = *msg;
-}
-
-void TaskManager::makeBurnUnitJson(json burn_unit) {
-    if (!enable_exploration_) {
-        ROS_WARN("Exploration disabled, burn unit ignored.");
-        return;
-    }
-    if (!map_tf_init_) {
-        ROS_WARN("Not ready for flight, try again after initialized.");
-        return;
-    }
-    std::string name = burn_unit["name"];
-    burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
-    hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
-    current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
-    if (current_index_ < 0) {
-        ROS_WARN("No burn polygon was found, all are already complete.");
-        std::string burn_status_string = "No burn units subpolygons were incomplete, not exploring. \n";
-        cmd_history_.append(burn_status_string);
-    }
-    else {
-        getReadyForExplore();
-    }
-}
-
-void TaskManager::setpointResponse(json &json_msg) {
-    // ATM, this response is purely a testing function. 
-    startBag();
 }
 
 void TaskManager::mapYawCallback(const std_msgs::Float64::ConstPtr &msg) {
