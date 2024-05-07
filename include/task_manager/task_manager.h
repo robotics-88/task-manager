@@ -59,6 +59,7 @@ class TaskManager {
         // void targetPolygonCallback(const geometry_msgs::Polygon::ConstPtr &msg);
         void setpointResponse(json &json_msg);
         void emergencyResponse(const std::string severity);
+        void altitudesResponse(json &json_msg);
 
         void mapTfTimerCallback(const ros::TimerEvent&);
         void mapTfTimerCallbackNoGlobal(const ros::TimerEvent&);

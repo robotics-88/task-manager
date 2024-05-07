@@ -77,9 +77,9 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<bool>("enable_exploration", enable_exploration_, enable_exploration_);
     private_nh_.param<bool>("ardupilot", ardupilot_, ardupilot_);
     private_nh_.param<bool>("use_failsafes", use_failsafes_, use_failsafes_);
-    private_nh_.param<float>("default_altitude_m", target_altitude_, target_altitude_);
-    private_nh_.param<float>("min_altitude", min_altitude_, min_altitude_);
-    private_nh_.param<float>("max_altitude", max_altitude_, max_altitude_);
+    private_nh_.param<float>("default_alt", target_altitude_, target_altitude_);
+    private_nh_.param<float>("min_alt", min_altitude_, min_altitude_);
+    private_nh_.param<float>("max_alt", max_altitude_, max_altitude_);
     private_nh_.param<double>("max_dist_to_polygon", max_dist_to_polygon_, max_dist_to_polygon_);
 
     std::string goal_topic = "/mavros/setpoint_position/local";
@@ -218,6 +218,9 @@ void TaskManager::packageFromMapversation(const std_msgs::String::ConstPtr &msg)
     else if (topic == "emergency") {
         std::string severity = gossip_json["severity"];
         emergencyResponse(severity);
+    }
+    else if (topic == "altitudes") {
+        altitudesResponse(gossip_json);
     }
 }
 
@@ -1104,6 +1107,28 @@ void TaskManager::makeBurnUnitJson(json burn_unit) {
 void TaskManager::setpointResponse(json &json_msg) {
     // ATM, this response is purely a testing function. 
     startBag();
+}
+
+void TaskManager::altitudesResponse(json &json_msg) {
+    if (!json_msg["max_altitude"].is_number_float() || 
+        !json_msg["min_altitude"].is_number_float() || 
+        !json_msg["default_altitude"].is_number_float()) {
+        ROS_WARN("Altitude message from mapversation contains invalid data");
+        return;
+    }
+
+    float max_altitude = json_msg["max_altitude"];
+    float min_altitude = json_msg["min_altitude"];
+    float default_altitude = json_msg["default_altitude"];
+
+    // Set altitude params in all nodes that use them
+    ros::param::set("/task_manager/max_alt", max_altitude);
+    ros::param::set("/task_manager/min_alt", min_altitude);
+    ros::param::set("/task_manager/default_alt", max_altitude);
+
+    ros::param::set("/path_planning_node/search/max_alt", max_altitude);
+    ros::param::set("/path_planning_node/search/min_alt", min_altitude);
+   
 }
 
 void TaskManager::mapYawCallback(const std_msgs::Float64::ConstPtr &msg) {
