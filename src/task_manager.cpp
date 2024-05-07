@@ -314,6 +314,7 @@ void TaskManager::remoteIDResponse(json &json) {
         operator_id.operator_id_type = mavros_msgs::OperatorID::MAV_ODID_OPERATOR_ID_TYPE_CAA;
         operator_id.operator_id = operator_id_str;
         odid_operator_id_pub_.publish(operator_id);
+        operator_id_ = operator_id_str;
 
         // System
         // This should probably just be published at startup, and System Update published here
@@ -1219,6 +1220,7 @@ json TaskManager::makeTaskJson() {
     j["maxAltitude"] = max_altitude_;
     j["targetAltitude"] = target_altitude_;
     j["flightMinLeft"] = (int)(drone_state_manager_.getFlightTimeRemaining() / 60.f);
+    j["operatorID"] = operator_id_;
     return j;
 }
 

@@ -252,6 +252,7 @@ class TaskManager {
         ros::Timer odid_timer_;
         bool init_remote_id_message_sent_ = false;
         int last_updated_timestamp = 0;
+        std::string operator_id_ = "";
 
         // Goal details
         geometry_msgs::Point current_target_;
