@@ -15,6 +15,12 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <geometry_msgs/Twist.h>
 #include <ros/package.h>
 
+#include <mavros_msgs/BasicID.h>
+#include <mavros_msgs/OperatorID.h>
+#include <mavros_msgs/SelfID.h>
+#include <mavros_msgs/System.h>
+#include <mavros_msgs/SystemUpdate.h>
+
 #include <pcl_ros/point_cloud.h>
 #include <pcl_ros/transforms.h>
 
@@ -167,6 +173,14 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     local_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("/mavros/setpoint_velocity/cmd_vel_unstamped", 10);
     vision_pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("/mavros/vision_pose/pose", 10);
 
+    // Remote ID
+    odid_basic_id_pub_ = nh_.advertise<mavros_msgs::BasicID>("/mavros/open_drone_id/basic_id", 10);
+    odid_operator_id_pub_ = nh_.advertise<mavros_msgs::OperatorID>("/mavros/open_drone_id/operator_id", 10);
+    odid_self_id_pub_ = nh_.advertise<mavros_msgs::SelfID>("/mavros/open_drone_id/self_id", 10);
+    odid_system_pub_ = nh_.advertise<mavros_msgs::System>("/mavros/open_drone_id/system", 10);
+    odid_system_update_pub_ = nh_.advertise<mavros_msgs::SystemUpdate>("/mavros/open_drone_id/system_update", 10);
+    odid_timer_ = nh_.createTimer(ros::Duration(1.0), &TaskManager::odidTimerCallback, this);
+
     // Heartbeat timer
     int heartbeat_hz = 1;
     heartbeat_timer_ = nh_.createTimer(ros::Duration(1.0 / heartbeat_hz), &TaskManager::heartbeatTimerCallback, this);
@@ -222,6 +236,147 @@ void TaskManager::packageFromMapversation(const std_msgs::String::ConstPtr &msg)
     else if (topic == "altitudes") {
         altitudesResponse(gossip_json);
     }
+    else if (topic == "heartbeat") {
+        remoteIDResponse(gossip_json);
+    }
+}
+
+void TaskManager::makeBurnUnitJson(json burn_unit) {
+    if (!enable_exploration_) {
+        ROS_WARN("Exploration disabled, burn unit ignored.");
+        return;
+    }
+    if (!map_tf_init_) {
+        ROS_WARN("Not ready for flight, try again after initialized.");
+        return;
+    }
+    std::string name = burn_unit["name"];
+    burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
+    hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
+    current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
+    if (current_index_ < 0) {
+        ROS_WARN("No burn polygon was found, all are already complete.");
+        std::string burn_status_string = "No burn units subpolygons were incomplete, not exploring. \n";
+        cmd_history_.append(burn_status_string);
+    }
+    else {
+        getReadyForExplore();
+    }
+}
+
+void TaskManager::setpointResponse(json &json_msg) {
+    // ATM, this response is purely a testing function. 
+    startBag();
+}
+
+void TaskManager::emergencyResponse(const std::string severity) {
+    ROS_WARN("Emergency response initiated, level %s.", severity.c_str());
+    // Immediately set to hover
+    drone_state_manager_.setMode(loiter_mode_);
+    cmd_history_.append("Emergency init with severity " + severity + "\n");
+
+    // Then respond based on severity 
+    if (severity == "PAUSE") {
+        // NOTICE = PAUSE
+        // TODO, tell exploration to stop searching frontiers. For now, will keep blacklisting them, but the drone is in loiter mode. Currently no way to pick back up and set to guided mode (here or in HD)
+    }
+    else if (severity == "LAND") {
+        // EMERGENCY = LAND IMMEDIATELY
+        pauseOperations();
+        drone_state_manager_.setMode(land_mode_);
+    }
+    else if (severity == "RTL") {
+        // CRITICAL = RTL
+        pauseOperations();
+        drone_state_manager_.setMode(rtl_mode_);
+    }
+}
+
+void TaskManager::altitudesResponse(json &json_msg) {
+
+    if (!json_msg["max_altitude"].is_number() || 
+        !json_msg["min_altitude"].is_number() || 
+        !json_msg["default_altitude"].is_number()) {
+        ROS_WARN("Altitude message from mapversation contains invalid data");
+        return;
+    }
+
+    float max_altitude = json_msg["max_altitude"];
+    float min_altitude = json_msg["min_altitude"];
+    float default_altitude = json_msg["default_altitude"];
+
+    // Set altitude params in all nodes that use them
+    ros::param::set("/task_manager/max_alt", max_altitude);
+    ros::param::set("/task_manager/min_alt", min_altitude);
+    ros::param::set("/task_manager/default_alt", max_altitude);
+
+    // It's simpler just to set the task manager altitude data here instead of re-fetching the param dynamically
+    max_altitude_ = max_altitude;
+    min_altitude_ = min_altitude_;
+    target_altitude_ = default_altitude;
+
+    ros::param::set("/path_planning_node/search/max_alt", max_altitude);
+    ros::param::set("/path_planning_node/search/min_alt", min_altitude);
+   
+}
+
+void TaskManager::remoteIDResponse(json &json) {
+
+    // Unpack JSON here for convenience
+    std::string uas_id_str = json["uas_id"].is_null() ? "" : json["uas_id"];
+    std::string operator_id_str = json["operator_id"].is_null() ? "" : json["operator_id"];
+    float operator_latitude = json["operator_latitude"].is_number_float() ? (float)json["operator_latitude"] : 0.f;
+    float operator_longitude = json["operator_longitude"].is_number_float() ? (float)json["operator_longitude"] : 0.f;
+    float operator_altitude_geo = json["operator_altitude_geo"].is_number_float() ? (float)json["operator_altitude_geo"] : 0.f;
+    int timestamp = json["timestamp"].is_number_integer() ? (int)json["timestamp"] : 0; 
+    
+    if (!init_remote_id_message_sent_) {
+        // Basic ID
+        mavros_msgs::BasicID basic_id;
+        basic_id.header.stamp = ros::Time::now();
+        basic_id.id_type = mavros_msgs::BasicID::MAV_ODID_ID_TYPE_CAA_REGISTRATION_ID;
+        basic_id.ua_type = mavros_msgs::BasicID::MAV_ODID_UA_TYPE_HELICOPTER_OR_MULTIROTOR;
+        basic_id.uas_id = uas_id_str;
+        odid_basic_id_pub_.publish(basic_id);
+
+        // Operator ID
+        mavros_msgs::OperatorID operator_id;
+        operator_id.header.stamp = ros::Time::now();
+        operator_id.operator_id_type = mavros_msgs::OperatorID::MAV_ODID_OPERATOR_ID_TYPE_CAA;
+        operator_id.operator_id = operator_id_str;
+        odid_operator_id_pub_.publish(operator_id);
+        operator_id_ = operator_id_str;
+
+        // System
+        // This should probably just be published at startup, and System Update published here
+        mavros_msgs::System system;
+        system.header.stamp = ros::Time::now();
+        system.operator_location_type = mavros_msgs::System::MAV_ODID_OPERATOR_LOCATION_TYPE_TAKEOFF; // TODO dynamic operator location
+        system.classification_type = mavros_msgs::System::MAV_ODID_CLASSIFICATION_TYPE_UNDECLARED;
+        system.operator_latitude = operator_latitude * 1E7;
+        system.operator_longitude = operator_longitude * 1E7;
+        system.operator_altitude_geo = operator_altitude_geo;
+        system.timestamp = timestamp;
+        odid_system_pub_.publish(system);
+
+        init_remote_id_message_sent_ = true;
+    }
+
+    // SystemUpdate
+    mavros_msgs::SystemUpdate system_update;
+    system_update.header.stamp = ros::Time::now();
+    system_update.operator_latitude = operator_latitude * 1E7;
+    system_update.operator_longitude = operator_longitude * 1E7;
+    system_update.operator_altitude_geo = operator_altitude_geo;
+    if (timestamp > last_updated_timestamp) {
+        system_update.timestamp = timestamp;
+        last_updated_timestamp = timestamp;
+    }
+    else {
+        system_update.timestamp = ros::Time::now().toSec();
+    }
+    odid_system_update_pub_.publish(system_update);
+
 }
 
 void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
@@ -369,13 +524,12 @@ void TaskManager::mapTfTimerCallbackNoGlobal(const ros::TimerEvent&) {
     utm2map_tf_.transform.rotation.w = 1;
     static_tf_broadcaster_.sendTransform(utm2map_tf_);
 
-    double lat, lon;
-    hello_decco_manager_.utmToLL(utm_x, utm_y, home_utm_zone_, lat, lon);
+    hello_decco_manager_.utmToLL(utm_x, utm_y, home_utm_zone_, home_lat_, home_lon_);
     sensor_msgs::NavSatFix nav_msg;
     nav_msg.header.frame_id = "base_link";
     nav_msg.header.stamp = ros::Time::now();
-    nav_msg.latitude = lat;
-    nav_msg.longitude = lon;
+    nav_msg.latitude = home_lat_;
+    nav_msg.longitude = home_lon_;
     global_pose_pub_.publish(nav_msg);
 
     current_status_ = CurrentStatus::INITIALIZED;
@@ -384,9 +538,11 @@ void TaskManager::mapTfTimerCallbackNoGlobal(const ros::TimerEvent&) {
 }
 
 void TaskManager::failsafe() {
+    in_failsafe_ = true;
     cmd_history_.append("Failsafe init. Failsafes active?" + std::to_string(use_failsafes_) + "\n");
     ROS_WARN("Failsafe init. Failsafes active? %d", use_failsafes_);
     if (use_failsafes_) {
+        in_failsafe_ = true;
         drone_state_manager_.setMode(land_mode_);
         stop();
     }
@@ -439,29 +595,6 @@ void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &sl
     }
 }
 
-void TaskManager::emergencyResponse(const std::string severity) {
-    ROS_WARN("Emergency response initiated, level %s.", severity.c_str());
-    // Immediately set to hover
-    drone_state_manager_.setMode(loiter_mode_);
-    cmd_history_.append("Emergency init with severity " + severity + "\n");
-
-    // Then respond based on severity 
-    if (severity == "PAUSE") {
-        // NOTICE = PAUSE
-        // TODO, tell exploration to stop searching frontiers. For now, will keep blacklisting them, but the drone is in loiter mode. Currently no way to pick back up and set to guided mode (here or in HD)
-    }
-    else if (severity == "LAND") {
-        // EMERGENCY = LAND IMMEDIATELY
-        pauseOperations();
-        drone_state_manager_.setMode(land_mode_);
-    }
-    else if (severity == "RTL") {
-        // CRITICAL = RTL
-        pauseOperations();
-        drone_state_manager_.setMode(rtl_mode_);
-    }
-}
-
 bool TaskManager::convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp) {
     // Sanity check UTM
     if (home_utm_zone_ != drone_state_manager_.getUTMZone()) {
@@ -506,6 +639,23 @@ void TaskManager::heartbeatTimerCallback(const ros::TimerEvent&) {
         // TODO fill in pause msg
         // emergency_client_.call(emergency);
     }
+}
+
+// Publish the ODID messages that require updates
+void TaskManager::odidTimerCallback(const ros::TimerEvent&) {
+
+    // Self ID
+    mavros_msgs::SelfID self_id;
+    self_id.header.stamp = ros::Time::now();
+    if (in_failsafe_) {
+        self_id.description_type = mavros_msgs::SelfID::MAV_ODID_DESC_TYPE_EMERGENCY;
+        self_id.description = "FAILSAFE. LANDING NOW";
+    }
+    else {
+        self_id.description_type = mavros_msgs::SelfID::MAV_ODID_DESC_TYPE_TEXT;
+        self_id.description = getStatusString();
+    }
+    odid_self_id_pub_.publish(self_id);
 }
 
 void TaskManager::uiHeartbeatCallback(const json &msg) {
@@ -656,6 +806,7 @@ void TaskManager::stop() {
 }
 
 void TaskManager::modeMonitor() {
+
     std::string mode = drone_state_manager_.getFlightMode();
     bool armed = drone_state_manager_.getIsArmed();
     bool in_air = drone_state_manager_.getIsInAir();
@@ -1081,57 +1232,6 @@ void TaskManager::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) 
     goal_ = *msg;
 }
 
-void TaskManager::makeBurnUnitJson(json burn_unit) {
-    if (!enable_exploration_) {
-        ROS_WARN("Exploration disabled, burn unit ignored.");
-        return;
-    }
-    if (!map_tf_init_) {
-        ROS_WARN("Not ready for flight, try again after initialized.");
-        return;
-    }
-    std::string name = burn_unit["name"];
-    burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
-    hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
-    current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
-    if (current_index_ < 0) {
-        ROS_WARN("No burn polygon was found, all are already complete.");
-        std::string burn_status_string = "No burn units subpolygons were incomplete, not exploring. \n";
-        cmd_history_.append(burn_status_string);
-    }
-    else {
-        getReadyForExplore();
-    }
-}
-
-void TaskManager::setpointResponse(json &json_msg) {
-    // ATM, this response is purely a testing function. 
-    startBag();
-}
-
-void TaskManager::altitudesResponse(json &json_msg) {
-
-    if (!json_msg["max_altitude"].is_number() || 
-        !json_msg["min_altitude"].is_number() || 
-        !json_msg["default_altitude"].is_number()) {
-        ROS_WARN("Altitude message from mapversation contains invalid data");
-        return;
-    }
-
-    float max_altitude = json_msg["max_altitude"];
-    float min_altitude = json_msg["min_altitude"];
-    float default_altitude = json_msg["default_altitude"];
-
-    // Set altitude params in all nodes that use them
-    ros::param::set("/task_manager/max_alt", max_altitude);
-    ros::param::set("/task_manager/min_alt", min_altitude);
-    ros::param::set("/task_manager/default_alt", max_altitude);
-
-    ros::param::set("/path_planning_node/search/max_alt", max_altitude);
-    ros::param::set("/path_planning_node/search/min_alt", min_altitude);
-   
-}
-
 void TaskManager::mapYawCallback(const std_msgs::Float64::ConstPtr &msg) {
     map_yaw_ = msg->data;
     ROS_INFO("got map yaw: %f", map_yaw_);
@@ -1151,6 +1251,7 @@ json TaskManager::makeTaskJson() {
     j["maxAltitude"] = max_altitude_;
     j["targetAltitude"] = target_altitude_;
     j["flightMinLeft"] = (int)(drone_state_manager_.getFlightTimeRemaining() / 60.f);
+    j["operatorID"] = operator_id_;
     return j;
 }
 
