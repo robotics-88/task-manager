@@ -1110,9 +1110,10 @@ void TaskManager::setpointResponse(json &json_msg) {
 }
 
 void TaskManager::altitudesResponse(json &json_msg) {
-    if (!json_msg["max_altitude"].is_number_float() || 
-        !json_msg["min_altitude"].is_number_float() || 
-        !json_msg["default_altitude"].is_number_float()) {
+
+    if (!json_msg["max_altitude"].is_number() || 
+        !json_msg["min_altitude"].is_number() || 
+        !json_msg["default_altitude"].is_number()) {
         ROS_WARN("Altitude message from mapversation contains invalid data");
         return;
     }
