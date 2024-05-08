@@ -308,11 +308,11 @@ void TaskManager::altitudesResponse(json &json_msg) {
     // Set altitude params in all nodes that use them
     ros::param::set("/task_manager/max_alt", max_altitude);
     ros::param::set("/task_manager/min_alt", min_altitude);
-    ros::param::set("/task_manager/default_alt", max_altitude);
+    ros::param::set("/task_manager/default_alt", default_altitude);
 
     // It's simpler just to set the task manager altitude data here instead of re-fetching the param dynamically
     max_altitude_ = max_altitude;
-    min_altitude_ = min_altitude_;
+    min_altitude_ = min_altitude;
     target_altitude_ = default_altitude;
 
     ros::param::set("/path_planning_node/search/max_alt", max_altitude);
