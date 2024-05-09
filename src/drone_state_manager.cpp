@@ -34,18 +34,11 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
   , do_slam_(false)
   , autonomy_active_(false)
   , enable_autonomy_(false)
-  , enable_exploration_(false)
   , target_altitude_(2.0)
   , min_altitude_(2.0)
   , max_altitude_(10.0)
   , max_distance_(2.0)
   , ardupilot_(true)
-  , mavros_global_pos_topic_("/mavros/global_position/global")
-  , mavros_state_topic_("/mavros/state")
-  , mavros_alt_topic_("/mavros/global_position/rel_alt")
-  , arming_topic_("/mavros/cmd/arming")
-  , set_mode_topic_("/mavros/set_mode")
-  , takeoff_topic_("/mavros/cmd/takeoff")
   , compass_count_(0)
   , altitude_set_(false)
   , connected_(false)
@@ -69,12 +62,6 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
     private_nh_.param<float>("max_distance", max_distance_, max_distance_);
     private_nh_.param<float>("battery_size", battery_size_, battery_size_);
     private_nh_.param<float>("estimated_current", estimated_current_, estimated_current_);
-    private_nh_.param<std::string>("mavros_global_pos_topic", mavros_global_pos_topic_, mavros_global_pos_topic_);
-    private_nh_.param<std::string>("mavros_state_topic", mavros_state_topic_, mavros_state_topic_);
-    private_nh_.param<std::string>("mavros_arming_topic", arming_topic_, arming_topic_);
-    private_nh_.param<std::string>("mavros_set_mode_topic", set_mode_topic_, set_mode_topic_);
-    private_nh_.param<std::string>("mavros_takeoff_topic", takeoff_topic_, takeoff_topic_);
-    private_nh_.param<std::string>("mavros_alt_topic", mavros_alt_topic_, mavros_alt_topic_);
     private_nh_.param<bool>("ardupilot", ardupilot_, ardupilot_);
     private_nh_.param<float>("imu_rate", imu_rate_, imu_rate_);
     private_nh_.param<float>("local_pos_rate", local_pos_rate_, local_pos_rate_);
@@ -102,13 +89,14 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
     safety_area_viz_ = nh_.advertise<geometry_msgs::PolygonStamped>("safety_box", 10);
 
     // Set subscribers for Mavros
-    mavros_global_pos_subscriber_ = nh_.subscribe<sensor_msgs::NavSatFix>(mavros_global_pos_topic_, 10, &DroneStateManager::globalPositionCallback, this);
+    mavros_global_pos_subscriber_ = nh_.subscribe<sensor_msgs::NavSatFix>("/mavros/global_position/global", 10, &DroneStateManager::globalPositionCallback, this);
     mavros_local_pos_subscriber_ = nh_.subscribe<geometry_msgs::PoseStamped>("/mavros/local_position/pose", 10, &DroneStateManager::localPositionCallback, this);
-    mavros_state_subscriber_ = nh_.subscribe<mavros_msgs::State>(mavros_state_topic_, 10, &DroneStateManager::statusCallback, this);
-    mavros_alt_subscriber_ = nh_.subscribe<std_msgs::Float64>(mavros_alt_topic_, 10, &DroneStateManager::altitudeCallback, this);
+    mavros_state_subscriber_ = nh_.subscribe<mavros_msgs::State>("/mavros/state", 10, &DroneStateManager::statusCallback, this);
+    mavros_alt_subscriber_ = nh_.subscribe<std_msgs::Float64>("/mavros/global_position/rel_alt", 10, &DroneStateManager::altitudeCallback, this);
     mavros_imu_subscriber_ = nh_.subscribe<sensor_msgs::Imu>("/mavros/imu/data", 10, &DroneStateManager::imuCallback, this);
     mavros_compass_subscriber_ = nh_.subscribe<std_msgs::Float64>("/mavros/global_position/compass_hdg", 10, &DroneStateManager::compassCallback, this);
     mavros_battery_subscriber_ = nh_.subscribe<sensor_msgs::BatteryState>("/mavros/battery", 10, &DroneStateManager::batteryCallback, this);
+    mavros_sys_status_subscriber_ = nh_.subscribe<mavros_msgs::SysStatus>("/mavros/sys_status", 10, &DroneStateManager::sysStatusCallback, this);
 
     // Slam pose subscriber
     slam_pose_subscriber_ = nh_.subscribe<geometry_msgs::PoseStamped>("/decco/pose", 10, &DroneStateManager::slamPoseCallback, this);
@@ -451,19 +439,15 @@ void DroneStateManager::checkMsgRates(const ros::TimerEvent &event) {
 void DroneStateManager::setAutonomyEnabled(bool enabled) {
     enable_autonomy_ = enabled;
     if (enable_autonomy_) {
-        arming_client_ = nh_.serviceClient<mavros_msgs::CommandBool>(arming_topic_);
-        set_mode_client_ = nh_.serviceClient<mavros_msgs::SetMode>(set_mode_topic_);
-        takeoff_client_ = nh_.serviceClient<mavros_msgs::CommandTOL>(takeoff_topic_);
+        arming_client_ = nh_.serviceClient<mavros_msgs::CommandBool>("/mavros/cmd/arming");
+        set_mode_client_ = nh_.serviceClient<mavros_msgs::SetMode>("/mavros/set_mode");
+        takeoff_client_ = nh_.serviceClient<mavros_msgs::CommandTOL>("/mavros/cmd/takeoff");
     }
     else {
         arming_client_.shutdown();
         set_mode_client_.shutdown();
         takeoff_client_.shutdown();
     }
-}
-
-void DroneStateManager::setExplorationEnabled(bool enabled) {
-    enable_exploration_ = enabled;
 }
 
 geometry_msgs::PoseStamped DroneStateManager::getCurrentSlamPosition() {
@@ -479,7 +463,7 @@ sensor_msgs::NavSatFix DroneStateManager::getCurrentGlobalPosition() {
 }
 
 void DroneStateManager::waitForGlobal() {
-    ros::topic::waitForMessage<sensor_msgs::NavSatFix>(mavros_global_pos_topic_, nh_);
+    ros::topic::waitForMessage<sensor_msgs::NavSatFix>("/mavros/global_position/global", nh_);
 }
 
 int DroneStateManager::getUTMZone() {
@@ -573,12 +557,13 @@ void DroneStateManager::batteryCallback(const sensor_msgs::BatteryState::ConstPt
     battery_count_++;
 
     float current = -msg->current; // Mavros current is negative
+    battery_voltage_ = msg->voltage;
 
     // If current is low, we can estimate battery percentage from voltage. 
     // We use this 'last resting percent' as the starting point for calculations for 
     // remaining battery life. 
     if (current < 1.f) {
-        last_resting_percent_ = calculateBatteryPercentage(msg->voltage);
+        last_resting_percent_ = calculateBatteryPercentage(battery_voltage_);
         last_resting_percent_time_ = ros::Time::now();
         current_drawn_since_resting_percent_ = 0.f;
     }
@@ -635,6 +620,11 @@ void DroneStateManager::altitudeCallback(const std_msgs::Float64::ConstPtr & msg
     if (!altitude_set_) {
         altitude_set_ = true;
     }
+}
+
+void DroneStateManager::sysStatusCallback(const mavros_msgs::SysStatus::ConstPtr &msg) {
+    ready_to_arm_ = ((msg->sensors_health & msg->sensors_enabled)
+				        != msg->sensors_enabled);
 }
 
 bool DroneStateManager::setGuided() {

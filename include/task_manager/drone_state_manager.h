@@ -19,6 +19,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <mavros_msgs/SetMode.h>
 #include <mavros_msgs/State.h>
 #include <mavros_msgs/StatusText.h>
+#include <mavros_msgs/SysStatus.h>
 #include <sensor_msgs/BatteryState.h>
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/NavSatFix.h>
@@ -41,7 +42,6 @@ class DroneStateManager {
 
         // State access methods
         void setAutonomyEnabled(bool enabled);
-        void setExplorationEnabled(bool enabled);
         geometry_msgs::PoseStamped getCurrentSlamPosition();
         geometry_msgs::PoseStamped getCurrentLocalPosition();
         sensor_msgs::NavSatFix getCurrentGlobalPosition();
@@ -57,6 +57,8 @@ class DroneStateManager {
         bool getDroneInitalized() {return drone_initialized_;}
         float getFlightTimeRemaining() {return estimated_flight_time_remaining_;}
         float getBatteryPercentage() {return battery_percentage_;}
+        float getBatteryVoltage() {return battery_voltage_;}
+        bool getDroneReadyToArm() {return ready_to_arm_;}
         bool getImu(sensor_msgs::Imu &imu);
 
         // Mavros subscriber callbacks
@@ -68,6 +70,7 @@ class DroneStateManager {
         void compassCallback(const std_msgs::Float64::ConstPtr & msg);
         void batteryCallback(const sensor_msgs::BatteryState::ConstPtr &msg);
         void slamPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
+        void sysStatusCallback(const mavros_msgs::SysStatus::ConstPtr &msg);
 
         // Mavros state control
         bool setGuided();
@@ -100,7 +103,6 @@ class DroneStateManager {
 
         // Safety for enabling control
         bool enable_autonomy_;
-        bool enable_exploration_;
 
         // Control defaults
         float target_altitude_;
@@ -112,12 +114,9 @@ class DroneStateManager {
         bool compass_received_ = false;
 
         // Mavros subscribers and topics
-        std::string mavros_global_pos_topic_;
         ros::Subscriber mavros_global_pos_subscriber_;
         ros::Subscriber mavros_local_pos_subscriber_;
-        std::string mavros_state_topic_;
         ros::Subscriber mavros_state_subscriber_;
-        std::string mavros_alt_topic_;
         ros::Subscriber mavros_alt_subscriber_;
         ros::Subscriber mavros_home_subscriber_;
         ros::Publisher local_pos_pub_;
@@ -125,13 +124,11 @@ class DroneStateManager {
         ros::Subscriber mavros_compass_subscriber_;
         ros::Subscriber mavros_battery_subscriber_;
         ros::Subscriber slam_pose_subscriber_;
+        ros::Subscriber mavros_sys_status_subscriber_;
 
         // Mavros service clients
-        std::string arming_topic_;
         ros::ServiceClient arming_client_;
-        std::string set_mode_topic_;
         ros::ServiceClient set_mode_client_;
-        std::string takeoff_topic_;
         ros::ServiceClient takeoff_client_;
 
         // Mavros modes
@@ -152,6 +149,7 @@ class DroneStateManager {
         std::string current_mode_;
         bool altitude_set_;
         bool connected_;
+        bool ready_to_arm_;
         bool armed_;
         bool in_air_;
         bool in_guided_mode_;
@@ -167,6 +165,7 @@ class DroneStateManager {
         float current_drawn_since_resting_percent_;
         std::vector<float> recent_currents_;
         float battery_percentage_ = 0.f;
+        float battery_voltage_ = 0.f;
         float battery_size_;
         float estimated_current_;
         float estimated_flight_time_remaining_ = 0.f;

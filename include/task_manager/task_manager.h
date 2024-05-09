@@ -51,9 +51,10 @@ class TaskManager {
         TaskManager(ros::NodeHandle& node);
         ~TaskManager();
 
+        void runTaskManager();
+
         void initDroneStateManager();
         bool getReadyForAction();
-        void getReadyForExplore();
         bool convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp);
 
         // void targetPolygonCallback(const geometry_msgs::Polygon::ConstPtr &msg);
@@ -62,30 +63,22 @@ class TaskManager {
         void emergencyResponse(const std::string severity);
         void remoteIDResponse(json &json);
 
-        void mapTfTimerCallback(const ros::TimerEvent&);
-        void mapTfTimerCallbackNoGlobal(const ros::TimerEvent&);
+        bool getMapTf();
         void failsafe();
-        void mapYawCallback(const std_msgs::Float64::ConstPtr &msg);
 
-        // Heartbeat
+        // Timer callbacks
         void uiHeartbeatCallback(const json &msg);
         void heartbeatTimerCallback(const ros::TimerEvent&);
-
         void odidTimerCallback(const ros::TimerEvent &);
 
-        void startNav2PointTask(messages_88::NavToPointGoal &nav_goal);
-        void sendExploreTask(messages_88::ExploreGoal &goal);
-        void startExploreTask();
         void stop();
-        void modeMonitor();
+        void checkArmStatus();
 
-        void deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose);
         bool pauseOperations();
 
-        // Pointcloud republisher
+        // Subscriber callbacks
+        void deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose);
         void registeredPclCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
-
-        // Health subscribers, unused except to verify publishing
         void pathPlannerCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
         void costmapCallback(const map_msgs::OccupancyGridUpdate::ConstPtr &msg);
         void pointcloudCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
@@ -95,18 +88,23 @@ class TaskManager {
         void thermalCallback(const sensor_msgs::ImageConstPtr &msg);
         void rosbagCallback(const std_msgs::StringConstPtr &msg);
         void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
+        void mapYawCallback(const std_msgs::Float64::ConstPtr &msg);
 
     private:
-        enum CurrentStatus
+
+        ros::Timer task_manager_timer_;
+
+        enum CurrentTask
         {
-            ON_START,
-            INITIALIZED,
+            INITIALIZING,
+            PREFLIGHT_CHECK_FAIL,
+            READY,
             EXPLORING,
-            WAITING_TO_EXPLORE,
-            NAVIGATING,
+            IN_TRANSIT,
             RTL_88,
             TAKING_OFF,
-            LANDING
+            LANDING,
+            FAILSAFE_LANDING,
         };
 
         ros::NodeHandle private_nh_;
@@ -129,7 +127,6 @@ class TaskManager {
         // Safety for enabling control
         bool do_slam_;
         bool enable_autonomy_;
-        bool enable_exploration_;
         bool ardupilot_;
         bool use_failsafes_;
 
@@ -191,6 +188,7 @@ class TaskManager {
         // Drone state params
         geometry_msgs::PoseStamped home_pos_;
         geometry_msgs::Polygon current_polygon_;
+        geometry_msgs::PoseStamped initial_transit_point_;
         ros::Timer mode_monitor_timer_;
         std::string cmd_history_;
         messages_88::TaskStatus task_msg_;
@@ -200,6 +198,7 @@ class TaskManager {
         ros::Subscriber goal_sub_;
         double estimated_drone_speed_;
         double battery_failsafe_safety_factor_;
+        bool burn_unit_ok_ = false;
 
         actionlib::SimpleActionClient<messages_88::ExploreAction> explore_action_client_;
 
@@ -264,7 +263,7 @@ class TaskManager {
         std::string guided_mode_;
         std::string rtl_mode_;
 
-        CurrentStatus current_status_ = CurrentStatus::ON_START;
+        CurrentTask current_task_ = CurrentTask::INITIALIZING;
         ros::Timer status_timer_;
 
         // Explicit UTM param handling
@@ -283,19 +282,25 @@ class TaskManager {
 
         void packageFromMapversation(const std_msgs::String::ConstPtr &msg);
 
+        // Task methods
+        void startTakeoff();
+        void startTransit();
+        void startExploration();
+        void startRtl88();
+
+        void checkBatteryFailsafe();
+        bool isBatteryOk();
+
         void startBag();
         void stopBag();
-        void getDroneReady();
-        void readyToExplore();
         // geometry_msgs::Polygon transformPolygon(const geometry_msgs::Polygon &map_poly);
         bool isInside(const geometry_msgs::Polygon& polygon, const geometry_msgs::Point& point);
-        bool polygonDistanceOk(double &min_dist, geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region);
+        bool polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region);
         void padNavTarget(geometry_msgs::PoseStamped &target);
         std::string getStatusString();
         void publishHealth();
         json makeTaskJson();
-        bool isBatteryOk();
-        void doRtl88();
+
 };
 
 }
