@@ -64,14 +64,12 @@ class TaskManager {
         void remoteIDResponse(json &json);
 
         bool getMapTf();
-        void failsafe();
 
         // Timer callbacks
         void uiHeartbeatCallback(const json &msg);
         void heartbeatTimerCallback(const ros::TimerEvent&);
         void odidTimerCallback(const ros::TimerEvent &);
 
-        void stop();
         void checkArmStatus();
 
         bool pauseOperations();
@@ -91,8 +89,13 @@ class TaskManager {
         void mapYawCallback(const std_msgs::Float64::ConstPtr &msg);
 
     private:
+        ros::NodeHandle private_nh_;
+        ros::NodeHandle nh_;
 
         ros::Timer task_manager_timer_;
+        ros::Timer health_check_timer_;
+
+        ros::Duration task_manager_loop_duration_;
 
         enum CurrentTask
         {
@@ -105,10 +108,43 @@ class TaskManager {
             TAKING_OFF,
             LANDING,
             FAILSAFE_LANDING,
+            COMPLETE
         };
 
-        ros::NodeHandle private_nh_;
-        ros::NodeHandle nh_;
+        struct HealthChecks
+        {
+            bool battery_ok;
+            bool lidar_ok;
+            bool slam_ok;
+            bool path_ok;
+            bool costmap_ok;
+            bool explore_ok;
+            bool mapir_ok;
+            bool attollo_ok;
+            bool thermal_ok;
+            bool rosbag_ok;
+        } health_checks_;
+
+        // Timeouts for health checks
+        ros::Duration lidar_timeout_{0.5};
+        ros::Duration slam_timeout_{0.5};
+        ros::Duration path_timeout_{0.5};
+        ros::Duration costmap_timeout_{3.0};
+        ros::Duration explore_timeout_{1.0};
+        ros::Duration mapir_timeout_{1.0};
+        ros::Duration attollo_timeout_{1.0};
+        ros::Duration thermal_timeout_{1.0};
+        ros::Duration rosbag_timeout_{1.0};
+        ros::Time last_lidar_stamp_;
+        ros::Time last_slam_pos_stamp_;
+        ros::Time last_path_planner_stamp_;
+        ros::Time last_costmap_stamp_;
+        ros::Time last_mapir_stamp_;
+        ros::Time last_thermal_stamp_;
+        ros::Time last_attollo_stamp_;
+        ros::Time last_rosbag_stamp_;
+
+        ros::Duration health_check_pub_duration_;
 
         bool simulate_;
 
@@ -207,15 +243,7 @@ class TaskManager {
         bool do_mapir_;
         bool do_mapir_rgb_;
         bool do_thermal_;
-        ros::Duration health_check_s_;
-        ros::Time last_path_planner_stamp_;
-        ros::Time last_slam_pos_stamp_;
-        ros::Time last_costmap_stamp_;
-        ros::Time last_lidar_stamp_;
-        ros::Time last_mapir_stamp_;
-        ros::Time last_thermal_stamp_;
-        ros::Time last_attollo_stamp_;
-        ros::Time last_rosbag_stamp_;
+        
         ros::Subscriber path_planner_sub_;
         ros::Subscriber costmap_sub_;
         ros::Subscriber lidar_sub_;
@@ -238,6 +266,7 @@ class TaskManager {
         bool did_takeoff_;
         bool is_armed_;
         bool in_failsafe_ = false;
+        bool in_autonomous_flight_ = false;
 
         ros::Publisher local_pos_pub_;
         ros::Publisher local_vel_pub_;
@@ -287,9 +316,11 @@ class TaskManager {
         void startTransit();
         void startExploration();
         void startRtl88();
-
-        void checkBatteryFailsafe();
+        void startFailsafeLanding();
+        
         bool isBatteryOk();
+        void checkHealth();
+        void checkFailsafes();
 
         void startBag();
         void stopBag();
