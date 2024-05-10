@@ -338,141 +338,6 @@ void TaskManager::startRtl88() {
     current_task_ = CurrentTask::RTL_88;
 }
 
-void TaskManager::packageFromMapversation(const std_msgs::String::ConstPtr &msg) {
-    json mapver_json = json::parse(msg->data);
-    std::string topic = mapver_json["topic"];
-    json gossip_json = mapver_json["gossip"];
-    if (topic == "burn_unit_send") {
-        makeBurnUnitJson(gossip_json);
-    }
-    else if (topic == "target_polygon") {
-        json burn_unit = hello_decco_manager_.polygonToBurnUnit(gossip_json);
-        makeBurnUnitJson(burn_unit);
-    }
-    else if (topic == "target_setpoint") {
-        setpointResponse(gossip_json);
-    }
-    else if (topic == "emergency") {
-        std::string severity = gossip_json["severity"];
-        emergencyResponse(severity);
-    }
-    else if (topic == "heartbeat") {
-        remoteIDResponse(gossip_json);
-    }
-}
-
-void TaskManager::makeBurnUnitJson(json burn_unit) {
-
-    if (!map_tf_init_) {
-        ROS_WARN("Not ready for flight, try again after initialized.");
-        return;
-    }
-    std::string name = burn_unit["name"];
-    burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
-    hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
-    current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
-    if (current_index_ < 0) {
-        ROS_WARN("No burn polygon was found, all are already complete.");
-        std::string burn_status_string = "No burn units subpolygons were incomplete, not exploring. \n";
-        cmd_history_.append(burn_status_string);
-        return;
-    }
-    
-    if (!polygonDistanceOk(initial_transit_point_, current_polygon_)) {
-        ROS_WARN("Polygon rejected, exceeds maximum starting distance threshold.");
-        return;
-    }
-
-    burn_unit_ok_ = true;
-}
-
-void TaskManager::setpointResponse(json &json_msg) {
-    // ATM, this response is purely a testing function. 
-    startBag();
-}
-
-void TaskManager::emergencyResponse(const std::string severity) {
-    ROS_WARN("Emergency response initiated, level %s.", severity.c_str());
-    // Immediately set to hover
-    drone_state_manager_.setMode(loiter_mode_);
-    cmd_history_.append("Emergency init with severity " + severity + "\n");
-
-    // Then respond based on severity 
-    if (severity == "PAUSE") {
-        // NOTICE = PAUSE
-        // TODO, tell exploration to stop searching frontiers. For now, will keep blacklisting them, but the drone is in loiter mode. Currently no way to pick back up and set to guided mode (here or in HD)
-    }
-    else if (severity == "LAND") {
-        // EMERGENCY = LAND IMMEDIATELY
-        pauseOperations();
-        drone_state_manager_.setMode(land_mode_);
-    }
-    else if (severity == "RTL") {
-        // CRITICAL = RTL
-        pauseOperations();
-        drone_state_manager_.setMode(rtl_mode_);
-    }
-}
-
-void TaskManager::remoteIDResponse(json &json) {
-
-    // Unpack JSON here for convenience
-    std::string uas_id_str = json["uas_id"].is_null() ? "" : json["uas_id"];
-    std::string operator_id_str = json["operator_id"].is_null() ? "" : json["operator_id"];
-    float operator_latitude = json["operator_latitude"].is_number_float() ? (float)json["operator_latitude"] : 0.f;
-    float operator_longitude = json["operator_longitude"].is_number_float() ? (float)json["operator_longitude"] : 0.f;
-    float operator_altitude_geo = json["operator_altitude_geo"].is_number_float() ? (float)json["operator_altitude_geo"] : 0.f;
-    int timestamp = json["timestamp"].is_number_integer() ? (int)json["timestamp"] : 0; 
-    
-    if (!init_remote_id_message_sent_) {
-        // Basic ID
-        mavros_msgs::BasicID basic_id;
-        basic_id.header.stamp = ros::Time::now();
-        basic_id.id_type = mavros_msgs::BasicID::MAV_ODID_ID_TYPE_CAA_REGISTRATION_ID;
-        basic_id.ua_type = mavros_msgs::BasicID::MAV_ODID_UA_TYPE_HELICOPTER_OR_MULTIROTOR;
-        basic_id.uas_id = uas_id_str;
-        odid_basic_id_pub_.publish(basic_id);
-
-        // Operator ID
-        mavros_msgs::OperatorID operator_id;
-        operator_id.header.stamp = ros::Time::now();
-        operator_id.operator_id_type = mavros_msgs::OperatorID::MAV_ODID_OPERATOR_ID_TYPE_CAA;
-        operator_id.operator_id = operator_id_str;
-        odid_operator_id_pub_.publish(operator_id);
-        operator_id_ = operator_id_str;
-
-        // System
-        // This should probably just be published at startup, and System Update published here
-        mavros_msgs::System system;
-        system.header.stamp = ros::Time::now();
-        system.operator_location_type = mavros_msgs::System::MAV_ODID_OPERATOR_LOCATION_TYPE_TAKEOFF; // TODO dynamic operator location
-        system.classification_type = mavros_msgs::System::MAV_ODID_CLASSIFICATION_TYPE_UNDECLARED;
-        system.operator_latitude = operator_latitude * 1E7;
-        system.operator_longitude = operator_longitude * 1E7;
-        system.operator_altitude_geo = operator_altitude_geo;
-        system.timestamp = timestamp;
-        odid_system_pub_.publish(system);
-
-        init_remote_id_message_sent_ = true;
-    }
-
-    // SystemUpdate
-    mavros_msgs::SystemUpdate system_update;
-    system_update.header.stamp = ros::Time::now();
-    system_update.operator_latitude = operator_latitude * 1E7;
-    system_update.operator_longitude = operator_longitude * 1E7;
-    system_update.operator_altitude_geo = operator_altitude_geo;
-    if (timestamp > last_updated_timestamp) {
-        system_update.timestamp = timestamp;
-        last_updated_timestamp = timestamp;
-    }
-    else {
-        system_update.timestamp = ros::Time::now().toSec();
-    }
-    odid_system_update_pub_.publish(system_update);
-
-}
-
 bool TaskManager::getMapTf() {
 
     // Get drone heading
@@ -581,53 +446,6 @@ void TaskManager::failsafe() {
         in_failsafe_ = true;
         drone_state_manager_.setMode(land_mode_);
         stop();
-    }
-}
-
-void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose) {
-
-    // Transform decco pose (in slam_map frame) and publish it in mavros_map frame as /mavros/vision_pose/pose
-    if (!map_tf_init_) {
-        return;
-    }
-
-    geometry_msgs::TransformStamped tf;
-    try {
-        tf = tf_buffer_.lookupTransform(mavros_map_frame_, slam_map_frame_, ros::Time(0));
-    } catch (tf2::TransformException & ex) {
-        ROS_WARN_THROTTLE(10, "Cannot publish vision pose as map<>slam_map tf not yet available");
-        return;
-    }
-
-    // Apply the transform to the drone pose
-    geometry_msgs::PoseStamped msg_body_pose;
-    geometry_msgs::PoseStamped slam = *slam_pose;
-
-    tf2::doTransform(slam, msg_body_pose, tf);
-    msg_body_pose.header.frame_id = mavros_map_frame_;
-    msg_body_pose.header.stamp = slam_pose->header.stamp;
-
-    vision_pose_publisher_.publish(msg_body_pose);
-
-    last_slam_pos_stamp_ = slam_pose->header.stamp;
-
-    // Map tf for offline
-    if (explicit_global_params_) {
-        geometry_msgs::PointStamped point_in, point_out;
-        point_in.header = slam_pose->header;
-        point_in.point.x = 0;
-        point_in.point.y = 0;
-        point_in.point.z = 0;
-        tf2::doTransform(point_in, point_out, utm2map_tf_);
-        double lat, lon;
-        hello_decco_manager_.utmToLL(point_out.point.x, point_out.point.y, home_utm_zone_, lat, lon);
-        sensor_msgs::NavSatFix nav_msg;
-        nav_msg.header.frame_id = mavros_base_frame_;
-        nav_msg.header.stamp = slam_pose->header.stamp;
-        nav_msg.latitude = lat;
-        nav_msg.longitude = lon;
-        global_pose_pub_.publish(nav_msg);
-
     }
 }
 
@@ -978,6 +796,245 @@ std::string TaskManager::getStatusString() {
     }
 }
 
+void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose) {
+
+    // Transform decco pose (in slam_map frame) and publish it in mavros_map frame as /mavros/vision_pose/pose
+    if (!map_tf_init_) {
+        return;
+    }
+
+    geometry_msgs::TransformStamped tf;
+    try {
+        tf = tf_buffer_.lookupTransform(mavros_map_frame_, slam_map_frame_, ros::Time(0));
+    } catch (tf2::TransformException & ex) {
+        ROS_WARN_THROTTLE(10, "Cannot publish vision pose as map<>slam_map tf not yet available");
+        return;
+    }
+
+    // Apply the transform to the drone pose
+    geometry_msgs::PoseStamped msg_body_pose;
+    geometry_msgs::PoseStamped slam = *slam_pose;
+
+    tf2::doTransform(slam, msg_body_pose, tf);
+    msg_body_pose.header.frame_id = mavros_map_frame_;
+    msg_body_pose.header.stamp = slam_pose->header.stamp;
+
+    vision_pose_publisher_.publish(msg_body_pose);
+
+    last_slam_pos_stamp_ = slam_pose->header.stamp;
+
+    // Map tf for offline
+    if (explicit_global_params_) {
+        geometry_msgs::PointStamped point_in, point_out;
+        point_in.header = slam_pose->header;
+        point_in.point.x = 0;
+        point_in.point.y = 0;
+        point_in.point.z = 0;
+        tf2::doTransform(point_in, point_out, utm2map_tf_);
+        double lat, lon;
+        hello_decco_manager_.utmToLL(point_out.point.x, point_out.point.y, home_utm_zone_, lat, lon);
+        sensor_msgs::NavSatFix nav_msg;
+        nav_msg.header.frame_id = mavros_base_frame_;
+        nav_msg.header.stamp = slam_pose->header.stamp;
+        nav_msg.latitude = lat;
+        nav_msg.longitude = lon;
+        global_pose_pub_.publish(nav_msg);
+
+    }
+}
+
+void TaskManager::registeredPclCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
+    if (!map_tf_init_) {
+        return;
+    }
+    pcl::PointCloud<pcl::PointXYZ>::Ptr reg_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::PointCloud<pcl::PointXYZ>::Ptr map_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::fromROSMsg (*msg, *reg_cloud);
+
+    pcl_ros::transformPointCloud(*reg_cloud, *map_cloud, map_to_slam_tf_.transform);
+
+    sensor_msgs::PointCloud2 map_cloud_ros;
+    pcl::toROSMsg(*map_cloud, map_cloud_ros);
+    map_cloud_ros.header.frame_id = mavros_map_frame_;
+    pointcloud_repub_.publish(map_cloud_ros);
+}
+
+void TaskManager::pathPlannerCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
+    last_path_planner_stamp_ = msg->header.stamp;
+}
+
+void TaskManager::costmapCallback(const map_msgs::OccupancyGridUpdate::ConstPtr &msg) {
+    last_costmap_stamp_ = msg->header.stamp;
+}
+
+void TaskManager::pointcloudCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
+    last_lidar_stamp_ =  msg->header.stamp;
+}
+
+void TaskManager::livoxCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg) {
+    last_lidar_stamp_ =  msg->header.stamp;
+}
+
+void TaskManager::mapirCallback(const sensor_msgs::ImageConstPtr &msg) {
+    last_mapir_stamp_ = msg->header.stamp;
+}
+
+void TaskManager::attolloCallback(const sensor_msgs::ImageConstPtr &msg) {
+    last_attollo_stamp_ = msg->header.stamp;
+}
+
+void TaskManager::thermalCallback(const sensor_msgs::ImageConstPtr &msg) {
+    last_thermal_stamp_ = msg->header.stamp;
+}
+
+void TaskManager::rosbagCallback(const std_msgs::StringConstPtr &msg) {
+    last_rosbag_stamp_ = ros::Time::now();
+}
+
+void TaskManager::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
+    goal_ = *msg;
+}
+
+void TaskManager::mapYawCallback(const std_msgs::Float64::ConstPtr &msg) {
+    map_yaw_ = msg->data;
+    ROS_INFO("got map yaw: %f", map_yaw_);
+}
+
+void TaskManager::packageFromMapversation(const std_msgs::String::ConstPtr &msg) {
+    json mapver_json = json::parse(msg->data);
+    std::string topic = mapver_json["topic"];
+    json gossip_json = mapver_json["gossip"];
+    if (topic == "burn_unit_send") {
+        makeBurnUnitJson(gossip_json);
+    }
+    else if (topic == "target_polygon") {
+        json burn_unit = hello_decco_manager_.polygonToBurnUnit(gossip_json);
+        makeBurnUnitJson(burn_unit);
+    }
+    else if (topic == "target_setpoint") {
+        setpointResponse(gossip_json);
+    }
+    else if (topic == "emergency") {
+        std::string severity = gossip_json["severity"];
+        emergencyResponse(severity);
+    }
+    else if (topic == "heartbeat") {
+        remoteIDResponse(gossip_json);
+    }
+}
+
+void TaskManager::makeBurnUnitJson(json burn_unit) {
+
+    if (!map_tf_init_) {
+        ROS_WARN("Not ready for flight, try again after initialized.");
+        return;
+    }
+    std::string name = burn_unit["name"];
+    burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
+    hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
+    current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
+    if (current_index_ < 0) {
+        ROS_WARN("No burn polygon was found, all are already complete.");
+        std::string burn_status_string = "No burn units subpolygons were incomplete, not exploring. \n";
+        cmd_history_.append(burn_status_string);
+        return;
+    }
+    
+    if (!polygonDistanceOk(initial_transit_point_, current_polygon_)) {
+        ROS_WARN("Polygon rejected, exceeds maximum starting distance threshold.");
+        return;
+    }
+
+    burn_unit_ok_ = true;
+}
+
+void TaskManager::setpointResponse(json &json_msg) {
+    // ATM, this response is purely a testing function. 
+    startBag();
+}
+
+void TaskManager::emergencyResponse(const std::string severity) {
+    ROS_WARN("Emergency response initiated, level %s.", severity.c_str());
+    // Immediately set to hover
+    drone_state_manager_.setMode(loiter_mode_);
+    cmd_history_.append("Emergency init with severity " + severity + "\n");
+
+    // Then respond based on severity 
+    if (severity == "PAUSE") {
+        // NOTICE = PAUSE
+        // TODO, tell exploration to stop searching frontiers. For now, will keep blacklisting them, but the drone is in loiter mode. Currently no way to pick back up and set to guided mode (here or in HD)
+    }
+    else if (severity == "LAND") {
+        // EMERGENCY = LAND IMMEDIATELY
+        pauseOperations();
+        drone_state_manager_.setMode(land_mode_);
+    }
+    else if (severity == "RTL") {
+        // CRITICAL = RTL
+        pauseOperations();
+        drone_state_manager_.setMode(rtl_mode_);
+    }
+}
+
+void TaskManager::remoteIDResponse(json &json) {
+
+    // Unpack JSON here for convenience
+    std::string uas_id_str = json["uas_id"].is_null() ? "" : json["uas_id"];
+    std::string operator_id_str = json["operator_id"].is_null() ? "" : json["operator_id"];
+    float operator_latitude = json["operator_latitude"].is_number_float() ? (float)json["operator_latitude"] : 0.f;
+    float operator_longitude = json["operator_longitude"].is_number_float() ? (float)json["operator_longitude"] : 0.f;
+    float operator_altitude_geo = json["operator_altitude_geo"].is_number_float() ? (float)json["operator_altitude_geo"] : 0.f;
+    int timestamp = json["timestamp"].is_number_integer() ? (int)json["timestamp"] : 0; 
+    
+    if (!init_remote_id_message_sent_) {
+        // Basic ID
+        mavros_msgs::BasicID basic_id;
+        basic_id.header.stamp = ros::Time::now();
+        basic_id.id_type = mavros_msgs::BasicID::MAV_ODID_ID_TYPE_CAA_REGISTRATION_ID;
+        basic_id.ua_type = mavros_msgs::BasicID::MAV_ODID_UA_TYPE_HELICOPTER_OR_MULTIROTOR;
+        basic_id.uas_id = uas_id_str;
+        odid_basic_id_pub_.publish(basic_id);
+
+        // Operator ID
+        mavros_msgs::OperatorID operator_id;
+        operator_id.header.stamp = ros::Time::now();
+        operator_id.operator_id_type = mavros_msgs::OperatorID::MAV_ODID_OPERATOR_ID_TYPE_CAA;
+        operator_id.operator_id = operator_id_str;
+        odid_operator_id_pub_.publish(operator_id);
+        operator_id_ = operator_id_str;
+
+        // System
+        // This should probably just be published at startup, and System Update published here
+        mavros_msgs::System system;
+        system.header.stamp = ros::Time::now();
+        system.operator_location_type = mavros_msgs::System::MAV_ODID_OPERATOR_LOCATION_TYPE_TAKEOFF; // TODO dynamic operator location
+        system.classification_type = mavros_msgs::System::MAV_ODID_CLASSIFICATION_TYPE_UNDECLARED;
+        system.operator_latitude = operator_latitude * 1E7;
+        system.operator_longitude = operator_longitude * 1E7;
+        system.operator_altitude_geo = operator_altitude_geo;
+        system.timestamp = timestamp;
+        odid_system_pub_.publish(system);
+
+        init_remote_id_message_sent_ = true;
+    }
+
+    // SystemUpdate
+    mavros_msgs::SystemUpdate system_update;
+    system_update.header.stamp = ros::Time::now();
+    system_update.operator_latitude = operator_latitude * 1E7;
+    system_update.operator_longitude = operator_longitude * 1E7;
+    system_update.operator_altitude_geo = operator_altitude_geo;
+    if (timestamp > last_updated_timestamp) {
+        system_update.timestamp = timestamp;
+        last_updated_timestamp = timestamp;
+    }
+    else {
+        system_update.timestamp = ros::Time::now().toSec();
+    }
+    odid_system_update_pub_.publish(system_update);
+
+}
+
 void TaskManager::publishHealth() {
     // TODO fill in json string and publish
     ros::Duration half_dur = ros::Duration(0.5 * health_check_s_.toSec() );
@@ -1074,63 +1131,6 @@ void TaskManager::publishHealth() {
     }
     jsonObjects["healthIndicators"] = healthObjects;
     hello_decco_manager_.packageToMapversation("health_report", jsonObjects);
-}
-
-void TaskManager::registeredPclCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
-    if (!map_tf_init_) {
-        return;
-    }
-    pcl::PointCloud<pcl::PointXYZ>::Ptr reg_cloud(new pcl::PointCloud<pcl::PointXYZ>());
-    pcl::PointCloud<pcl::PointXYZ>::Ptr map_cloud(new pcl::PointCloud<pcl::PointXYZ>());
-    pcl::fromROSMsg (*msg, *reg_cloud);
-
-    pcl_ros::transformPointCloud(*reg_cloud, *map_cloud, map_to_slam_tf_.transform);
-
-    sensor_msgs::PointCloud2 map_cloud_ros;
-    pcl::toROSMsg(*map_cloud, map_cloud_ros);
-    map_cloud_ros.header.frame_id = mavros_map_frame_;
-    pointcloud_repub_.publish(map_cloud_ros);
-}
-
-void TaskManager::pathPlannerCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
-    last_path_planner_stamp_ = msg->header.stamp;
-}
-
-void TaskManager::costmapCallback(const map_msgs::OccupancyGridUpdate::ConstPtr &msg) {
-    last_costmap_stamp_ = msg->header.stamp;
-}
-
-void TaskManager::pointcloudCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
-    last_lidar_stamp_ =  msg->header.stamp;
-}
-
-void TaskManager::livoxCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg) {
-    last_lidar_stamp_ =  msg->header.stamp;
-}
-
-void TaskManager::mapirCallback(const sensor_msgs::ImageConstPtr &msg) {
-    last_mapir_stamp_ = msg->header.stamp;
-}
-
-void TaskManager::attolloCallback(const sensor_msgs::ImageConstPtr &msg) {
-    last_attollo_stamp_ = msg->header.stamp;
-}
-
-void TaskManager::thermalCallback(const sensor_msgs::ImageConstPtr &msg) {
-    last_thermal_stamp_ = msg->header.stamp;
-}
-
-void TaskManager::rosbagCallback(const std_msgs::StringConstPtr &msg) {
-    last_rosbag_stamp_ = ros::Time::now();
-}
-
-void TaskManager::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
-    goal_ = *msg;
-}
-
-void TaskManager::mapYawCallback(const std_msgs::Float64::ConstPtr &msg) {
-    map_yaw_ = msg->data;
-    ROS_INFO("got map yaw: %f", map_yaw_);
 }
 
 json TaskManager::makeTaskJson() {
