@@ -628,8 +628,8 @@ void DroneStateManager::altitudeCallback(const std_msgs::Float64::ConstPtr & msg
 }
 
 void DroneStateManager::sysStatusCallback(const mavros_msgs::SysStatus::ConstPtr &msg) {
-    ready_to_arm_ = ((msg->sensors_health & msg->sensors_enabled)
-				        != msg->sensors_enabled);
+    // Bitwise check of healthy sensors vs enabled sensors
+    ready_to_arm_ = (msg->sensors_health & msg->sensors_enabled) == msg->sensors_enabled;
 }
 
 bool DroneStateManager::setGuided() {
