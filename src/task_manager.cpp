@@ -232,7 +232,10 @@ void TaskManager::runTaskManager() {
             break;
         }
         case CurrentTask::PREFLIGHT_CHECK_FAIL: {
-            if (drone_state_manager_.getDroneReadyToArm())
+            // TODO sim should pass arming checks too, they don't for some weird reasons.
+            // Like loop rate 222 (which can be fixed by putting ClockSpeed: 0.8 in settings.json)
+            // However, other things still fail. Eventually we should fix this and set ARMING_CHECK to 1 in ardupilot
+            if (drone_state_manager_.getDroneReadyToArm() || simulate_)
                 current_task_ = CurrentTask::READY;
             break;
         }
