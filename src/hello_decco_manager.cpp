@@ -57,7 +57,7 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
     // TODO check trip type to decide what data is recording? Or do that on the HD side?
     // Parse data
     burn_unit_json_ = msgJson;
-    std::cout << "burn json received as: \n" << burn_unit_json_.dump(4) << std::endl;
+    ROS_INFO("Burn unit received");
     std_msgs::String burn_string;
     geometry_msgs::Polygon poly = polygonFromJson(burn_unit_json_["polygon"]);
     // Check if already filled in
@@ -78,7 +78,7 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
         }
         geometry_msgs::Polygon poly = polygonToMap(ll_poly);
         subpolygons_.push_back(poly);
-        std::cout << "burn json was: \n" << burn_unit_json_.dump(4) << std::endl;
+        ROS_INFO("Burn json updated for multiple flights");
     }
     else {
         // Need to fill in
@@ -108,7 +108,7 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
         }
         burn_unit_json_["trips"][0]["flights"] = flightLegArray;
         packageToMapversation("burn_unit_receive", burn_unit_json_);
-        std::cout << "burn json filled in: \n" << burn_unit_json_.dump(4) << std::endl;
+        ROS_INFO("Burn json filled in");
     }
 }
 

@@ -320,7 +320,6 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
             compass_init_ok_ = true;
             home_compass_hdg_ = compass_hdg_;
             attempts_ = 0;
-            ROS_INFO("Initial compass heading: %f", home_compass_hdg_);
             ROS_INFO("Setting Arducopter params");
         }
     }
@@ -342,10 +341,10 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
             // Check success
             if (!param_set_srv.response.success) {
                 if (attempts_ == 3) {
-                    ROS_ERROR("Param set of param %s failed after 3 attempts", it->first);
+                    ROS_ERROR("Param set of param %s failed after 3 attempts", it->first.c_str());
                     drone_init_timer_.stop();
                 }
-                ROS_WARN("Param %s set failed, trying again in 1s", it->first);
+                ROS_WARN("Param %s set failed, trying again in 1s", it->first.c_str());
                 attempts_++;
                 return;
             }
@@ -506,10 +505,13 @@ double DroneStateManager::getCompass() {
     return compass_hdg_;
 }
 
-bool DroneStateManager::getImu(sensor_msgs::Imu &imu) {
-    if (imu_count_ < imu_init_threshold_) 
+bool DroneStateManager::initializeImu(sensor_msgs::Imu &imu) {
+    imu_initializing_ = true;
+    if (imu_initializing_count_ < imu_init_threshold_) 
         return false;
     
+    imu_initializing_ = false;
+    imu_initializing_count_ = 0;
     imu = mavros_imu_init_;
     return true;
 }
@@ -533,17 +535,20 @@ void DroneStateManager::localPositionCallback(const geometry_msgs::PoseStamped::
 void DroneStateManager::imuCallback(const sensor_msgs::Imu::ConstPtr &msg) {
     current_imu_ = *msg;
     imu_count_++;
-    if (imu_count_ < imu_init_threshold_) {
-        mavros_imu_init_.orientation.x += current_imu_.orientation.x;
-        mavros_imu_init_.orientation.y += current_imu_.orientation.y;
-        mavros_imu_init_.orientation.z += current_imu_.orientation.z;
-        mavros_imu_init_.orientation.w += current_imu_.orientation.w;
-    }
-    else if (imu_count_ == imu_init_threshold_) {
-        mavros_imu_init_.orientation.x /= imu_init_threshold_;
-        mavros_imu_init_.orientation.y /= imu_init_threshold_;
-        mavros_imu_init_.orientation.z /= imu_init_threshold_;
-        mavros_imu_init_.orientation.w /= imu_init_threshold_;
+    if (imu_initializing_) {
+        imu_initializing_count_++;
+        if (imu_initializing_count_ < imu_init_threshold_) {
+            mavros_imu_init_.orientation.x += current_imu_.orientation.x;
+            mavros_imu_init_.orientation.y += current_imu_.orientation.y;
+            mavros_imu_init_.orientation.z += current_imu_.orientation.z;
+            mavros_imu_init_.orientation.w += current_imu_.orientation.w;
+        }
+        else if (imu_initializing_count_ == imu_init_threshold_) {
+            mavros_imu_init_.orientation.x /= imu_init_threshold_;
+            mavros_imu_init_.orientation.y /= imu_init_threshold_;
+            mavros_imu_init_.orientation.z /= imu_init_threshold_;
+            mavros_imu_init_.orientation.w /= imu_init_threshold_;
+        }
     }
 }
 

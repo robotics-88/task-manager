@@ -265,7 +265,6 @@ class TaskManager {
         // State
         bool did_takeoff_;
         bool is_armed_;
-        bool in_failsafe_ = false;
         bool in_autonomous_flight_ = false;
 
         ros::Publisher local_pos_pub_;

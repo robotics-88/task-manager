@@ -297,6 +297,7 @@ void TaskManager::runTaskManager() {
         }
         case CurrentTask::COMPLETE: {
             in_autonomous_flight_ = false;
+            ROS_INFO("Flight complete, reinitializing");
             current_task_ = CurrentTask::INITIALIZING;
             break;
         }
@@ -356,12 +357,10 @@ void TaskManager::startRtl88() {
 }
 
 void TaskManager::startFailsafeLanding() {
-    in_failsafe_ = true;
     std::string str = "Failsafe init. Failsafes active: " + std::to_string(use_failsafes_);
     ROS_WARN("%s", str.c_str());
     cmd_history_.append(str + "\n");
     if (use_failsafes_) {
-        in_failsafe_ = true;
         drone_state_manager_.setMode(land_mode_);
         pauseOperations();
     }
@@ -384,33 +383,47 @@ void TaskManager::checkHealth() {
 }
 
 void TaskManager::checkFailsafes() {
+
     if (in_autonomous_flight_) {
 
         // Check for failsafe landing conditions
-        if (current_task_ != CurrentTask::FAILSAFE_LANDING) {
-            if (!health_checks_.slam_ok) {
-                std::string str = "Failsafe triggered by SLAM unhealthy";
-                ROS_WARN("%s", str.c_str());
-                cmd_history_.append(str + "\n");
-                startFailsafeLanding();
-            }
-            if (!health_checks_.path_ok) {
-                std::string str = "Failsafe triggered by path unhealthy";
-                ROS_WARN("%s", str.c_str());
-                cmd_history_.append(str + "\n");
-                startFailsafeLanding();
-            }
+        std::string failsafe_reason = "Failsafe triggered by ";
+        bool need_failsafe_landing = false;
+        if (!health_checks_.slam_ok) {
+            failsafe_reason += "SLAM unhealthy, ";
+            need_failsafe_landing = true;
         }
-        else if (current_task_ != CurrentTask::RTL_88 &&
-                 current_task_ != CurrentTask::LANDING &&
-                 current_task_ != CurrentTask::COMPLETE) {
-            if (!health_checks_.battery_ok) {
-                std::string action_string = "Battery level low, returning home";
-                ROS_WARN("%s", action_string.c_str());
-                cmd_history_.append(action_string + "\n");
-                pauseOperations();
-                startRtl88();
+        if (!health_checks_.path_ok) {
+            failsafe_reason += "Path unhealthy, ";
+            need_failsafe_landing = true;
+        }
+        if (need_failsafe_landing) {
+            if (current_task_ != FAILSAFE_LANDING) {
+                ROS_WARN("%s", failsafe_reason.c_str());
+                cmd_history_.append(failsafe_reason + "\n");
+                startFailsafeLanding();
             }
+            // Return here because this is the most extreme failsafe and we don't need to check others
+            return;
+        }
+
+        // Check for RTL 88 conditions
+        // For now, only battery low will trigger this, but using this structure for future additions
+        std::string rtl_88_reason = "RTL 88 triggered by ";
+        bool need_rtl_88 = false;
+        if (!health_checks_.battery_ok) {
+            rtl_88_reason += "battery level low, ";
+            need_rtl_88 = true;
+        } 
+        if (need_rtl_88 &&
+            current_task_ != CurrentTask::RTL_88 &&
+            current_task_ != CurrentTask::LANDING &&
+            current_task_ != CurrentTask::COMPLETE) {
+
+            ROS_WARN("%s", rtl_88_reason.c_str());
+            cmd_history_.append(rtl_88_reason + "\n");
+            pauseOperations();
+            startRtl88();
         }
     }
 }
@@ -442,16 +455,16 @@ bool TaskManager::getMapTf() {
 
     // Get roll, pitch for map stabilization
     sensor_msgs::Imu mavros_init_imu;
-    ros::Rate r(0.1);
-    while (!drone_state_manager_.getImu(mavros_init_imu)) {
+    ros::Rate r(0.5);
+    ROS_INFO("Initializing IMU");
+    while (!drone_state_manager_.initializeImu(mavros_init_imu)) {
         r.sleep();
-        ROS_INFO("Waiting for IMU initial");
     }
     tf2::Quaternion quatmav(mavros_init_imu.orientation.x, mavros_init_imu.orientation.y, mavros_init_imu.orientation.z, mavros_init_imu.orientation.w);
     tf2::Matrix3x3 m(quatmav);
     double roll, pitch, yaw;
     m.getRPY(roll, pitch, yaw);
-    ROS_INFO("Roll: %f, Pitch: %f, Yaw, %f", roll, pitch, yaw);
+    ROS_INFO("Roll: %f, Pitch: %f, Yaw, %f", roll * 180 / M_PI, pitch * 180 / M_PI, yaw * 180 / M_PI);
 
     // Fill in data
     map_to_slam_tf_.header.frame_id = mavros_map_frame_;
@@ -566,9 +579,9 @@ void TaskManager::odidTimerCallback(const ros::TimerEvent&) {
     // Self ID
     mavros_msgs::SelfID self_id;
     self_id.header.stamp = ros::Time::now();
-    if (in_failsafe_) {
+    if (current_task_ == CurrentTask::FAILSAFE_LANDING) {
         self_id.description_type = mavros_msgs::SelfID::MAV_ODID_DESC_TYPE_EMERGENCY;
-        self_id.description = "FAILSAFE. LANDING NOW";
+        self_id.description = "FAILSAFE. CAUTION";
     }
     else {
         self_id.description_type = mavros_msgs::SelfID::MAV_ODID_DESC_TYPE_TEXT;
@@ -1103,6 +1116,12 @@ void TaskManager::publishHealth() {
     auto healthObjects = json::array();
 
     json j = {
+        {"name", "battery"},
+        {"label", "Battery"},
+        {"isHealthy", health_checks_.battery_ok}
+    };
+    healthObjects.push_back(j);
+    j = {
         {"name", "lidar"},
         {"label", "LiDAR"},
         {"isHealthy", health_checks_.lidar_ok}
@@ -1172,6 +1191,7 @@ void TaskManager::publishHealth() {
         };
         healthObjects.push_back(j);
     }
+
     jsonObjects["healthIndicators"] = healthObjects;
     hello_decco_manager_.packageToMapversation("health_report", jsonObjects);
 }
