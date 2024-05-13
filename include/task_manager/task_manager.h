@@ -54,7 +54,6 @@ class TaskManager {
         void runTaskManager();
 
         void initDroneStateManager();
-        bool getReadyForAction();
         bool convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp);
 
         // void targetPolygonCallback(const geometry_msgs::Polygon::ConstPtr &msg);

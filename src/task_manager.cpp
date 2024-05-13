@@ -655,12 +655,6 @@ void TaskManager::initDroneStateManager() {
     }
 }
 
-bool TaskManager::getReadyForAction() {
-    cmd_history_.append("Get ready command received.\n ");
-    startTakeoff();
-    return true;
-}
-
 void TaskManager::checkArmStatus() {
     std::string mode = drone_state_manager_.getFlightMode();
     bool armed = drone_state_manager_.getIsArmed();
