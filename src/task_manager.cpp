@@ -241,10 +241,10 @@ void TaskManager::runTaskManager() {
         }
         case CurrentTask::READY: {
             // This flag gets triggered when received a burn unit
-            if (burn_unit_ok_) 
+            if (burn_unit_received_) 
             {
                 startTakeoff();
-                burn_unit_ok_ = false;
+                burn_unit_received_ = false;
             }
             else if (drone_state_manager_.getIsArmed()) {
                 current_task_ = CurrentTask::MANUAL_FLIGHT;
@@ -254,6 +254,12 @@ void TaskManager::runTaskManager() {
         case CurrentTask::MANUAL_FLIGHT: {
             if (!drone_state_manager_.getIsArmed()) {
                 current_task_ = CurrentTask::COMPLETE;
+            }
+            break;
+        }
+        case CurrentTask::LOITER: {
+            if (drone_state_manager_.getFlightMode() != "LOITER") {
+                current_task_ = CurrentTask::MANUAL_FLIGHT;
             }
             break;
         }
@@ -282,11 +288,12 @@ void TaskManager::runTaskManager() {
             bool is_aborted = goal_state == actionlib::SimpleClientGoalState::ABORTED;
             bool is_lost = goal_state == actionlib::SimpleClientGoalState::LOST;
             bool is_completed = goal_state == actionlib::SimpleClientGoalState::SUCCEEDED;
-            if (is_aborted || is_lost || is_completed) {
-                std::string str = "Explore action client state: " + explore_action_client_.getState().getText();
-                ROS_INFO("%s", str.c_str());
-                cmd_history_.append(str + "\n");
-                startRtl88();
+            if (goal_state == actionlib::SimpleClientGoalState::ABORTED || 
+                goal_state == actionlib::SimpleClientGoalState::LOST ||
+                goal_state == actionlib::SimpleClientGoalState::SUCCEEDED
+                ) {
+
+                startRtl88("exploration " + explore_action_client_.getState().getText());
                 hello_decco_manager_.updateBurnUnit(current_index_, "COMPLETED");
             }
 
@@ -362,21 +369,37 @@ void TaskManager::startExploration() {
     current_task_ = CurrentTask::EXPLORING;
 }
 
-void TaskManager::startRtl88() {
-    ROS_INFO("Doing RTL 88");
+void TaskManager::startRtl88(std::string reason) {
+    std::string str = "Initializing RTL 88 due to " + reason;
+    ROS_INFO("%s", str.c_str());
+    cmd_history_.append(str + "\n");
+    pauseOperations();
     local_pos_pub_.publish(home_pos_);
     current_task_ = CurrentTask::RTL_88;
 }
 
-void TaskManager::startFailsafeLanding() {
-    std::string str = "Failsafe init. Failsafes active: " + std::to_string(use_failsafes_);
-    ROS_WARN("%s", str.c_str());
+void TaskManager::startFailsafeLanding(std::string reason) {
+    std::string str = "Initializing failsafe landing due to " + reason;
+    ROS_INFO("%s", str.c_str());
     cmd_history_.append(str + "\n");
+    pauseOperations();
     if (use_failsafes_) {
         drone_state_manager_.setMode(land_mode_);
-        pauseOperations();
+        current_task_ = CurrentTask::FAILSAFE_LANDING;
     }
-    current_task_ = CurrentTask::FAILSAFE_LANDING;
+    else {
+        ROS_WARN("Failsafes inactive, not doing failsafe landing.");
+        startLoiter("inactive failsafe landing");
+    }
+    
+}
+
+void TaskManager::startLoiter(std::string reason) {
+    std::string str = "Initializing loiter due to " + reason;
+    ROS_INFO("%s", str.c_str());
+    cmd_history_.append(str + "\n");
+    drone_state_manager_.setMode(loiter_mode_);
+    current_task_ = CurrentTask::LOITER;
 }
 
 void TaskManager::checkHealth() {
@@ -399,7 +422,7 @@ void TaskManager::checkFailsafes() {
     if (in_autonomous_flight_) {
 
         // Check for failsafe landing conditions
-        std::string failsafe_reason = "Failsafe triggered by ";
+        std::string failsafe_reason = "";
         bool need_failsafe_landing = false;
         if (!health_checks_.slam_ok) {
             failsafe_reason += "SLAM unhealthy, ";
@@ -411,9 +434,7 @@ void TaskManager::checkFailsafes() {
         }
         if (need_failsafe_landing) {
             if (current_task_ != FAILSAFE_LANDING) {
-                ROS_WARN("%s", failsafe_reason.c_str());
-                cmd_history_.append(failsafe_reason + "\n");
-                startFailsafeLanding();
+                startFailsafeLanding(failsafe_reason);
             }
             // Return here because this is the most extreme failsafe and we don't need to check others
             return;
@@ -421,7 +442,7 @@ void TaskManager::checkFailsafes() {
 
         // Check for RTL 88 conditions
         // For now, only battery low will trigger this, but using this structure for future additions
-        std::string rtl_88_reason = "RTL 88 triggered by ";
+        std::string rtl_88_reason = "";
         bool need_rtl_88 = false;
         if (!health_checks_.battery_ok) {
             rtl_88_reason += "battery level low, ";
@@ -432,10 +453,7 @@ void TaskManager::checkFailsafes() {
             current_task_ != CurrentTask::LANDING &&
             current_task_ != CurrentTask::COMPLETE) {
 
-            ROS_WARN("%s", rtl_88_reason.c_str());
-            cmd_history_.append(rtl_88_reason + "\n");
-            pauseOperations();
-            startRtl88();
+            startRtl88(rtl_88_reason);
         }
     }
 }
@@ -865,6 +883,7 @@ std::string TaskManager::getStatusString() {
         case CurrentTask::PREFLIGHT_CHECK_FAIL:   return "PREFLIGHT_CHECK_FAIL";
         case CurrentTask::READY:                  return "READY";
         case CurrentTask::MANUAL_FLIGHT:          return "MANUAL_FLIGHT";
+        case CurrentTask::LOITER:                 return "LOITER";
         case CurrentTask::EXPLORING:              return "EXPLORING";
         case CurrentTask::IN_TRANSIT:             return "IN_TRANSIT";
         case CurrentTask::RTL_88:                 return "RTL_88";
@@ -1030,7 +1049,7 @@ void TaskManager::makeBurnUnitJson(json burn_unit) {
         return;
     }
 
-    burn_unit_ok_ = true;
+    burn_unit_received_ = true;
 }
 
 void TaskManager::setpointResponse(json &json_msg) {
@@ -1041,24 +1060,22 @@ void TaskManager::setpointResponse(json &json_msg) {
 void TaskManager::emergencyResponse(const std::string severity) {
     std::string str = "Emergency response initiated with level " + severity;
     ROS_WARN("%s", str.c_str());
-    // Immediately set to hover
-    drone_state_manager_.setMode(loiter_mode_);
     cmd_history_.append(str + "\n");
 
     // Then respond based on severity 
     if (severity == "PAUSE") {
         // NOTICE = PAUSE
         // TODO, tell exploration to stop searching frontiers. For now, will keep blacklisting them, but the drone is in loiter mode. Currently no way to pick back up and set to guided mode (here or in HD)
+        // Immediately set to hover
+        startLoiter("pilot request");
     }
     else if (severity == "LAND") {
         // EMERGENCY = LAND IMMEDIATELY
-        pauseOperations();
-        drone_state_manager_.setMode(land_mode_);
+        startFailsafeLanding("pilot request");
     }
     else if (severity == "RTL") {
         // CRITICAL = RTL
-        pauseOperations();
-        drone_state_manager_.setMode(rtl_mode_);
+        startRtl88("pilot request");
     }
 }
 

@@ -104,6 +104,7 @@ class TaskManager {
             PREFLIGHT_CHECK_FAIL,
             READY,
             MANUAL_FLIGHT,
+            LOITER,
             EXPLORING,
             IN_TRANSIT,
             RTL_88,
@@ -236,7 +237,7 @@ class TaskManager {
         ros::Subscriber goal_sub_;
         double estimated_drone_speed_;
         double battery_failsafe_safety_factor_;
-        bool burn_unit_ok_ = false;
+        bool burn_unit_received_ = false;
 
         actionlib::SimpleActionClient<messages_88::ExploreAction> explore_action_client_;
 
@@ -316,8 +317,9 @@ class TaskManager {
         void startTakeoff();
         void startTransit();
         void startExploration();
-        void startRtl88();
-        void startFailsafeLanding();
+        void startRtl88(std::string reason);
+        void startFailsafeLanding(std::string reason);
+        void startLoiter(std::string reason);
         
         bool isBatteryOk();
         void checkHealth();
