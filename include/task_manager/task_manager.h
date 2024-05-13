@@ -60,6 +60,7 @@ class TaskManager {
         // mapversation data responses
         void setpointResponse(json &json_msg);
         void emergencyResponse(const std::string severity);
+        void altitudesResponse(json &json_msg);
         void remoteIDResponse(json &json);
 
         void mapTfTimerCallback(const ros::TimerEvent&);
