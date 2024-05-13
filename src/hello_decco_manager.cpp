@@ -270,7 +270,6 @@ int HelloDeccoManager::polygonNumFlights(const geometry_msgs::Polygon &polygon) 
     else {
         subpolygons_.push_back(map_region_);
     }
-    std::cout << "legs " << num_legs << ", perimeter " << perimeter << " m, area " << area << "m2 \n";
     return num_legs;
 }
 
