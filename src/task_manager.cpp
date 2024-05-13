@@ -617,12 +617,13 @@ bool TaskManager::convert2Geo(messages_88::Geopoint::Request& req, messages_88::
 void TaskManager::heartbeatTimerCallback(const ros::TimerEvent&) {
     sensor_msgs::NavSatFix hb = drone_state_manager_.getCurrentGlobalPosition();
     geometry_msgs::PoseStamped local = drone_state_manager_.getCurrentLocalPosition();
+    double altitudeAgl = drone_state_manager_.getAltitudeAGL();
     geometry_msgs::Quaternion quat_flu = local.pose.orientation;
     double yaw = drone_state_manager_.getCompass();
     json j = {
         {"latitude", hb.latitude},
         {"longitude", hb.longitude},
-        {"altitude", hb.altitude},
+        {"altitude", (int)altitudeAgl},
         {"heading", yaw},
         {"header", {
             {"frame_id", hb.header.frame_id},
