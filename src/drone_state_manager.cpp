@@ -35,9 +35,6 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
   , autonomy_active_(false)
   , enable_autonomy_(false)
   , target_altitude_(2.0)
-  , min_altitude_(2.0)
-  , max_altitude_(10.0)
-  , max_distance_(2.0)
   , ardupilot_(true)
   , compass_count_(0)
   , altitude_set_(false)
@@ -57,9 +54,7 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
   , all_stream_rate_(5.0)
 {
     // Set params from launch file 
-    private_nh_.param<float>("default_altitude_m", target_altitude_, target_altitude_);
-    private_nh_.param<float>("max_altitude", max_altitude_, max_altitude_);
-    private_nh_.param<float>("max_distance", max_distance_, max_distance_);
+    private_nh_.param<float>("default_alt", target_altitude_, target_altitude_);
     private_nh_.param<float>("battery_size", battery_size_, battery_size_);
     private_nh_.param<float>("estimated_current", estimated_current_, estimated_current_);
     private_nh_.param<bool>("ardupilot", ardupilot_, ardupilot_);
@@ -723,6 +718,11 @@ bool DroneStateManager::takeOff() {
     }
 
     mavros_msgs::CommandTOL takeoff_request;
+
+    if (!ros::param::get("/task_manager/default_alt", target_altitude_))
+        ROS_WARN("Drone state manager cannot get default altitude param");
+
+    ROS_INFO("Taking off to %fm", target_altitude_);
     takeoff_request.request.altitude = target_altitude_;
     takeoff_client_.waitForExistence(service_wait_duration_);
     int attempts = 0;

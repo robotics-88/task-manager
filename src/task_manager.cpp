@@ -82,9 +82,9 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<bool>("enable_autonomy", enable_autonomy_, enable_autonomy_);
     private_nh_.param<bool>("ardupilot", ardupilot_, ardupilot_);
     private_nh_.param<bool>("use_failsafes", use_failsafes_, use_failsafes_);
-    private_nh_.param<float>("default_altitude_m", target_altitude_, target_altitude_);
-    private_nh_.param<float>("min_altitude", min_altitude_, min_altitude_);
-    private_nh_.param<float>("max_altitude", max_altitude_, max_altitude_);
+    private_nh_.param<float>("default_alt", target_altitude_, target_altitude_);
+    private_nh_.param<float>("min_alt", min_altitude_, min_altitude_);
+    private_nh_.param<float>("max_alt", max_altitude_, max_altitude_);
     private_nh_.param<double>("max_dist_to_polygon", max_dist_to_polygon_, max_dist_to_polygon_);
 
     std::string goal_topic = "/mavros/setpoint_position/local";
@@ -997,6 +997,9 @@ void TaskManager::packageFromMapversation(const std_msgs::String::ConstPtr &msg)
         std::string severity = gossip_json["severity"];
         emergencyResponse(severity);
     }
+    else if (topic == "altitudes") {
+        altitudesResponse(gossip_json);
+    }
     else if (topic == "heartbeat") {
         remoteIDResponse(gossip_json);
     }
@@ -1056,6 +1059,33 @@ void TaskManager::emergencyResponse(const std::string severity) {
         pauseOperations();
         drone_state_manager_.setMode(rtl_mode_);
     }
+}
+
+void TaskManager::altitudesResponse(json &json_msg) {
+
+    if (!json_msg["max_altitude"].is_number() || 
+        !json_msg["min_altitude"].is_number() || 
+        !json_msg["default_altitude"].is_number()) {
+        ROS_WARN("Altitude message from mapversation contains invalid data");
+        return;
+    }
+
+    float max_altitude = json_msg["max_altitude"];
+    float min_altitude = json_msg["min_altitude"];
+    float default_altitude = json_msg["default_altitude"];
+
+    // Set altitude params in all nodes that use them
+    ros::param::set("/task_manager/max_alt", max_altitude);
+    ros::param::set("/task_manager/min_alt", min_altitude);
+    ros::param::set("/task_manager/default_alt", default_altitude);
+
+    // It's simpler just to set the task manager altitude data here instead of re-fetching the param dynamically
+    max_altitude_ = max_altitude;
+    min_altitude_ = min_altitude;
+    target_altitude_ = default_altitude;
+
+    ros::param::set("/path_planning_node/search/max_alt", max_altitude);
+    ros::param::set("/path_planning_node/search/min_alt", min_altitude);
 }
 
 void TaskManager::remoteIDResponse(json &json) {

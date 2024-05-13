@@ -17,9 +17,9 @@
     <arg name="use_failsafes" default="false"/>
     <arg name="ardupilot" default="true"/>
     
-    <arg name="default_altitude_m" default="2.0"/>
-    <arg name="min_altitude" default="2.0"/>
-    <arg name="max_altitude" default="10.0"/>
+    <arg name="default_alt" default="2.0"/>
+    <arg name="min_alt" default="2.0"/>
+    <arg name="max_alt" default="10.0"/>
     <arg name="max_dist_to_polygon" default="500"/>
     <arg name="flightleg_area_acres" default="3"/> <!-- 1 acre = 4046 m2-->
 
@@ -63,9 +63,9 @@
         <param name="attollo_topic" value="$(arg attollo_topic)"/>
         <param name="thermal_topic" value="$(arg thermal_topic)"/>
         <param name="rosbag_topic" value="$(arg rosbag_topic)"/>
-        <param name="default_altitude_m" value="$(arg default_altitude_m)"/>
-        <param name="min_altitude" value="$(arg min_altitude)"/>
-        <param name="max_altitude" value="$(arg max_altitude)"/>
+        <param name="default_alt" value="$(arg default_alt)"/>
+        <param name="min_alt" value="$(arg min_alt)"/>
+        <param name="max_alt" value="$(arg max_alt)"/>
         <param name="max_dist_to_polygon" value="$(arg max_dist_to_polygon)"/>
         <param name="ardupilot" value="$(arg ardupilot)"/>
         <param name="flightleg_area_acres" value="$(arg flightleg_area_acres)"/>

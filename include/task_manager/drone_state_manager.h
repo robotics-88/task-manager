@@ -106,9 +106,6 @@ class DroneStateManager {
 
         // Control defaults
         float target_altitude_;
-        float min_altitude_;
-        float max_altitude_;
-        float max_distance_;
         ros::Publisher safety_area_viz_;
         bool ardupilot_;
         bool compass_received_ = false;
