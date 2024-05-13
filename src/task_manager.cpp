@@ -246,6 +246,15 @@ void TaskManager::runTaskManager() {
                 startTakeoff();
                 burn_unit_ok_ = false;
             }
+            else if (drone_state_manager_.getIsArmed()) {
+                current_task_ = CurrentTask::MANUAL_FLIGHT;
+            }
+            break;
+        }
+        case CurrentTask::MANUAL_FLIGHT: {
+            if (!drone_state_manager_.getIsArmed()) {
+                current_task_ = CurrentTask::COMPLETE;
+            }
             break;
         }
         case CurrentTask::TAKING_OFF: {
@@ -854,6 +863,7 @@ std::string TaskManager::getStatusString() {
         case CurrentTask::INITIALIZING:           return "INITIALIZING";
         case CurrentTask::PREFLIGHT_CHECK_FAIL:   return "PREFLIGHT_CHECK_FAIL";
         case CurrentTask::READY:                  return "READY";
+        case CurrentTask::MANUAL_FLIGHT:          return "MANUAL_FLIGHT";
         case CurrentTask::EXPLORING:              return "EXPLORING";
         case CurrentTask::IN_TRANSIT:             return "IN_TRANSIT";
         case CurrentTask::RTL_88:                 return "RTL_88";
@@ -1216,6 +1226,7 @@ json TaskManager::makeTaskJson() {
     j["operatorID"] = operator_id_;
     j["rawVoltage"] = (int)(drone_state_manager_.getBatteryVoltage() * 100);
     j["readyToArm"] = drone_state_manager_.getDroneReadyToArm();
+    j["isArmed"] = drone_state_manager_.getIsArmed();
     return j;
 }
 

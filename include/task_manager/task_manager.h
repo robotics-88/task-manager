@@ -102,6 +102,7 @@ class TaskManager {
             INITIALIZING,
             PREFLIGHT_CHECK_FAIL,
             READY,
+            MANUAL_FLIGHT,
             EXPLORING,
             IN_TRANSIT,
             RTL_88,
