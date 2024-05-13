@@ -163,7 +163,7 @@ void HelloDeccoManager::updateBurnUnit(int index, std::string flight_status) {
         burn_unit_json_["trips"][0]["flights"][index]["duration"] = std::to_string(end_time_ - start_time_);
     }
     packageToMapversation("burn_unit_receive", burn_unit_json_);
-    std::cout << "burn json filled in: \n" << burn_unit_json_.dump(4) << std::endl;
+    ROS_INFO("Burn json filled in");
 }
 
 geometry_msgs::Polygon HelloDeccoManager::polygonFromJson(json jsonPolygon) {
@@ -212,8 +212,6 @@ geometry_msgs::Polygon HelloDeccoManager::polygonToMap(const geometry_msgs::Poly
         poly_point.x = coord.Easting() + utm_x_offset_;
         poly_point.y = coord.Northing() + utm_y_offset_;
         map_polygon.points.push_back(poly_point);
-
-        ROS_INFO("map point was (%f, %f)", poly_point.x, poly_point.y);
     }
     return map_polygon;
 }
