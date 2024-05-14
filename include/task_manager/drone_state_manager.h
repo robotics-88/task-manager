@@ -49,6 +49,7 @@ class DroneStateManager {
         int getUTMZone();
         double getAltitudeAGL();
         std::string getFlightMode();
+        std::string getLastSetFlightMode() {return last_set_flight_mode_;}
         bool getIsInAir();
         bool getAutonomyActive();
         bool getIsArmed();
@@ -129,6 +130,7 @@ class DroneStateManager {
         ros::ServiceClient takeoff_client_;
 
         // Mavros modes
+        std::string last_set_flight_mode_;
         std::string land_mode_;
         std::string loiter_mode_;
         std::string guided_mode_;

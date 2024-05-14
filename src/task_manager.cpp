@@ -317,6 +317,7 @@ void TaskManager::runTaskManager() {
         case CurrentTask::COMPLETE: {
             in_autonomous_flight_ = false;
             ROS_INFO("Flight complete, reinitializing");
+            ros::Duration(1.0).sleep(); // Quick sleep to let drone settle down before reinitializing
             current_task_ = CurrentTask::INITIALIZING;
             break;
         }
@@ -420,6 +421,15 @@ void TaskManager::checkHealth() {
 void TaskManager::checkFailsafes() {
 
     if (in_autonomous_flight_) {
+
+        // Check for manual takeover
+        if (drone_state_manager_.getFlightMode() != drone_state_manager_.getLastSetFlightMode()) {
+            ROS_WARN("WARNING: Manual takeover initiated");
+            current_task_ = CurrentTask::MANUAL_FLIGHT;
+            in_autonomous_flight_ = false;
+            pauseOperations();
+            return;
+        }
 
         // Check for failsafe landing conditions
         std::string failsafe_reason = "";
