@@ -78,6 +78,9 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , estimated_drone_speed_(2.0)
     , battery_failsafe_safety_factor_(2.0)
     , do_slam_(false)
+    , lidar_pitch_(0.0)
+    , lidar_x_(0.0)
+    , lidar_z_(0.0)
 {
     private_nh_.param<bool>("enable_autonomy", enable_autonomy_, enable_autonomy_);
     private_nh_.param<bool>("enable_exploration", enable_exploration_, enable_exploration_);
@@ -118,6 +121,9 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<bool>("do_thermal_cam", do_thermal_, do_thermal_);
     int lidar_type;
     private_nh_.param<int>("lidar_type", lidar_type, lidar_type);
+    private_nh_.param<double>("lidar_pitch", lidar_pitch_, lidar_pitch_);
+    private_nh_.param<double>("lidar_x", lidar_x_, lidar_x_);
+    private_nh_.param<double>("lidar_z", lidar_z_, lidar_z_);
 
     hello_decco_manager_.setFrames(mavros_map_frame_, slam_map_frame_);
 
@@ -418,13 +424,18 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
     m.getRPY(roll, pitch, yaw);
     std::cout << "roll: " << roll << ", pitch: " << pitch << ", yaw: " << yaw << std::endl;
 
+    // If using tilted lidar, add the lidar pitch to the map to slam tf, since
+    // the lidar is used as the basis for the slam map frame
+    pitch += lidar_pitch_;
+
     // Fill in data
     map_to_slam_tf_.header.frame_id = mavros_map_frame_;
     map_to_slam_tf_.header.stamp = ros::Time::now();
     map_to_slam_tf_.child_frame_id = slam_map_frame_;
-    map_to_slam_tf_.transform.translation.x = 0.0;
-    map_to_slam_tf_.transform.translation.y = 0.0;
-    map_to_slam_tf_.transform.translation.z = 0.0;
+    // Add lidar position here so that slam_map<>map transform accounts for different in lidar frame<>base_link transform
+    map_to_slam_tf_.transform.translation.x = lidar_x_ * cos(map_yaw_); 
+    map_to_slam_tf_.transform.translation.y = lidar_x_ * sin(map_yaw_); 
+    map_to_slam_tf_.transform.translation.z = lidar_z_;
 
     tf2::Quaternion quat_tf;
     quat_tf.setRPY(roll, pitch, map_yaw_); // TODO, get rid of map_yaw_? It's the same as IMU yaw. Also confirm IMU is ok and not being affected by param setup on launch
