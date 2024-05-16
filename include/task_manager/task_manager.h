@@ -128,15 +128,15 @@ class TaskManager {
         } health_checks_;
 
         // Timeouts for health checks
-        ros::Duration lidar_timeout_{0.5};
-        ros::Duration slam_timeout_{0.5};
-        ros::Duration path_timeout_{0.5};
-        ros::Duration costmap_timeout_{3.0};
-        ros::Duration explore_timeout_{1.0};
-        ros::Duration mapir_timeout_{1.0};
-        ros::Duration attollo_timeout_{1.0};
-        ros::Duration thermal_timeout_{1.0};
-        ros::Duration rosbag_timeout_{1.0};
+        ros::Duration lidar_timeout_;
+        ros::Duration slam_timeout_;
+        ros::Duration path_timeout_;
+        ros::Duration costmap_timeout_;
+        ros::Duration explore_timeout_;
+        ros::Duration mapir_timeout_;
+        ros::Duration attollo_timeout_;
+        ros::Duration thermal_timeout_;
+        ros::Duration rosbag_timeout_;
         ros::Time last_lidar_stamp_;
         ros::Time last_slam_pos_stamp_;
         ros::Time last_path_planner_stamp_;
@@ -236,7 +236,8 @@ class TaskManager {
         ros::Subscriber goal_sub_;
         double estimated_drone_speed_;
         double battery_failsafe_safety_factor_;
-        bool burn_unit_received_ = false;
+        bool needs_takeoff_;
+        int takeoff_attempts_;
 
         actionlib::SimpleActionClient<messages_88::ExploreAction> explore_action_client_;
 
@@ -265,9 +266,8 @@ class TaskManager {
         ros::Timer health_pub_timer_;
 
         // State
-        bool did_takeoff_;
         bool is_armed_;
-        bool in_autonomous_flight_ = false;
+        bool in_autonomous_flight_;
 
         ros::Publisher local_pos_pub_;
         ros::Publisher local_vel_pub_;
@@ -279,9 +279,9 @@ class TaskManager {
         ros::Publisher odid_system_pub_;
         ros::Publisher odid_system_update_pub_;
         ros::Timer odid_timer_;
-        bool init_remote_id_message_sent_ = false;
-        int last_updated_timestamp = 0;
-        std::string operator_id_ = "";
+        bool init_remote_id_message_sent_;
+        int last_rid_updated_timestamp_;
+        std::string operator_id_;
 
         // Goal details
         geometry_msgs::Point current_target_;
@@ -293,7 +293,7 @@ class TaskManager {
         std::string guided_mode_;
         std::string rtl_mode_;
 
-        CurrentTask current_task_ = CurrentTask::INITIALIZING;
+        CurrentTask current_task_;
         ros::Timer status_timer_;
 
         // Explicit UTM param handling

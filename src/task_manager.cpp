@@ -38,6 +38,7 @@ namespace task_manager
 TaskManager::TaskManager(ros::NodeHandle& node)
     : private_nh_("~")
     , nh_(node)
+    , current_task_(CurrentTask::INITIALIZING)
     , task_manager_loop_duration_(1.0)
     , simulate_(false)
     , offline_(false)
@@ -72,12 +73,26 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , mapir_topic_("/mapir_rgn/image_rect_color")
     , mapir_rgb_topic_("/mapir_rgn/image_rect_color")
     , rosbag_topic_("/record/heartbeat")
-    , did_takeoff_(false)
     , is_armed_(false)
+    , in_autonomous_flight_(false)
     , explicit_global_params_(false)
+    , init_remote_id_message_sent_(false)
+    , takeoff_attempts_(0)
     , estimated_drone_speed_(2.0)
     , battery_failsafe_safety_factor_(2.0)
     , do_slam_(false)
+    , needs_takeoff_(false)
+    , last_rid_updated_timestamp_(0)
+    , operator_id_("")
+    , lidar_timeout_(0.5)
+    , slam_timeout_(0.5)
+    , path_timeout_(0.5)
+    , costmap_timeout_(3.0)
+    , explore_timeout_(1.0)
+    , mapir_timeout_(1.0)
+    , attollo_timeout_(1.0)
+    , thermal_timeout_(1.0)
+    , rosbag_timeout_(1.0)
 {
     private_nh_.param<bool>("enable_autonomy", enable_autonomy_, enable_autonomy_);
     private_nh_.param<bool>("ardupilot", ardupilot_, ardupilot_);
@@ -223,6 +238,7 @@ void TaskManager::runTaskManager() {
 
     switch (current_task_) {
         case CurrentTask::INITIALIZING: {
+            drone_state_manager_.setMode(guided_mode_);
             if (getMapTf()) {
                 if (drone_state_manager_.getDroneReadyToArm())
                     current_task_ = CurrentTask::READY;
@@ -241,10 +257,16 @@ void TaskManager::runTaskManager() {
         }
         case CurrentTask::READY: {
             // This flag gets triggered when received a burn unit
-            if (burn_unit_received_) 
+            if (needs_takeoff_) 
             {
-                startTakeoff();
-                burn_unit_received_ = false;
+                if (takeoff_attempts_ > 5) {
+                    ROS_WARN("Takeoff failed after 5 attempts");
+                    needs_takeoff_ = false;
+                    takeoff_attempts_ = 0;
+                }
+                else {
+                    startTakeoff();
+                }
             }
             else if (drone_state_manager_.getIsArmed()) {
                 current_task_ = CurrentTask::MANUAL_FLIGHT;
@@ -331,6 +353,30 @@ void TaskManager::runTaskManager() {
     hello_decco_manager_.packageToMapversation("task_status", task_json);
 }
 
+void TaskManager::startTakeoff() {
+
+    // This is a redundant check but probably good to keep
+    if (!task_msg_.enable_autonomy) {
+        ROS_WARN("Not taking off, autonomy disabled");
+        return;
+    }
+
+    if (drone_state_manager_.takeOff()) {
+        if (do_record_) {
+            startBag();
+        }
+        in_autonomous_flight_ = true;
+        current_task_ = CurrentTask::TAKING_OFF;
+        needs_takeoff_ = false;
+        takeoff_attempts_ = 0; 
+    } 
+    else {
+        ROS_INFO("Takeoff request failed. Retrying.");
+        takeoff_attempts_++;
+    }
+
+}
+
 void TaskManager::startTransit() {    
     padNavTarget(initial_transit_point_);
 
@@ -381,14 +427,8 @@ void TaskManager::startFailsafeLanding(std::string reason) {
     ROS_INFO("%s", str.c_str());
     cmd_history_.append(str + "\n");
     pauseOperations();
-    if (use_failsafes_) {
-        drone_state_manager_.setMode(land_mode_);
-        current_task_ = CurrentTask::FAILSAFE_LANDING;
-    }
-    else {
-        ROS_WARN("Failsafes inactive, not doing failsafe landing.");
-        startLoiter("inactive failsafe landing");
-    }
+    drone_state_manager_.setMode(land_mode_);
+    current_task_ = CurrentTask::FAILSAFE_LANDING;
     
 }
 
@@ -440,8 +480,15 @@ void TaskManager::checkFailsafes() {
             need_failsafe_landing = true;
         }
         if (need_failsafe_landing) {
-            if (current_task_ != FAILSAFE_LANDING) {
-                startFailsafeLanding(failsafe_reason);
+            if (current_task_ != CurrentTask::FAILSAFE_LANDING) {
+                if (use_failsafes_) {
+                    startFailsafeLanding(failsafe_reason);
+                }
+                else {
+                    if (current_task_ != CurrentTask::LOITER) {
+                        startLoiter("failsafe landing requested but failsafes not active");
+                    }
+                }
             }
             // Return here because this is the most extreme failsafe and we don't need to check others
             return;
@@ -715,26 +762,6 @@ void TaskManager::stopBag() {
     stop_msg.data = record_config_name_;
     stop_record_pub_.publish(stop_msg);
     bag_active_ = false;
-}
-
-void TaskManager::startTakeoff() {
-    if (!task_msg_.enable_autonomy) {
-        ROS_WARN("Not taking off, autonomy disabled");
-        return;
-    }
-
-    in_autonomous_flight_ = true;
-
-    current_task_ = CurrentTask::TAKING_OFF;
-
-    ROS_INFO("getting ready for action");
-    if (do_record_) {
-        startBag();
-    }
-    if (!drone_state_manager_.readyForAction()) {
-        did_takeoff_ = drone_state_manager_.getReadyForAction();
-        cmd_history_.append("Drone ready for action result: " + std::to_string(did_takeoff_) + "\n");
-    }
 }
 
 bool TaskManager::isInside(const geometry_msgs::Polygon& polygon, const geometry_msgs::Point& point)
@@ -1050,7 +1077,7 @@ void TaskManager::makeBurnUnitJson(json burn_unit) {
         return;
     }
 
-    burn_unit_received_ = true;
+    needs_takeoff_ = true;
 }
 
 void TaskManager::setpointResponse(json &json_msg) {
@@ -1155,9 +1182,9 @@ void TaskManager::remoteIDResponse(json &json) {
     system_update.operator_latitude = operator_latitude * 1E7;
     system_update.operator_longitude = operator_longitude * 1E7;
     system_update.operator_altitude_geo = operator_altitude_geo;
-    if (timestamp > last_updated_timestamp) {
+    if (timestamp > last_rid_updated_timestamp_) {
         system_update.timestamp = timestamp;
-        last_updated_timestamp = timestamp;
+        last_rid_updated_timestamp_ = timestamp;
     }
     else {
         system_update.timestamp = ros::Time::now().toSec();

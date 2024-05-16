@@ -34,24 +34,46 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
   , do_slam_(false)
   , autonomy_active_(false)
   , enable_autonomy_(false)
-  , target_altitude_(2.0)
   , ardupilot_(true)
-  , compass_count_(0)
-  , altitude_set_(false)
   , connected_(false)
   , armed_(false)
   , in_air_(false)
   , in_guided_mode_(false)
+  , compass_received_(false)
+  , current_altitude_(-1.0)
+  , target_altitude_(2.0)
   , service_wait_duration_(2.0)
   , detected_utm_zone_(-1)
   , utm_set_(false)
+  , battery_percentage_(0.0)
+  , battery_voltage_(0.0)
   , battery_size_(5.2)
   , estimated_current_(20.0)
+  , estimated_flight_time_remaining_(0.0)
+  , imu_init_threshold_(100)
+  , imu_initializing_(false)
+  , imu_initializing_count_(0)
+  , compass_count_(0)
+  , imu_count_(0)
+  , local_pos_count_(0)
+  , battery_count_(0)
+  , imu_rate_ok_(false)
+  , battery_rate_ok_(false)
+  , check_msg_rates_counter_(0)
+  , compass_wait_counter_(0)
   , msg_rate_timer_dt_(5.0)
   , imu_rate_(120.0)
   , local_pos_rate_(60.0)
   , battery_rate_(10.0)
   , all_stream_rate_(5.0)
+  , param_fetch_complete_(false)
+  , heading_src_ok_(false)
+  , stream_rates_ok_(false)
+  , geofence_clear_ok_(false)
+  , mission_clear_ok_(false)
+  , compass_init_ok_(false)
+  , param_set_ok_(false)
+  , drone_initialized_(false)
 {
     // Set params from launch file 
     private_nh_.param<float>("default_alt", target_altitude_, target_altitude_);
@@ -354,7 +376,7 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
             drone_init_timer_.stop();
             return;
         }
-        setMode("GUIDED");
+        setMode(guided_mode_);
         attempts_++;
         return;
     }
@@ -478,12 +500,7 @@ int DroneStateManager::getUTMZone() {
 }
 
 double DroneStateManager::getAltitudeAGL() {
-    if (altitude_set_) {
-        return current_altitude_;
-    }
-    else {
-        return -1;
-    }
+    return current_altitude_;
 }
 
 std::string DroneStateManager::getFlightMode() {
@@ -630,9 +647,6 @@ void DroneStateManager::statusCallback(const mavros_msgs::State::ConstPtr & msg)
 void DroneStateManager::altitudeCallback(const std_msgs::Float64::ConstPtr & msg) {
     in_air_ = msg->data > 1.0 && armed_;
     current_altitude_ = msg->data;
-    if (!altitude_set_) {
-        altitude_set_ = true;
-    }
 }
 
 void DroneStateManager::sysStatusCallback(const mavros_msgs::SysStatus::ConstPtr &msg) {
@@ -657,7 +671,8 @@ bool DroneStateManager::setMode(std::string mode) {
 
 bool DroneStateManager::arm() {
     if (armed_) {
-        return true;
+        ROS_WARN("Not arming, already armed");
+        return false;
     }
     if (!enable_autonomy_) {
         ROS_WARN("Autonomy disabled in arming.");
@@ -666,27 +681,38 @@ bool DroneStateManager::arm() {
     mavros_msgs::CommandBool arm_cmd;
     arm_cmd.request.value = true;
     arming_client_.waitForExistence(service_wait_duration_);
-    if( arming_client_.call(arm_cmd) && arm_cmd.response.success){
+    if(arming_client_.call(arm_cmd) && arm_cmd.response.success){
         ROS_INFO("Vehicle armed");
         return true;
     }
     else {
-        ROS_INFO("Arming failed");
+        ROS_WARN("Arming failed");
         return false;
     }
 }
 
 bool DroneStateManager::takeOff() {
+
+    ROS_INFO("Requesting takeoff");
+
+    if (!in_guided_mode_) {
+        ROS_WARN("Not taking off. Not in guided mode");
+        setMode(guided_mode_);
+        return false;
+    }
     if (in_air_) {
-        ROS_WARN("Takeoff command received while in air.");
-        return true;
+        ROS_WARN("Not taking off. Command received while in air.");
+        return false;
     }
     if (!enable_autonomy_) {
-        ROS_WARN("Autonomy disabled in takeoff.");
+        ROS_WARN("Not taking off. Autonomy disabled");
         return false;
     }
     if (!armed_) {
-        arm();
+        if (!arm()) {
+            ROS_WARN("Not taking off. Arming failed");
+            return false;
+        }
     }
 
     mavros_msgs::CommandTOL takeoff_request;
@@ -694,63 +720,19 @@ bool DroneStateManager::takeOff() {
     if (!ros::param::get("/task_manager/default_alt", target_altitude_))
         ROS_WARN("Drone state manager cannot get default altitude param");
 
-    ROS_INFO("Taking off to %fm", target_altitude_);
+    ROS_INFO("Requesting takeoff to %fm", target_altitude_);
     takeoff_request.request.altitude = target_altitude_;
     takeoff_client_.waitForExistence(service_wait_duration_);
-    int attempts = 0;
-    while (!in_air_ && !takeoff_request.response.success && attempts < 10)
-    {
-        ros::Duration(.1).sleep();
-        takeoff_client_.call(takeoff_request);
-        ros::spinOnce();
-        attempts++;
-    }
-    if (!(in_air_ || takeoff_request.response.success)) {
-        ROS_WARN("Takeoff failed after %i attempts", attempts);
-        return false;
-    }
-    return true;
-}
-
-bool DroneStateManager::readyForAction() {
-    return (connected_ && armed_ && in_air_ && in_guided_mode_);
-}
-
-bool DroneStateManager::getReadyForAction() {
-    int attempts = 0;
-    while (!altitude_set_ && attempts < 20) {
-        ros::spinOnce();
-        attempts++;
-    }
-    if (in_air_) {
+    takeoff_client_.call(takeoff_request);
+    if (takeoff_client_.call(takeoff_request) && takeoff_request.response.success) {
+        ROS_INFO("Vehicle takeoff succeeded");
         return true;
     }
-    if (!enable_autonomy_) {
-        ROS_WARN("Autonomy disabled in getReady.");
+    else {
+        ROS_WARN("Vehicle takeoff failed");
         return false;
     }
-    setMode("GUIDED");
-    ros::spinOnce();
-    bool guided = false, armed = false, takeoff = false;
-    if (!in_guided_mode_) {
-        setMode("GUIDED");
-        ros::spinOnce();
-    }
-    if (!armed_) {
-        ROS_INFO("Arming");
-        armed = arm();
-        ros::spinOnce();
-    }
-    if (!in_air_) {
-        ros::spinOnce();
-        ros::Duration(5).sleep();
-        takeoff = takeOff();
-        ros::spinOnce();
-        ros::Duration(10).sleep();
-    }
-    return guided && armed && (in_air_ || takeoff);
 }
-
 
 float DroneStateManager::calculateBatteryPercentage(float voltage) {
 

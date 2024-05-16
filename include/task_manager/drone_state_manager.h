@@ -73,7 +73,6 @@ class DroneStateManager {
         void sysStatusCallback(const mavros_msgs::SysStatus::ConstPtr &msg);
 
         // Mavros state control
-        bool setGuided();
         bool setMode(std::string mode);
         bool arm();
         bool takeOff();
@@ -81,7 +80,7 @@ class DroneStateManager {
         // safety/validity checking
         bool initializeImu(sensor_msgs::Imu &imu);
         bool readyForAction();
-        bool getReadyForAction();
+        void getReadyForAction();
         void initializeDrone(const ros::TimerEvent &event);
         void initUTM(double &utm_x, double &utm_y);
         void checkMsgRates(const ros::TimerEvent &event);
@@ -109,7 +108,7 @@ class DroneStateManager {
         float target_altitude_;
         ros::Publisher safety_area_viz_;
         bool ardupilot_;
-        bool compass_received_ = false;
+        bool compass_received_;
 
         // Mavros subscribers and topics
         ros::Subscriber mavros_global_pos_subscriber_;
@@ -146,7 +145,6 @@ class DroneStateManager {
         int compass_count_;
         double current_altitude_;
         std::string current_mode_;
-        bool altitude_set_;
         bool connected_;
         bool ready_to_arm_;
         bool armed_;
@@ -163,11 +161,11 @@ class DroneStateManager {
         ros::Time last_battery_measurement_;
         float current_drawn_since_resting_percent_;
         std::vector<float> recent_currents_;
-        float battery_percentage_ = 0.f;
-        float battery_voltage_ = 0.f;
+        float battery_percentage_;
+        float battery_voltage_;
         float battery_size_;
         float estimated_current_;
-        float estimated_flight_time_remaining_ = 0.f;
+        float estimated_flight_time_remaining_;
         ros::Publisher battery_pub_; // Publisher mostly for debug
 
         // Slam pose
@@ -178,35 +176,35 @@ class DroneStateManager {
         float msg_rate_timer_dt_;
         ros::Timer msg_rate_timer_;
         float imu_rate_;
-        int imu_count_ = 0;
+        int imu_count_;
         float local_pos_rate_;
-        int local_pos_count_ = 0;
+        int local_pos_count_;
         float stream_rate_modifier_;
         float battery_rate_;
-        int battery_count_ = 0;
+        int battery_count_;
 
-        bool imu_rate_ok_ = false;
-        bool battery_rate_ok_ = false;
+        bool imu_rate_ok_;
+        bool battery_rate_ok_;
 
         // IMU initialization
         sensor_msgs::Imu mavros_imu_init_;
-        int imu_init_threshold_ = 100;
-        bool imu_initializing_ = false;
-        int imu_initializing_count_ = 0;
+        int imu_init_threshold_;
+        bool imu_initializing_;
+        int imu_initializing_count_;
 
         // Initialization check stuff
-        bool drone_initialized_ = false;
-        int check_msg_rates_counter_ = 0;
-        int compass_wait_counter_ = 0;
+        bool drone_initialized_;
+        int check_msg_rates_counter_;
+        int compass_wait_counter_;
         int attempts_;
         ros::Timer drone_init_timer_;
-        bool param_fetch_complete_ = false;
-        bool heading_src_ok_ = false;
-        bool stream_rates_ok_ = false;
-        bool geofence_clear_ok_ = false;
-        bool mission_clear_ok_ = false;
-        bool compass_init_ok_ = false;
-        bool param_set_ok_ = false;
+        bool param_fetch_complete_;
+        bool heading_src_ok_;
+        bool stream_rates_ok_;
+        bool geofence_clear_ok_;
+        bool mission_clear_ok_;
+        bool compass_init_ok_;
+        bool param_set_ok_;
 
         std::map<std::string, int> param_map_ = {
             { "EK3_SRC1_POSXY", 3 },
