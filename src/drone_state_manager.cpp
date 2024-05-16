@@ -348,6 +348,19 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
         param_set_ok_ = true;
         attempts_ = 0;
     }
+    if (!in_guided_mode_) {
+        if (attempts_ == 3) {
+            ROS_ERROR("Guided mode set failed after 3 attempts");
+            drone_init_timer_.stop();
+            return;
+        }
+        setMode("GUIDED");
+        attempts_++;
+        return;
+    }
+    else {
+        attempts_ = 0;
+    }
 
     ROS_INFO("Drone initialization successful!");
     drone_initialized_ = true;
@@ -627,56 +640,17 @@ void DroneStateManager::sysStatusCallback(const mavros_msgs::SysStatus::ConstPtr
     ready_to_arm_ = (msg->sensors_health & msg->sensors_enabled) == msg->sensors_enabled;
 }
 
-bool DroneStateManager::setGuided() {
-    if (in_guided_mode_) {
-        return true;
-    }
-    if (!enable_autonomy_) {
-        ROS_WARN("Autonomy disabled in setGuided.");
-        return false;
-    }
-    if (!ardupilot_) {
-        //the setpoint publishing rate MUST be faster than 2Hz
-        ros::Rate rate(20.0);
-        geometry_msgs::PoseStamped pose;
-        pose.pose.position.x = 0;
-        pose.pose.position.y = 0;
-        pose.pose.position.z = 2;
-
-        // PX4 does not accept a switch to offboard mode unless points are already streaming
-        for(int i = 100; ros::ok() && i > 0; --i){
-            local_pos_pub_.publish(pose);
-            rate.sleep();
-        }
-    }
-    mavros_msgs::SetMode offb_set_mode;
-    offb_set_mode.request.custom_mode = guided_mode_;
-
-    set_mode_client_.waitForExistence(service_wait_duration_);
-    if( set_mode_client_.call(offb_set_mode) && offb_set_mode.response.mode_sent){
-        ROS_INFO("Offboard enabled");
-        autonomy_active_ = true;
-        return true;
-    }
-    else {
-        ROS_WARN("Guided mode failed.");
-        autonomy_active_ = false;
-        return false;
-    }
-
-}
-
 bool DroneStateManager::setMode(std::string mode) {
     mavros_msgs::SetMode offb_set_mode;
     offb_set_mode.request.custom_mode = mode;
     set_mode_client_.waitForExistence(service_wait_duration_);
     if (set_mode_client_.call(offb_set_mode) && offb_set_mode.response.mode_sent) {
-        ROS_INFO("Mode enabled: %s", mode.c_str());
+        ROS_INFO("Mode set to: %s", mode.c_str());
         last_set_flight_mode_ = mode;
         return true;
     }
     else {
-        ROS_WARN("Mode failed: %s", mode.c_str());
+        ROS_WARN("Mode set failed: %s", mode.c_str());
         return false;
     }
 }
@@ -711,9 +685,6 @@ bool DroneStateManager::takeOff() {
         ROS_WARN("Autonomy disabled in takeoff.");
         return false;
     }
-    if (!in_guided_mode_) {
-        setGuided();
-    }
     if (!armed_) {
         arm();
     }
@@ -735,6 +706,7 @@ bool DroneStateManager::takeOff() {
         attempts++;
     }
     if (!(in_air_ || takeoff_request.response.success)) {
+        ROS_WARN("Takeoff failed after %i attempts", attempts);
         return false;
     }
     return true;
@@ -755,16 +727,17 @@ bool DroneStateManager::getReadyForAction() {
     }
     if (!enable_autonomy_) {
         ROS_WARN("Autonomy disabled in getReady.");
-        return false;;
+        return false;
     }
+    setMode("GUIDED");
+    ros::spinOnce();
     bool guided = false, armed = false, takeoff = false;
     if (!in_guided_mode_) {
-        ROS_INFO("setting guided mode to %s", guided_mode_.c_str());
-        guided = setGuided();
+        setMode("GUIDED");
         ros::spinOnce();
     }
     if (!armed_) {
-        ROS_INFO("arming");
+        ROS_INFO("Arming");
         armed = arm();
         ros::spinOnce();
     }

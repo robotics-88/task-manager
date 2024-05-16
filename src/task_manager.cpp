@@ -285,9 +285,6 @@ void TaskManager::runTaskManager() {
         case CurrentTask::EXPLORING: {            
             // Check action client status to see if complete
             actionlib::SimpleClientGoalState goal_state = explore_action_client_.getState();
-            bool is_aborted = goal_state == actionlib::SimpleClientGoalState::ABORTED;
-            bool is_lost = goal_state == actionlib::SimpleClientGoalState::LOST;
-            bool is_completed = goal_state == actionlib::SimpleClientGoalState::SUCCEEDED;
             if (goal_state == actionlib::SimpleClientGoalState::ABORTED || 
                 goal_state == actionlib::SimpleClientGoalState::LOST ||
                 goal_state == actionlib::SimpleClientGoalState::SUCCEEDED
