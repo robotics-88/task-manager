@@ -133,8 +133,6 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     int lidar_type;
     private_nh_.param<int>("lidar_type", lidar_type, lidar_type);
 
-    hello_decco_manager_.setFrames(mavros_map_frame_, slam_map_frame_);
-
     // SLAM pose sub
     decco_pose_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>(slam_pose_topic_, 10, &TaskManager::deccoPoseCallback, this);
 
@@ -624,7 +622,7 @@ bool TaskManager::convert2Geo(messages_88::Geopoint::Request& req, messages_88::
     in.point.x = req.slam_position.x;
     in.point.y = req.slam_position.y;
     in.point.z = req.slam_position.z;
-    hello_decco_manager_.mapToGeopoint(in, out, -map_yaw_);
+    tf_buffer_.transform(in, out, "utm");
     resp.utm_position.x = out.point.x;
     resp.utm_position.y = out.point.y;
     return true;

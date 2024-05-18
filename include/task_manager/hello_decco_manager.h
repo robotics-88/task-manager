@@ -34,16 +34,15 @@ class HelloDeccoManager {
 
         void makeBurnUnitJson(json msgJson, int utm_zone);
         json polygonToBurnUnit(const json &polygon);
-        // json polygonToBurnUnit(const geometry_msgs::Polygon &polygon);
         int initBurnUnit(geometry_msgs::Polygon &polygon);
         void updateBurnUnit(int index, std::string flight_status);
-        void setFrames(std::string map_frame, std::string slam_frame);
-        void mapToGeopoint(const geometry_msgs::PointStamped &point_in, geometry_msgs::PointStamped &point_out, double yaw);
         void utmToLL(const double utm_x, const double utm_y, const int zone, double &lat, double &lon);
         void setUtmOffsets(double utm_x, double utm_y) {
             utm_x_offset_ = -utm_x;
             utm_y_offset_ = -utm_y;
         }
+        geometry_msgs::Polygon polygonFromJson(json jsonPolygon);
+        geometry_msgs::Polygon polygonToMap(const geometry_msgs::Polygon &polygon);
         void packageToMapversation(std::string topic, json gossip);
 
     private:
@@ -82,16 +81,13 @@ class HelloDeccoManager {
         double flightleg_area_m2_;
 
         void polygonInitializer(const geometry_msgs::Polygon &msg, bool make_legs);
-        geometry_msgs::Polygon polygonFromJson(json jsonPolygon);
 
         // Polygon mgmt
-        geometry_msgs::Polygon polygonToMap(const geometry_msgs::Polygon &polygon);
         bool polygonToGeofence(const geometry_msgs::Polygon &polygon);
         int polygonNumFlights(const geometry_msgs::Polygon &polygon);
         int concaveToMinimalConvexPolygons();
         void visualizeLegs();
         void visualizePolygon();
-        geometry_msgs::Polygon transformPolygon(const geometry_msgs::Polygon &map_poly);
 };
 
 }

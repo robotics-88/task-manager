@@ -116,4 +116,14 @@ if(CATKIN_ENABLE_TESTING)
     ${catkin_LIBRARIES}
     ${GeographicLib_LIBRARIES}
   )
+
+  add_rostest_gtest(tests_hellodecco
+    launch/test/tests_hellodecco.launch 
+    src/hello_decco_manager.cpp 
+    test/hellodecco_test.cpp
+  )
+  target_link_libraries(tests_hellodecco 
+    ${catkin_LIBRARIES}
+    ${GeographicLib_LIBRARIES}
+  )
 endif()
