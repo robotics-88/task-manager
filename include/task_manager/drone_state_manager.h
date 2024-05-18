@@ -26,6 +26,10 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <std_msgs/Float64.h>
 #include <std_msgs/String.h>
 
+#include <GeographicLib/GeoCoords.hpp>
+#include <GeographicLib/Geodesic.hpp>
+#include <GeographicLib/UTMUPS.hpp>
+
 #include "messages_88/ExploreAction.h"
 #include "messages_88/NavToPointAction.h"
 

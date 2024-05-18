@@ -8,6 +8,7 @@ find_package(catkin REQUIRED COMPONENTS
   bag_recorder
   geometry_msgs
   livox_ros_driver
+  mavros
   mavros_msgs
   messages_88
   pcl_ros
@@ -103,6 +104,7 @@ if(CATKIN_ENABLE_TESTING)
   )
   target_link_libraries(tests_drone_state 
     ${catkin_LIBRARIES}
+    ${GeographicLib_LIBRARIES}
   )
 
   add_rostest_gtest(tests_takeoff
@@ -112,5 +114,6 @@ if(CATKIN_ENABLE_TESTING)
   )
   target_link_libraries(tests_takeoff 
     ${catkin_LIBRARIES}
+    ${GeographicLib_LIBRARIES}
   )
 endif()

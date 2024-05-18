@@ -16,10 +16,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <geometry_msgs/PoseStamped.h>
 #include <visualization_msgs/Marker.h>
 
-#include <GeographicLib/GeoCoords.hpp>
-#include <GeographicLib/Geodesic.hpp>
-#include <GeographicLib/UTMUPS.hpp>
-
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>  
