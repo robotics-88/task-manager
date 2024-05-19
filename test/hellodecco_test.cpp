@@ -7,22 +7,30 @@
 
 struct MapverHelper
 {
-    public: 
-        bool msg_received;
-
     MapverHelper()
-    : msg_received(false)
-    , count(0)
+    : count(0)
+    , msg_received(false)
+    , burn_unit_received(false)
     {
     }
 
-    void cb(const std_msgs::StringConstPtr &gossip)
+    void cb(const std_msgs::StringConstPtr &msg)
     {
         msg_received = true;
         count++;
+        json mapver_json = json::parse(msg->data);
+        std::string topic = mapver_json["topic"];
+        json gossip_json = mapver_json["gossip"];
+        if (topic == "burn_unit_receive") {
+            burn_unit = gossip_json;
+            burn_unit_received = true;
+        }
     }
 
     int count;
+    bool msg_received;
+    bool burn_unit_received;
+    json burn_unit;
 };
 
 struct BurnUnitHelper
@@ -107,7 +115,7 @@ TEST(MapversationPackage, mapversationPackage)
     ros::Subscriber sub = node.subscribe("/mapversation/to_hello_decco", 10, &MapverHelper::cb, &mapver);
     EXPECT_EQ(sub.getNumPublishers(), 1U);
 
-    ros::Rate r(1);
+    ros::Rate r(10);
     int counter = 0;
     // Not sure why but it needs to run twice for the mock subscriber to catch
     while (counter <=1) {
@@ -143,6 +151,38 @@ TEST(ReceiveBurnUnit, receiveBurnUnit)
         EXPECT_EQ(burner.map_polygon.points.at(ii), manual_poly.points.at(ii));
     }
     
+}
+
+TEST(UpdateBurnUnit, updateBurnUnit)
+{
+    ros::NodeHandle node;
+    hello_decco_manager::HelloDeccoManager hello_decco_manager(node);
+    BurnUnitHelper burner;
+    MapverHelper mapver;
+    ros::Rate r(10);
+
+    hello_decco_manager.setUtmOffsets(burner.utm_x_offset, burner.utm_y_offset);
+    ros::Subscriber sub = node.subscribe("/mapversation/to_hello_decco", 10, &MapverHelper::cb, &mapver);
+
+    while (!mapver.msg_received) {
+        hello_decco_manager.makeBurnUnitJson(burner.burn_unit, burner.utm_zone);
+        ros::spinOnce();
+        r.sleep();
+    }
+
+    // Check if update works
+    EXPECT_TRUE(mapver.burn_unit["trips"][0]["flights"][0]["status"] == "NOT_STARTED");
+    int counter = 0;
+    mapver.count = 0;
+    // Not sure why but it needs to run twice for the mock subscriber to catch
+    while (counter < 2) {
+        hello_decco_manager.updateBurnUnit(0, "ACTIVE");
+        ros::spinOnce();
+        counter++;
+        r.sleep();
+    }
+    
+    EXPECT_TRUE(mapver.burn_unit["trips"][0]["flights"][0]["status"] == "ACTIVE");
 }
 
 // Run all the tests that were declared with TEST()
