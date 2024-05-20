@@ -366,19 +366,6 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
         param_set_ok_ = true;
         attempts_ = 0;
     }
-    if (!in_guided_mode_) {
-        if (attempts_ == 3) {
-            ROS_ERROR("Guided mode set failed after 3 attempts");
-            drone_init_timer_.stop();
-            return;
-        }
-        setMode(guided_mode_);
-        attempts_++;
-        return;
-    }
-    else {
-        attempts_ = 0;
-    }
 
     ROS_INFO("Drone initialization successful!");
     drone_initialized_ = true;

@@ -97,10 +97,10 @@ class TaskManager {
 
         ros::Duration task_manager_loop_duration_;
 
-        enum CurrentTask
+        enum Task
         {
             INITIALIZING,
-            PREFLIGHT_CHECK_FAIL,
+            PREFLIGHT_CHECK,
             READY,
             MANUAL_FLIGHT,
             LOITER,
@@ -293,7 +293,7 @@ class TaskManager {
         std::string guided_mode_;
         std::string rtl_mode_;
 
-        CurrentTask current_task_;
+        Task current_task_;
         ros::Timer status_timer_;
 
         // Explicit UTM param handling
@@ -313,6 +313,7 @@ class TaskManager {
         void packageFromMapversation(const std_msgs::String::ConstPtr &msg);
 
         // Task methods
+        void updateCurrentTask(Task task);
         void startTakeoff();
         void startTransit();
         void startExploration();
@@ -330,7 +331,7 @@ class TaskManager {
         bool isInside(const geometry_msgs::Polygon& polygon, const geometry_msgs::Point& point);
         bool polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region);
         void padNavTarget(geometry_msgs::PoseStamped &target);
-        std::string getStatusString();
+        std::string getTaskString(Task task);
         void publishHealth();
         json makeTaskJson();
 

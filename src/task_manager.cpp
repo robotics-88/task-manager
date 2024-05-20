@@ -38,7 +38,7 @@ namespace task_manager
 TaskManager::TaskManager(ros::NodeHandle& node)
     : private_nh_("~")
     , nh_(node)
-    , current_task_(CurrentTask::INITIALIZING)
+    , current_task_(Task::INITIALIZING)
     , task_manager_loop_duration_(1.0)
     , simulate_(false)
     , offline_(false)
@@ -204,12 +204,6 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     // Mapversation subscriber
     mapver_sub_ = nh_.subscribe<std_msgs::String>("/mapversation/to_decco", 10, &TaskManager::packageFromMapversation, this);
 
-    // Initialize home pos struct
-    home_pos_.header.frame_id = mavros_map_frame_;
-    home_pos_.pose.position.x = 0;
-    home_pos_.pose.position.y = 0;
-    home_pos_.pose.position.z = target_altitude_;
-
     initDroneStateManager();
 
     health_check_timer_ = private_nh_.createTimer(ros::Duration(0.1),
@@ -231,29 +225,26 @@ void TaskManager::runTaskManager() {
 
     checkFailsafes();
 
-    // Update home position timestamp
-    home_pos_.header.stamp = ros::Time::now();
-
     switch (current_task_) {
-        case CurrentTask::INITIALIZING: {
-            drone_state_manager_.setMode(guided_mode_);
+        case Task::INITIALIZING: {
             if (getMapTf()) {
+                drone_state_manager_.setMode(guided_mode_);
                 if (drone_state_manager_.getDroneReadyToArm())
-                    current_task_ = CurrentTask::READY;
+                    updateCurrentTask(Task::READY);
                 else
-                    current_task_ = CurrentTask::PREFLIGHT_CHECK_FAIL;
+                    updateCurrentTask(Task::PREFLIGHT_CHECK);
             }
             break;
         }
-        case CurrentTask::PREFLIGHT_CHECK_FAIL: {
+        case Task::PREFLIGHT_CHECK: {
             // TODO sim should pass arming checks too, they don't for some weird reasons.
             // Like loop rate 222 (which can be fixed by putting ClockSpeed: 0.8 in settings.json)
             // However, other things still fail. Eventually we should fix this and set ARMING_CHECK to 1 in ardupilot
             if (drone_state_manager_.getDroneReadyToArm() || simulate_)
-                current_task_ = CurrentTask::READY;
+                updateCurrentTask(Task::READY);
             break;
         }
-        case CurrentTask::READY: {
+        case Task::READY: {
             // This flag gets triggered when received a burn unit
             if (needs_takeoff_) 
             {
@@ -267,23 +258,21 @@ void TaskManager::runTaskManager() {
                 }
             }
             else if (drone_state_manager_.getIsArmed()) {
-                current_task_ = CurrentTask::MANUAL_FLIGHT;
+                updateCurrentTask(Task::MANUAL_FLIGHT);
             }
             break;
         }
-        case CurrentTask::MANUAL_FLIGHT: {
+        case Task::MANUAL_FLIGHT: {
             if (!drone_state_manager_.getIsArmed()) {
-                current_task_ = CurrentTask::COMPLETE;
+                updateCurrentTask(Task::COMPLETE);
             }
             break;
         }
-        case CurrentTask::LOITER: {
-            if (drone_state_manager_.getFlightMode() != "LOITER") {
-                current_task_ = CurrentTask::MANUAL_FLIGHT;
-            }
+        case Task::LOITER: {
+            // Handle resuming exploration when that is available.
             break;
         }
-        case CurrentTask::TAKING_OFF: {
+        case Task::TAKING_OFF: {
             // Once we reach takeoff altitude, transition to next flight state
             if (drone_state_manager_.getAltitudeAGL() > (target_altitude_ - 1)) {
                 // If not in polygon, start navigation task
@@ -296,13 +285,13 @@ void TaskManager::runTaskManager() {
             }
             break;
         }
-        case CurrentTask::IN_TRANSIT: {
+        case Task::IN_TRANSIT: {
             if (isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition().pose.position)) {
                 startExploration();
             }
             break;
         }
-        case CurrentTask::EXPLORING: {            
+        case Task::EXPLORING: {            
             // Check action client status to see if complete
             actionlib::SimpleClientGoalState goal_state = explore_action_client_.getState();
             if (goal_state == actionlib::SimpleClientGoalState::ABORTED || 
@@ -316,26 +305,25 @@ void TaskManager::runTaskManager() {
 
             break;
         }
-        case CurrentTask::RTL_88: {
+        case Task::RTL_88: {
             if (drone_state_manager_.getCurrentLocalPosition().pose.position == home_pos_.pose.position) {
                 ROS_INFO("RTL_88 completed, landing");
                 drone_state_manager_.setMode(land_mode_);
-                current_task_ = CurrentTask::LANDING;
+                updateCurrentTask(Task::LANDING);
             }
             break;
         }
-        case CurrentTask::LANDING:
-        case CurrentTask::FAILSAFE_LANDING: {
+        case Task::LANDING:
+        case Task::FAILSAFE_LANDING: {
             if (!drone_state_manager_.getIsArmed()) {
-                current_task_ = CurrentTask::COMPLETE;
+                updateCurrentTask(Task::COMPLETE);
             }
             break;
         }
-        case CurrentTask::COMPLETE: {
+        case Task::COMPLETE: {
             in_autonomous_flight_ = false;
-            ROS_INFO("Flight complete, reinitializing");
-            ros::Duration(1.0).sleep(); // Quick sleep to let drone settle down before reinitializing
-            current_task_ = CurrentTask::INITIALIZING;
+            // Return to preflight check as we have already initialized. 
+            updateCurrentTask(Task::PREFLIGHT_CHECK);
             break;
         }
         default: {
@@ -345,13 +333,20 @@ void TaskManager::runTaskManager() {
 
     task_msg_.header.stamp = ros::Time::now();
     task_msg_.cmd_history.data = cmd_history_.c_str();
-    task_msg_.current_status.data = getStatusString();
+    task_msg_.current_status.data = getTaskString(current_task_);
     task_pub_.publish(task_msg_);
     json task_json = makeTaskJson();
     hello_decco_manager_.packageToMapversation("task_status", task_json);
 }
 
 void TaskManager::startTakeoff() {
+
+    // Set home position
+    home_pos_.header.stamp = ros::Time::now();
+    home_pos_.header.frame_id = mavros_map_frame_;
+    home_pos_.pose.position.x = drone_state_manager_.getCurrentLocalPosition().pose.position.x;
+    home_pos_.pose.position.y = drone_state_manager_.getCurrentLocalPosition().pose.position.y;
+    home_pos_.pose.position.z = target_altitude_;
 
     // This is a redundant check but probably good to keep
     if (!task_msg_.enable_autonomy) {
@@ -364,7 +359,7 @@ void TaskManager::startTakeoff() {
             startBag();
         }
         in_autonomous_flight_ = true;
-        current_task_ = CurrentTask::TAKING_OFF;
+        updateCurrentTask(Task::TAKING_OFF);
         needs_takeoff_ = false;
         takeoff_attempts_ = 0; 
     } 
@@ -383,7 +378,7 @@ void TaskManager::startTransit() {
     initial_transit_point_.header.stamp = ros::Time::now();
     local_pos_pub_.publish(initial_transit_point_);
 
-    current_task_ = CurrentTask::IN_TRANSIT;
+    updateCurrentTask(Task::IN_TRANSIT);
 }
 
 void TaskManager::startExploration() {
@@ -408,7 +403,7 @@ void TaskManager::startExploration() {
     cmd_history_.append("Sent explore goal.\n");
     hello_decco_manager_.updateBurnUnit(current_index_, "ACTIVE");
 
-    current_task_ = CurrentTask::EXPLORING;
+    updateCurrentTask(Task::EXPLORING);
 }
 
 void TaskManager::startRtl88(std::string reason) {
@@ -417,7 +412,7 @@ void TaskManager::startRtl88(std::string reason) {
     cmd_history_.append(str + "\n");
     pauseOperations();
     local_pos_pub_.publish(home_pos_);
-    current_task_ = CurrentTask::RTL_88;
+    updateCurrentTask(Task::RTL_88);
 }
 
 void TaskManager::startFailsafeLanding(std::string reason) {
@@ -426,7 +421,7 @@ void TaskManager::startFailsafeLanding(std::string reason) {
     cmd_history_.append(str + "\n");
     pauseOperations();
     drone_state_manager_.setMode(land_mode_);
-    current_task_ = CurrentTask::FAILSAFE_LANDING;
+    updateCurrentTask(Task::FAILSAFE_LANDING);
     
 }
 
@@ -435,7 +430,13 @@ void TaskManager::startLoiter(std::string reason) {
     ROS_INFO("%s", str.c_str());
     cmd_history_.append(str + "\n");
     drone_state_manager_.setMode(loiter_mode_);
-    current_task_ = CurrentTask::LOITER;
+    updateCurrentTask(Task::LOITER);
+}
+
+void TaskManager::updateCurrentTask(Task task) {
+    std::string task_str = getTaskString(task);
+    ROS_INFO("Current task updated to: %s", task_str.c_str());
+    current_task_ = task;
 }
 
 void TaskManager::checkHealth() {
@@ -460,7 +461,7 @@ void TaskManager::checkFailsafes() {
         // Check for manual takeover
         if (drone_state_manager_.getFlightMode() != drone_state_manager_.getLastSetFlightMode()) {
             ROS_WARN("WARNING: Manual takeover initiated");
-            current_task_ = CurrentTask::MANUAL_FLIGHT;
+            updateCurrentTask(Task::MANUAL_FLIGHT);
             in_autonomous_flight_ = false;
             pauseOperations();
             return;
@@ -478,13 +479,13 @@ void TaskManager::checkFailsafes() {
             need_failsafe_landing = true;
         }
         if (need_failsafe_landing) {
-            if (current_task_ != CurrentTask::FAILSAFE_LANDING) {
+            if (current_task_ != Task::FAILSAFE_LANDING) {
                 if (use_failsafes_) {
                     startFailsafeLanding(failsafe_reason);
                 }
                 else {
-                    if (current_task_ != CurrentTask::LOITER) {
-                        startLoiter("failsafe landing requested but failsafes not active");
+                    if (current_task_ != Task::LOITER) {
+                        startLoiter("failsafe landing requested for " + failsafe_reason + "but failsafes not active");
                     }
                 }
             }
@@ -501,9 +502,9 @@ void TaskManager::checkFailsafes() {
             need_rtl_88 = true;
         } 
         if (need_rtl_88 &&
-            current_task_ != CurrentTask::RTL_88 &&
-            current_task_ != CurrentTask::LANDING &&
-            current_task_ != CurrentTask::COMPLETE) {
+            current_task_ != Task::RTL_88 &&
+            current_task_ != Task::LANDING &&
+            current_task_ != Task::COMPLETE) {
 
             startRtl88(rtl_88_reason);
         }
@@ -662,13 +663,13 @@ void TaskManager::odidTimerCallback(const ros::TimerEvent&) {
     // Self ID
     mavros_msgs::SelfID self_id;
     self_id.header.stamp = ros::Time::now();
-    if (current_task_ == CurrentTask::FAILSAFE_LANDING) {
+    if (current_task_ == Task::FAILSAFE_LANDING) {
         self_id.description_type = mavros_msgs::SelfID::MAV_ODID_DESC_TYPE_EMERGENCY;
         self_id.description = "FAILSAFE. CAUTION";
     }
     else {
         self_id.description_type = mavros_msgs::SelfID::MAV_ODID_DESC_TYPE_TEXT;
-        self_id.description = getStatusString();
+        self_id.description = getTaskString(current_task_);
     }
     odid_self_id_pub_.publish(self_id);
 }
@@ -903,21 +904,21 @@ void TaskManager::padNavTarget(geometry_msgs::PoseStamped &target) {
 
 }
 
-std::string TaskManager::getStatusString() {
-    switch (current_task_) {
-        case CurrentTask::INITIALIZING:           return "INITIALIZING";
-        case CurrentTask::PREFLIGHT_CHECK_FAIL:   return "PREFLIGHT_CHECK_FAIL";
-        case CurrentTask::READY:                  return "READY";
-        case CurrentTask::MANUAL_FLIGHT:          return "MANUAL_FLIGHT";
-        case CurrentTask::LOITER:                 return "LOITER";
-        case CurrentTask::EXPLORING:              return "EXPLORING";
-        case CurrentTask::IN_TRANSIT:             return "IN_TRANSIT";
-        case CurrentTask::RTL_88:                 return "RTL_88";
-        case CurrentTask::TAKING_OFF:             return "TAKING_OFF";
-        case CurrentTask::LANDING:                return "LANDING";
-        case CurrentTask::FAILSAFE_LANDING:       return "FAILSAFE_LANDING";
-        case CurrentTask::COMPLETE:               return "COMPLETE";
-        default:                                  return "unknown";
+std::string TaskManager::getTaskString(Task task) {
+    switch (task) {
+        case Task::INITIALIZING:           return "INITIALIZING";
+        case Task::PREFLIGHT_CHECK:        return "PREFLIGHT_CHECK";
+        case Task::READY:                  return "READY";
+        case Task::MANUAL_FLIGHT:          return "MANUAL_FLIGHT";
+        case Task::LOITER:                 return "LOITER";
+        case Task::EXPLORING:              return "EXPLORING";
+        case Task::IN_TRANSIT:             return "IN_TRANSIT";
+        case Task::RTL_88:                 return "RTL_88";
+        case Task::TAKING_OFF:             return "TAKING_OFF";
+        case Task::LANDING:                return "LANDING";
+        case Task::FAILSAFE_LANDING:       return "FAILSAFE_LANDING";
+        case Task::COMPLETE:               return "COMPLETE";
+        default:                           return "unknown";
     }
 }
 
@@ -1292,7 +1293,7 @@ json TaskManager::makeTaskJson() {
     goalArray.push_back(xval);
     goalArray.push_back(yval);
     j["goal"] = goalArray;
-    j["taskStatus"] = getStatusString();
+    j["taskStatus"] = getTaskString(current_task_);
     j["minAltitude"] = min_altitude_;
     j["maxAltitude"] = max_altitude_;
     j["targetAltitude"] = target_altitude_;
