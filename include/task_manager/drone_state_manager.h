@@ -46,45 +46,44 @@ class DroneStateManager {
 
         // State access methods
         void setAutonomyEnabled(bool enabled);
-        geometry_msgs::PoseStamped getCurrentSlamPosition();
-        geometry_msgs::PoseStamped getCurrentLocalPosition();
-        sensor_msgs::NavSatFix getCurrentGlobalPosition();
-        void waitForGlobal();
-        int getUTMZone();
-        double getAltitudeAGL();
-        std::string getFlightMode();
+        
+        geometry_msgs::PoseStamped getCurrentSlamPosition() {return current_slam_pose_;}
+        geometry_msgs::PoseStamped getCurrentLocalPosition() {return current_pose_;}
+        sensor_msgs::NavSatFix getCurrentGlobalPosition() {return current_ll_;}
+        double getAltitudeAGL() {return current_altitude_;}
+        int getUTMZone() {return detected_utm_zone_;}
+        std::string getFlightMode() {return current_mode_;}
         std::string getLastSetFlightMode() {return last_set_flight_mode_;}
-        bool getIsInAir();
-        bool getAutonomyActive();
-        bool getIsArmed();
-        bool getMapYaw(double &yaw);
-        double getCompass();
+        bool getIsInAir() {return in_air_;}
+        bool getIsArmed() {return armed_;}
+        double getCompass() {return compass_hdg_;}
         bool getDroneInitalized() {return drone_initialized_;}
         float getFlightTimeRemaining() {return estimated_flight_time_remaining_;}
         float getBatteryPercentage() {return battery_percentage_;}
         float getBatteryVoltage() {return battery_voltage_;}
         bool getDroneReadyToArm() {return ready_to_arm_;}
 
-        // Mavros subscriber callbacks
-        void globalPositionCallback(const sensor_msgs::NavSatFix::ConstPtr &msg);
+        bool getMapYaw(double &yaw);
+
+        // Subscriber callbacks
+        void slamPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
         void localPositionCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
-        void statusCallback(const mavros_msgs::State::ConstPtr & msg);
+        void globalPositionCallback(const sensor_msgs::NavSatFix::ConstPtr &msg);
         void altitudeCallback(const std_msgs::Float64::ConstPtr & msg);
         void imuCallback(const sensor_msgs::Imu::ConstPtr &msg);
         void compassCallback(const std_msgs::Float64::ConstPtr & msg);
         void batteryCallback(const sensor_msgs::BatteryState::ConstPtr &msg);
-        void slamPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
         void sysStatusCallback(const mavros_msgs::SysStatus::ConstPtr &msg);
+        void statusCallback(const mavros_msgs::State::ConstPtr & msg);
 
         // Mavros state control
+        void waitForGlobal();
         bool setMode(std::string mode);
         bool arm();
         bool takeOff();
 
         // safety/validity checking
         bool initializeImu(sensor_msgs::Imu &imu);
-        bool readyForAction();
-        void getReadyForAction();
         void initializeDrone(const ros::TimerEvent &event);
         void initUTM(double &utm_x, double &utm_y);
         void checkMsgRates(const ros::TimerEvent &event);
@@ -103,7 +102,6 @@ class DroneStateManager {
         bool offline_;
         bool simulate_;
         bool do_slam_;
-        bool autonomy_active_;
 
         // Safety for enabling control
         bool enable_autonomy_;
@@ -195,6 +193,7 @@ class DroneStateManager {
         int imu_init_threshold_;
         bool imu_initializing_;
         int imu_initializing_count_;
+        bool imu_initialized_;
 
         // Initialization check stuff
         bool drone_initialized_;

@@ -28,7 +28,6 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
   , offline_(false)
   , simulate_(false)
   , do_slam_(false)
-  , autonomy_active_(false)
   , enable_autonomy_(false)
   , ardupilot_(true)
   , connected_(false)
@@ -462,44 +461,8 @@ void DroneStateManager::setAutonomyEnabled(bool enabled) {
     }
 }
 
-geometry_msgs::PoseStamped DroneStateManager::getCurrentSlamPosition() {
-    return current_slam_pose_;
-}
-
-geometry_msgs::PoseStamped DroneStateManager::getCurrentLocalPosition() {
-    return current_pose_;
-}
-
-sensor_msgs::NavSatFix DroneStateManager::getCurrentGlobalPosition() {
-    return current_ll_;
-}
-
 void DroneStateManager::waitForGlobal() {
     ros::topic::waitForMessage<sensor_msgs::NavSatFix>("/mavros/global_position/global", nh_);
-}
-
-int DroneStateManager::getUTMZone() {
-    return detected_utm_zone_;
-}
-
-double DroneStateManager::getAltitudeAGL() {
-    return current_altitude_;
-}
-
-std::string DroneStateManager::getFlightMode() {
-    return current_mode_;
-}
-
-bool DroneStateManager::getIsInAir() {
-    return in_air_;
-}
-
-bool DroneStateManager::getAutonomyActive() {
-    return autonomy_active_;
-}
-
-bool DroneStateManager::getIsArmed() {
-    return armed_;
 }
 
 bool DroneStateManager::getMapYaw(double &yaw) {
@@ -509,19 +472,17 @@ bool DroneStateManager::getMapYaw(double &yaw) {
     return compass_init_ok_;
 }
 
-double DroneStateManager::getCompass() {
-    return compass_hdg_;
-}
-
 bool DroneStateManager::initializeImu(sensor_msgs::Imu &imu) {
     imu_initializing_ = true;
-    if (imu_initializing_count_ < imu_init_threshold_) 
+    if (!imu_initialized_) 
         return false;
-    
-    imu_initializing_ = false;
-    imu_initializing_count_ = 0;
-    imu = mavros_imu_init_;
-    return true;
+    else {
+        imu = mavros_imu_init_;
+        imu_initializing_ = false;
+        imu_initialized_ = false;
+        imu_initializing_count_ = 0;
+        return true;
+    }
 }
 
 void DroneStateManager::slamPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
@@ -545,17 +506,18 @@ void DroneStateManager::imuCallback(const sensor_msgs::Imu::ConstPtr &msg) {
     imu_count_++;
     if (imu_initializing_) {
         imu_initializing_count_++;
-        if (imu_initializing_count_ < imu_init_threshold_) {
+        if (imu_initializing_count_ <= imu_init_threshold_) {
             mavros_imu_init_.orientation.x += current_imu_.orientation.x;
             mavros_imu_init_.orientation.y += current_imu_.orientation.y;
             mavros_imu_init_.orientation.z += current_imu_.orientation.z;
             mavros_imu_init_.orientation.w += current_imu_.orientation.w;
         }
-        else if (imu_initializing_count_ == imu_init_threshold_) {
+        else {
             mavros_imu_init_.orientation.x /= imu_init_threshold_;
             mavros_imu_init_.orientation.y /= imu_init_threshold_;
             mavros_imu_init_.orientation.z /= imu_init_threshold_;
             mavros_imu_init_.orientation.w /= imu_init_threshold_;
+            imu_initialized_ = true;
         }
     }
 }

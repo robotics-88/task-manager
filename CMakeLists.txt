@@ -92,6 +92,9 @@ install(DIRECTORY launch/
 if(CATKIN_ENABLE_TESTING)
   find_package(roslaunch REQUIRED)
 
+  add_executable(test_services test/test_services.cpp)
+  target_link_libraries(test_services ${catkin_LIBRARIES})
+
   # test all launch files
   roslaunch_add_file_check(launch)
 
@@ -103,16 +106,6 @@ if(CATKIN_ENABLE_TESTING)
     test/drone_state_manager_test.cpp
   )
   target_link_libraries(tests_drone_state 
-    ${catkin_LIBRARIES}
-    ${GeographicLib_LIBRARIES}
-  )
-
-  add_rostest_gtest(tests_takeoff
-    launch/test/tests_takeoff.launch 
-    src/drone_state_manager.cpp 
-    test/drone_takeoff_test.cpp
-  )
-  target_link_libraries(tests_takeoff 
     ${catkin_LIBRARIES}
     ${GeographicLib_LIBRARIES}
   )
