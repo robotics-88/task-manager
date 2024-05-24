@@ -433,22 +433,6 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
     double offset_y = 0.0;
     double offset_z = lidar_z_;
 
-    // Add lidar IMU offsets to slam map translation if present
-    std::vector<double> lidar_imu_offsets;
-    if (ros::param::get("/mapping/extrinsic_T", lidar_imu_offsets)) {
-        if (lidar_imu_offsets.size() == 3) {
-            offset_x += lidar_imu_offsets.at(0);
-            offset_y += lidar_imu_offsets.at(1);
-            offset_z += lidar_imu_offsets.at(2);
-        }
-        else {
-            ROS_WARN("Invalid lidar IMU offset rosparam");
-        }
-    }
-    else {
-        ROS_WARN("Could not get Lidar IMU offsets for slam map <> map adjustment");
-    }
-
     // Fill in data
     map_to_slam_tf_.header.frame_id = mavros_map_frame_;
     map_to_slam_tf_.header.stamp = ros::Time::now();
@@ -458,11 +442,6 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
     map_to_slam_tf_.transform.translation.x = offset_x * cos(-map_yaw_) + offset_y * sin(-map_yaw_); 
     map_to_slam_tf_.transform.translation.y = -offset_x * sin(-map_yaw_) + offset_y * cos(-map_yaw_); 
     map_to_slam_tf_.transform.translation.z = offset_z;
-
-    // TESTING ONLY
-    std::cout << "Map yaw:  " << map_yaw_ << std::endl;
-    std::cout << "Offsets: [" << offset_x << ", " << offset_y << ", " << offset_z << "]\n";
-    std::cout << "Rotated: [" << map_to_slam_tf_.transform.translation.x << ", " << map_to_slam_tf_.transform.translation.y << ", " << map_to_slam_tf_.transform.translation.z << "]\n";
 
     tf2::Quaternion quat_tf;
     quat_tf.setRPY(roll, pitch, map_yaw_); // TODO, get rid of map_yaw_? It's the same as IMU yaw. Also confirm IMU is ok and not being affected by param setup on launch
