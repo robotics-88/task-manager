@@ -459,11 +459,6 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
     map_to_slam_tf_.transform.translation.y = -offset_x * sin(-map_yaw_) + offset_y * cos(-map_yaw_); 
     map_to_slam_tf_.transform.translation.z = offset_z;
 
-    // TESTING ONLY
-    std::cout << "Map yaw:  " << map_yaw_ << std::endl;
-    std::cout << "Offsets: [" << offset_x << ", " << offset_y << ", " << offset_z << "]\n";
-    std::cout << "Rotated: [" << map_to_slam_tf_.transform.translation.x << ", " << map_to_slam_tf_.transform.translation.y << ", " << map_to_slam_tf_.transform.translation.z << "]\n";
-
     tf2::Quaternion quat_tf;
     quat_tf.setRPY(roll, pitch, map_yaw_); // TODO, get rid of map_yaw_? It's the same as IMU yaw. Also confirm IMU is ok and not being affected by param setup on launch
     quat_tf.normalize();
