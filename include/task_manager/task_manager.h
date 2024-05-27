@@ -199,6 +199,9 @@ class TaskManager {
         std::string slam_pose_topic_;
         message_filters::Subscriber<geometry_msgs::PoseStamped> mavros_pose_sub_;
         message_filters::Subscriber<geometry_msgs::PoseStamped> slam_pose_sub_;
+        double lidar_pitch_;
+        double lidar_x_;
+        double lidar_z_;
 
         // PCL republisher
         ros::Subscriber registered_cloud_sub_;
