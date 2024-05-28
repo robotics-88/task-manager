@@ -48,10 +48,29 @@ namespace task_manager {
 class TaskManager {
 
     public:
+
+        enum Task
+        {
+            INITIALIZING,
+            PREFLIGHT_CHECK,
+            READY,
+            MANUAL_FLIGHT,
+            LOITER,
+            EXPLORING,
+            IN_TRANSIT,
+            RTL_88,
+            TAKING_OFF,
+            LANDING,
+            FAILSAFE_LANDING,
+            COMPLETE
+        };
+
         TaskManager(ros::NodeHandle& node);
         ~TaskManager();
 
         void runTaskManager();
+
+        Task getCurrentTask();
 
         void initDroneStateManager();
         bool convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp);
@@ -96,22 +115,6 @@ class TaskManager {
         ros::Timer health_check_timer_;
 
         ros::Duration task_manager_loop_duration_;
-
-        enum Task
-        {
-            INITIALIZING,
-            PREFLIGHT_CHECK,
-            READY,
-            MANUAL_FLIGHT,
-            LOITER,
-            EXPLORING,
-            IN_TRANSIT,
-            RTL_88,
-            TAKING_OFF,
-            LANDING,
-            FAILSAFE_LANDING,
-            COMPLETE
-        };
 
         struct HealthChecks
         {

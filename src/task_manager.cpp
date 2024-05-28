@@ -445,6 +445,10 @@ void TaskManager::updateCurrentTask(Task task) {
     current_task_ = task;
 }
 
+Task TaskManager::getCurrentTask() {
+    return current_task_;
+}
+
 void TaskManager::checkHealth() {
     ros::Time now = ros::Time::now();
 
