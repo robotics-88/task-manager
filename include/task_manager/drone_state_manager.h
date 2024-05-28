@@ -9,6 +9,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <ros/ros.h>
 
 #include <map>
+#include <deque>
 
 #include <actionlib/client/terminal_state.h>
 #include <geometry_msgs/Polygon.h>
@@ -62,8 +63,10 @@ class DroneStateManager {
         float getBatteryPercentage() {return battery_percentage_;}
         float getBatteryVoltage() {return battery_voltage_;}
         bool getDroneReadyToArm() {return ready_to_arm_;}
+        int getImuAveragingN() {return imu_averaging_n_;}
 
         bool getMapYaw(double &yaw);
+        bool getAveragedOrientation(geometry_msgs::Quaternion &orientation);
 
         // Subscriber callbacks
         void slamPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
@@ -83,7 +86,6 @@ class DroneStateManager {
         bool takeOff();
 
         // safety/validity checking
-        bool initializeImu(sensor_msgs::Imu &imu);
         void initializeDrone(const ros::TimerEvent &event);
         void initUTM(double &utm_x, double &utm_y);
         void checkMsgRates(const ros::TimerEvent &event);
@@ -133,14 +135,17 @@ class DroneStateManager {
         // Mavros modes
         std::string last_set_flight_mode_;
         std::string land_mode_;
-        std::string loiter_mode_;
+        std::string brake_mode_;
         std::string guided_mode_;
         std::string rtl_mode_;
 
-        // Mavros position and status
+        // General private data
         sensor_msgs::NavSatFix current_ll_;
         geometry_msgs::PoseStamped current_pose_;
         sensor_msgs::Imu current_imu_;
+        std::deque<sensor_msgs::Imu> imu_averaging_vec_;
+        sensor_msgs::Imu mavros_imu_init_;
+        int imu_averaging_n_;
         float flight_time_remaining_;
         double home_compass_hdg_;
         double compass_hdg_;
@@ -187,13 +192,6 @@ class DroneStateManager {
 
         bool imu_rate_ok_;
         bool battery_rate_ok_;
-
-        // IMU initialization
-        sensor_msgs::Imu mavros_imu_init_;
-        int imu_init_threshold_;
-        bool imu_initializing_;
-        int imu_initializing_count_;
-        bool imu_initialized_;
 
         // Initialization check stuff
         bool drone_initialized_;

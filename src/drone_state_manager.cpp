@@ -45,9 +45,7 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
   , battery_size_(5.2)
   , estimated_current_(20.0)
   , estimated_flight_time_remaining_(0.0)
-  , imu_init_threshold_(100)
-  , imu_initializing_(false)
-  , imu_initializing_count_(0)
+  , imu_averaging_n_(100)
   , compass_count_(0)
   , imu_count_(0)
   , local_pos_count_(0)
@@ -126,19 +124,10 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
 
     local_pos_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/mavros/setpoint_position/local", 10);
 
-    if (ardupilot_) {
-        land_mode_ = "LAND";
-        loiter_mode_ = "LOITER";
-        rtl_mode_ = "RTL";
-        guided_mode_ = "GUIDED";
-    }
-    else {
-        land_mode_ = "AUTO.LAND";
-        loiter_mode_ = "AUTO.LOITER";
-        rtl_mode_ = "AUTO.RTL";
-        guided_mode_ = "OFFBOARD";
-        setMode("POSCTL");
-    }
+    land_mode_ = "LAND";
+    brake_mode_ = "BRAKE";
+    rtl_mode_ = "RTL";
+    guided_mode_ = "GUIDED";
 
     // fill recent current vector with starting estimated current from param
     for (int i = 0; i < 10; i++) {
@@ -472,17 +461,27 @@ bool DroneStateManager::getMapYaw(double &yaw) {
     return compass_init_ok_;
 }
 
-bool DroneStateManager::initializeImu(sensor_msgs::Imu &imu) {
-    imu_initializing_ = true;
-    if (!imu_initialized_) 
+bool DroneStateManager::getAveragedOrientation(geometry_msgs::Quaternion &orientation) {
+
+    if (imu_averaging_vec_.size() < imu_averaging_n_) {
+        ROS_WARN("IMU does not have enough samples for proper averaging");
         return false;
-    else {
-        imu = mavros_imu_init_;
-        imu_initializing_ = false;
-        imu_initialized_ = false;
-        imu_initializing_count_ = 0;
-        return true;
     }
+
+    // Calculate average of vector of recent measurements
+    for (auto &meas : imu_averaging_vec_) {
+        orientation.x += meas.orientation.x;
+        orientation.y += meas.orientation.y;
+        orientation.z += meas.orientation.z;
+        orientation.w += meas.orientation.w;
+    }
+
+    orientation.x /= imu_averaging_n_;
+    orientation.y /= imu_averaging_n_;
+    orientation.z /= imu_averaging_n_;
+    orientation.w /= imu_averaging_n_;
+
+    return true;
 }
 
 void DroneStateManager::slamPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
@@ -504,22 +503,13 @@ void DroneStateManager::localPositionCallback(const geometry_msgs::PoseStamped::
 void DroneStateManager::imuCallback(const sensor_msgs::Imu::ConstPtr &msg) {
     current_imu_ = *msg;
     imu_count_++;
-    if (imu_initializing_) {
-        imu_initializing_count_++;
-        if (imu_initializing_count_ <= imu_init_threshold_) {
-            mavros_imu_init_.orientation.x += current_imu_.orientation.x;
-            mavros_imu_init_.orientation.y += current_imu_.orientation.y;
-            mavros_imu_init_.orientation.z += current_imu_.orientation.z;
-            mavros_imu_init_.orientation.w += current_imu_.orientation.w;
-        }
-        else {
-            mavros_imu_init_.orientation.x /= imu_init_threshold_;
-            mavros_imu_init_.orientation.y /= imu_init_threshold_;
-            mavros_imu_init_.orientation.z /= imu_init_threshold_;
-            mavros_imu_init_.orientation.w /= imu_init_threshold_;
-            imu_initialized_ = true;
-        }
+
+    // Add to IMU array for averaging 
+    // TODO see if this method of erasing is bad and use faster method like deque. 
+    if (imu_averaging_vec_.size() == imu_averaging_n_) {
+        imu_averaging_vec_.pop_front();
     }
+    imu_averaging_vec_.push_back(current_imu_);
 }
 
 void DroneStateManager::compassCallback(const std_msgs::Float64::ConstPtr & msg) {

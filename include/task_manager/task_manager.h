@@ -55,7 +55,7 @@ class TaskManager {
             PREFLIGHT_CHECK,
             READY,
             MANUAL_FLIGHT,
-            LOITER,
+            PAUSE,
             EXPLORING,
             IN_TRANSIT,
             RTL_88,
@@ -168,7 +168,6 @@ class TaskManager {
         // Safety for enabling control
         bool do_slam_;
         bool enable_autonomy_;
-        bool ardupilot_;
         bool use_failsafes_;
 
         // Control defaults
@@ -295,7 +294,7 @@ class TaskManager {
 
         // Mavros modes
         std::string land_mode_;
-        std::string loiter_mode_;
+        std::string brake_mode_;
         std::string guided_mode_;
         std::string rtl_mode_;
 
@@ -325,7 +324,7 @@ class TaskManager {
         void startExploration();
         void startRtl88(std::string reason);
         void startFailsafeLanding(std::string reason);
-        void startLoiter(std::string reason);
+        void startPause(std::string reason);
         
         bool isBatteryOk();
         void checkHealth();

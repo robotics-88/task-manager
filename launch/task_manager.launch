@@ -18,7 +18,6 @@
 
     <arg name="enable_autonomy" default="false"/>
     <arg name="use_failsafes" default="false"/>
-    <arg name="ardupilot" default="true"/>
     
     <arg name="default_alt" default="2.0"/>
     <arg name="min_alt" default="2.0"/>
@@ -70,7 +69,6 @@
         <param name="min_alt" value="$(arg min_alt)"/>
         <param name="max_alt" value="$(arg max_alt)"/>
         <param name="max_dist_to_polygon" value="$(arg max_dist_to_polygon)"/>
-        <param name="ardupilot" value="$(arg ardupilot)"/>
         <param name="flightleg_area_acres" value="$(arg flightleg_area_acres)"/>
         <param name="all_stream_rate" value="5"/>
         <param name="imu_rate" value="120"/>

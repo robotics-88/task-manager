@@ -208,13 +208,25 @@ TEST(Utility, initializeImu)
 
     sensor_msgs::ImuConstPtr msg_p(new sensor_msgs::Imu(imu));
 
-    sensor_msgs::Imu imu_out;
+    geometry_msgs::Quaternion avg_orientation;
 
-    while (!drone_state_manager.initializeImu(imu_out)) {
+    // Add fewer than required number of samples to pass
+    int averaging_n = drone_state_manager.getImuAveragingN();
+    for (int i = 0; i < averaging_n - 1; i++) {
         drone_state_manager.imuCallback(msg_p);
     }
 
-    ASSERT_FLOAT_EQ(imu.orientation.x, imu_out.orientation.x);
+    ASSERT_FALSE(drone_state_manager.getAveragedOrientation(avg_orientation));
+
+    // Add one more sample to pass
+    drone_state_manager.imuCallback(msg_p);
+
+    ASSERT_TRUE(drone_state_manager.getAveragedOrientation(avg_orientation));
+
+    ASSERT_FLOAT_EQ(imu.orientation.x, avg_orientation.x);
+    ASSERT_FLOAT_EQ(imu.orientation.y, avg_orientation.y);
+    ASSERT_FLOAT_EQ(imu.orientation.z, avg_orientation.z);
+    ASSERT_FLOAT_EQ(imu.orientation.w, avg_orientation.w);
 }
 
 TEST(Utility, initUTM)

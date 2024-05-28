@@ -44,7 +44,6 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , offline_(false)
     , hello_decco_manager_(node)
     , enable_autonomy_(false)
-    , ardupilot_(true)
     , use_failsafes_(false)
     , target_altitude_(2.0)
     , min_altitude_(2.0)
@@ -98,7 +97,6 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , rosbag_timeout_(1.0)
 {
     private_nh_.param<bool>("enable_autonomy", enable_autonomy_, enable_autonomy_);
-    private_nh_.param<bool>("ardupilot", ardupilot_, ardupilot_);
     private_nh_.param<bool>("use_failsafes", use_failsafes_, use_failsafes_);
     private_nh_.param<float>("default_alt", target_altitude_, target_altitude_);
     private_nh_.param<float>("min_alt", min_altitude_, min_altitude_);
@@ -274,7 +272,7 @@ void TaskManager::runTaskManager() {
             }
             break;
         }
-        case Task::LOITER: {
+        case Task::PAUSE: {
             // Handle resuming exploration when that is available.
             break;
         }
@@ -431,12 +429,12 @@ void TaskManager::startFailsafeLanding(std::string reason) {
     
 }
 
-void TaskManager::startLoiter(std::string reason) {
-    std::string str = "Initializing loiter due to " + reason;
+void TaskManager::startPause(std::string reason) {
+    std::string str = "Initializing pause due to " + reason;
     ROS_INFO("%s", str.c_str());
     cmd_history_.append(str + "\n");
-    drone_state_manager_.setMode(loiter_mode_);
-    updateCurrentTask(Task::LOITER);
+    drone_state_manager_.setMode(brake_mode_);
+    updateCurrentTask(Task::PAUSE);
 }
 
 void TaskManager::updateCurrentTask(Task task) {
@@ -445,7 +443,7 @@ void TaskManager::updateCurrentTask(Task task) {
     current_task_ = task;
 }
 
-Task TaskManager::getCurrentTask() {
+TaskManager::Task TaskManager::getCurrentTask() {
     return current_task_;
 }
 
@@ -494,8 +492,8 @@ void TaskManager::checkFailsafes() {
                     startFailsafeLanding(failsafe_reason);
                 }
                 else {
-                    if (current_task_ != Task::LOITER) {
-                        startLoiter("failsafe landing requested for " + failsafe_reason + "but failsafes not active");
+                    if (current_task_ != Task::PAUSE) {
+                        startPause("failsafe landing requested for " + failsafe_reason + "but failsafes not active");
                     }
                 }
             }
@@ -547,13 +545,13 @@ bool TaskManager::getMapTf() {
     }
 
     // Get roll, pitch for map stabilization
-    sensor_msgs::Imu mavros_init_imu;
+    geometry_msgs::Quaternion init_orientation;
     ros::Rate r(0.5);
     ROS_INFO("Initializing IMU");
-    while (!drone_state_manager_.initializeImu(mavros_init_imu)) {
+    while (!drone_state_manager_.getAveragedOrientation(init_orientation)) {
         r.sleep();
     }
-    tf2::Quaternion quatmav(mavros_init_imu.orientation.x, mavros_init_imu.orientation.y, mavros_init_imu.orientation.z, mavros_init_imu.orientation.w);
+    tf2::Quaternion quatmav(init_orientation.x, init_orientation.y, init_orientation.z, init_orientation.w);
     tf2::Matrix3x3 m(quatmav);
     double roll, pitch, yaw;
     m.getRPY(roll, pitch, yaw);
@@ -714,19 +712,10 @@ void TaskManager::initDroneStateManager() {
     task_msg_.enable_autonomy = enable_autonomy_;
     task_msg_.enable_exploration = true; // TODO just remove this
 
-    if (ardupilot_) {
-        land_mode_ = "LAND";
-        loiter_mode_ = "LOITER";
-        rtl_mode_ = "RTL";
-        guided_mode_ = "GUIDED";
-    }
-    else {
-        land_mode_ = "AUTO.LAND";
-        loiter_mode_ = "AUTO.LOITER";
-        rtl_mode_ = "AUTO.RTL";
-        guided_mode_ = "OFFBOARD";
-        drone_state_manager_.setMode("POSCTL");
-    }
+    land_mode_ = "LAND";
+    brake_mode_ = "BRAKE";
+    rtl_mode_ = "RTL";
+    guided_mode_ = "GUIDED";
 }
 
 void TaskManager::checkArmStatus() {
@@ -931,7 +920,7 @@ std::string TaskManager::getTaskString(Task task) {
         case Task::PREFLIGHT_CHECK:        return "PREFLIGHT_CHECK";
         case Task::READY:                  return "READY";
         case Task::MANUAL_FLIGHT:          return "MANUAL_FLIGHT";
-        case Task::LOITER:                 return "LOITER";
+        case Task::PAUSE:                  return "PAUSE";
         case Task::EXPLORING:              return "EXPLORING";
         case Task::IN_TRANSIT:             return "IN_TRANSIT";
         case Task::RTL_88:                 return "RTL_88";
@@ -1113,9 +1102,9 @@ void TaskManager::emergencyResponse(const std::string severity) {
     // Then respond based on severity 
     if (severity == "PAUSE") {
         // NOTICE = PAUSE
-        // TODO, tell exploration to stop searching frontiers. For now, will keep blacklisting them, but the drone is in loiter mode. Currently no way to pick back up and set to guided mode (here or in HD)
+        // TODO, tell exploration to stop searching frontiers. For now, will keep blacklisting them, but the drone is in PAUSE mode. Currently no way to pick back up and set to guided mode (here or in HD)
         // Immediately set to hover
-        startLoiter("pilot request");
+        startPause("pilot request");
     }
     else if (severity == "LAND") {
         // EMERGENCY = LAND IMMEDIATELY
