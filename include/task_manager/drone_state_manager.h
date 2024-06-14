@@ -80,7 +80,6 @@ class DroneStateManager {
         void statusCallback(const mavros_msgs::State::ConstPtr & msg);
 
         // Mavros state control
-        void waitForGlobal();
         bool setMode(std::string mode);
         bool arm();
         bool takeOff();

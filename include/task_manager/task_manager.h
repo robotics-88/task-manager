@@ -14,8 +14,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <geometry_msgs/Polygon.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <livox_ros_driver/CustomMsg.h>
-#include <message_filters/subscriber.h>
-#include <message_filters/sync_policies/approximate_time.h>
 #include <map_msgs/OccupancyGridUpdate.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -72,29 +70,13 @@ class TaskManager {
 
         Task getCurrentTask();
 
-        void initDroneStateManager();
-        bool convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp);
-
-        // void targetPolygonCallback(const geometry_msgs::Polygon::ConstPtr &msg);
-        // mapversation data responses
-        void setpointResponse(json &json_msg);
-        void emergencyResponse(const std::string severity);
-        void altitudesResponse(json &json_msg);
-        void remoteIDResponse(json &json);
-
-        bool getMapTf();
-
         // Timer callbacks
         void uiHeartbeatCallback(const json &msg);
         void heartbeatTimerCallback(const ros::TimerEvent&);
         void odidTimerCallback(const ros::TimerEvent &);
 
-        void checkArmStatus();
-
-        bool pauseOperations();
-
         // Subscriber callbacks
-        void deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose);
+        void slamPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose);
         void registeredPclCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
         void pathPlannerCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
         void costmapCallback(const map_msgs::OccupancyGridUpdate::ConstPtr &msg);
@@ -190,17 +172,11 @@ class TaskManager {
         std::string mavros_base_frame_;
         std::string slam_map_frame_;
         geometry_msgs::TransformStamped map_to_slam_tf_;
-        ros::Subscriber decco_pose_sub_;
+        ros::Subscriber slam_pose_sub_;
         ros::Publisher vision_pose_publisher_;
 
-        // TF publisher
         ros::Timer map_tf_timer_;
-        typedef message_filters::sync_policies::ApproximateTime<geometry_msgs::PoseStamped, geometry_msgs::PoseStamped> MySyncPolicy;
-        typedef message_filters::Synchronizer<MySyncPolicy> Sync;
-        boost::shared_ptr<Sync> sync_;
         std::string slam_pose_topic_;
-        message_filters::Subscriber<geometry_msgs::PoseStamped> mavros_pose_sub_;
-        message_filters::Subscriber<geometry_msgs::PoseStamped> slam_pose_sub_;
         double lidar_pitch_;
         double lidar_x_;
         double lidar_z_;
@@ -312,10 +288,6 @@ class TaskManager {
         ros::Subscriber burn_unit_sub_;
         int current_index_;
         std::string burn_dir_prefix_;
-        // void makeBurnUnitJson(const std_msgs::String::ConstPtr &msg);
-        void makeBurnUnitJson(json burn_unit);
-
-        void packageFromMapversation(const std_msgs::String::ConstPtr &msg);
 
         // Task methods
         void updateCurrentTask(Task task);
@@ -326,19 +298,31 @@ class TaskManager {
         void startFailsafeLanding(std::string reason);
         void startPause(std::string reason);
         
+        // Other methods
         bool isBatteryOk();
         void checkHealth();
         void checkFailsafes();
-
+        bool getMapTf();
+        void checkArmStatus();
+        bool pauseOperations();
         void startBag();
         void stopBag();
-        // geometry_msgs::Polygon transformPolygon(const geometry_msgs::Polygon &map_poly);
         bool isInside(const geometry_msgs::Polygon& polygon, const geometry_msgs::Point& point);
         bool polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region);
         void padNavTarget(geometry_msgs::PoseStamped &target);
         std::string getTaskString(Task task);
+        void initDroneStateManager();
+        bool convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp);
+
+        // mapversation methods
+        void setpointResponse(json &json_msg);
+        void emergencyResponse(const std::string severity);
+        void altitudesResponse(json &json_msg);
+        void remoteIDResponse(json &json);
         void publishHealth();
         json makeTaskJson();
+        void makeBurnUnitJson(json burn_unit);
+        void packageFromMapversation(const std_msgs::String::ConstPtr &msg);
 
 };
 

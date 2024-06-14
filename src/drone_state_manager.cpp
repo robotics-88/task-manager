@@ -450,10 +450,6 @@ void DroneStateManager::setAutonomyEnabled(bool enabled) {
     }
 }
 
-void DroneStateManager::waitForGlobal() {
-    ros::topic::waitForMessage<sensor_msgs::NavSatFix>("/mavros/global_position/global", nh_);
-}
-
 bool DroneStateManager::getMapYaw(double &yaw) {
     if (compass_init_ok_) {
         yaw = home_compass_hdg_;
@@ -504,8 +500,7 @@ void DroneStateManager::imuCallback(const sensor_msgs::Imu::ConstPtr &msg) {
     current_imu_ = *msg;
     imu_count_++;
 
-    // Add to IMU array for averaging 
-    // TODO see if this method of erasing is bad and use faster method like deque. 
+    // Add to IMU array for averaging
     if (imu_averaging_vec_.size() == imu_averaging_n_) {
         imu_averaging_vec_.pop_front();
     }

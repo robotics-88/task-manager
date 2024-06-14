@@ -100,6 +100,18 @@ if(CATKIN_ENABLE_TESTING)
 
   find_package(rostest REQUIRED)
 
+  add_rostest_gtest(tests_task_manager
+    launch/test/tests_task_manager.launch 
+    src/task_manager.cpp
+    src/hello_decco_manager.cpp
+    src/drone_state_manager.cpp
+    test/task_manager_test.cpp
+  )
+  target_link_libraries(tests_task_manager 
+    ${catkin_LIBRARIES}
+    ${GeographicLib_LIBRARIES}
+  )
+
   add_rostest_gtest(tests_drone_state
     launch/test/tests_drone_state.launch 
     src/drone_state_manager.cpp 
@@ -119,4 +131,6 @@ if(CATKIN_ENABLE_TESTING)
     ${catkin_LIBRARIES}
     ${GeographicLib_LIBRARIES}
   )
+
+  
 endif()

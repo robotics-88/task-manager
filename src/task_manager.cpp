@@ -138,7 +138,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<double>("lidar_z", lidar_z_, lidar_z_);
 
     // SLAM pose sub
-    decco_pose_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>(slam_pose_topic_, 10, &TaskManager::deccoPoseCallback, this);
+    slam_pose_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>(slam_pose_topic_, 10, &TaskManager::slamPoseCallback, this);
 
     // Health pubs/subs
     health_pub_ = nh_.advertise<std_msgs::String>("/mapversation/health_report", 10);
@@ -303,7 +303,7 @@ void TaskManager::runTaskManager() {
                 goal_state == actionlib::SimpleClientGoalState::SUCCEEDED
                 ) {
 
-                startRtl88("exploration " + explore_action_client_.getState().getText());
+                startRtl88("exploration " + goal_state.getText());
                 hello_decco_manager_.updateBurnUnit(current_index_, "COMPLETED");
             }
 
@@ -602,7 +602,7 @@ bool TaskManager::getMapTf() {
     map_tf_init_ = true;
 
     ROS_INFO("Waiting for global...");
-    drone_state_manager_.waitForGlobal();
+    ros::topic::waitForMessage<sensor_msgs::NavSatFix>("/mavros/global_position/global", nh_);
     while (home_utm_zone_ < 0) {
         home_utm_zone_ = drone_state_manager_.getUTMZone();
         ros::spinOnce();
@@ -932,7 +932,7 @@ std::string TaskManager::getTaskString(Task task) {
     }
 }
 
-void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose) {
+void TaskManager::slamPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose) {
 
     // Transform decco pose (in slam_map frame) and publish it in mavros_map frame as /mavros/vision_pose/pose
     if (!map_tf_init_) {
