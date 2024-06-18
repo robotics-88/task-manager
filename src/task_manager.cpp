@@ -483,7 +483,10 @@ void TaskManager::checkFailsafes() {
         return;
 
     // Check for manual takeover
-    if (drone_state_manager_.getFlightMode() != drone_state_manager_.getLastSetFlightMode()) {
+    std::string mode = drone_state_manager_.getFlightMode();
+    if (mode == "STABILIZE" || 
+        mode == "ALT_HOLD" ||
+        mode == "POSHOLD") {
         ROS_WARN("WARNING: Manual takeover initiated");
         updateCurrentTask(Task::MANUAL_FLIGHT);
         in_autonomous_flight_ = false;
