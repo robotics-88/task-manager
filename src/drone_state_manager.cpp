@@ -590,7 +590,6 @@ bool DroneStateManager::setMode(std::string mode) {
     set_mode_client_.waitForExistence(service_wait_duration_);
     if (set_mode_client_.call(offb_set_mode) && offb_set_mode.response.mode_sent) {
         ROS_INFO("Mode set to: %s", mode.c_str());
-        last_set_flight_mode_ = mode;
         return true;
     }
     else {

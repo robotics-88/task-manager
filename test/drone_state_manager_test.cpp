@@ -277,11 +277,9 @@ TEST(StateControl, setMode)
 
     std::string mode = "fake_mode";
     ASSERT_FALSE(drone_state_manager.setMode(mode));
-    ASSERT_NE(mode, drone_state_manager.getLastSetFlightMode());
 
     mode = "LOITER";
     ASSERT_TRUE(drone_state_manager.setMode(mode));
-    ASSERT_EQ(mode, drone_state_manager.getLastSetFlightMode());
 }
 
 TEST(StateControl, arm)
