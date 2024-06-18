@@ -75,7 +75,6 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
         }
         geometry_msgs::Polygon poly = polygonToMap(ll_poly);
         subpolygons_.push_back(poly);
-        ROS_INFO("Burn json updated for multiple flights");
     }
     else {
         // Need to fill in
@@ -105,7 +104,6 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
         }
         burn_unit_json_["trips"][0]["flights"] = flightLegArray;
         packageToMapversation("burn_unit_receive", burn_unit_json_);
-        ROS_INFO("Burn json filled in");
     }
 }
 

@@ -112,7 +112,24 @@ class TaskManager {
             bool rosbag_ok;
         } health_checks_;
 
-        // Timeouts for health checks
+        // Timeouts and subscribers for health checks
+        ros::Subscriber path_planner_sub_;
+        ros::Subscriber costmap_sub_;
+        ros::Subscriber lidar_sub_;
+        ros::Subscriber mapir_sub_;
+        ros::Subscriber attollo_sub_;
+        ros::Subscriber rosbag_sub_;
+        ros::Subscriber thermal_sub_;
+        ros::Publisher health_pub_;
+        std::string path_planner_topic_;
+        std::string costmap_topic_;
+        std::string lidar_topic_;
+        std::string attollo_topic_;
+        std::string mapir_rgb_topic_;
+        std::string mapir_topic_;
+        std::string thermal_topic_;
+        std::string rosbag_topic_;
+
         ros::Duration lidar_timeout_;
         ros::Duration slam_timeout_;
         ros::Duration path_timeout_;
@@ -131,9 +148,20 @@ class TaskManager {
         ros::Time last_attollo_stamp_;
         ros::Time last_rosbag_stamp_;
 
+        ros::Timer health_pub_timer_;
         ros::Duration health_check_pub_duration_;
+        ros::Time last_health_pub_stamp_;
 
+        // Flags to control various behavior
         bool simulate_;
+        bool do_slam_;
+        bool enable_autonomy_;
+        bool use_failsafes_;
+
+        bool do_attollo_;
+        bool do_mapir_;
+        bool do_mapir_rgb_;
+        bool do_thermal_;
 
         // Offline handling
         bool offline_;
@@ -143,14 +171,6 @@ class TaskManager {
         // Hello Decco comms
         hello_decco_manager::HelloDeccoManager hello_decco_manager_;
         ros::Subscriber mapver_sub_;
-        // ros::Subscriber target_polygon_subscriber_;
-        // ros::Subscriber target_setpoint_subscriber_;
-        // ros::Subscriber emergency_subscriber_;
-
-        // Safety for enabling control
-        bool do_slam_;
-        bool enable_autonomy_;
-        bool use_failsafes_;
 
         // Control defaults
         float target_altitude_;
@@ -191,8 +211,6 @@ class TaskManager {
         ros::ServiceServer geopoint_service_;
 
         // Heartbeat
-        // ros::Publisher heartbeat_pub_;
-        // ros::Subscriber ui_heartbeat_subscriber_;
         ros::Time last_ui_heartbeat_stamp_;
         float ui_hb_threshold_;
         ros::Timer heartbeat_timer_;
@@ -221,30 +239,6 @@ class TaskManager {
         int takeoff_attempts_;
 
         actionlib::SimpleActionClient<messages_88::ExploreAction> explore_action_client_;
-
-        // Health params, bools, and subscribers (for topics not already present)
-        bool do_attollo_;
-        bool do_mapir_;
-        bool do_mapir_rgb_;
-        bool do_thermal_;
-        
-        ros::Subscriber path_planner_sub_;
-        ros::Subscriber costmap_sub_;
-        ros::Subscriber lidar_sub_;
-        ros::Subscriber mapir_sub_;
-        ros::Subscriber attollo_sub_;
-        ros::Subscriber rosbag_sub_;
-        ros::Subscriber thermal_sub_;
-        ros::Publisher health_pub_;
-        std::string path_planner_topic_;
-        std::string costmap_topic_;
-        std::string lidar_topic_;
-        std::string attollo_topic_;
-        std::string mapir_rgb_topic_;
-        std::string mapir_topic_;
-        std::string thermal_topic_;
-        std::string rosbag_topic_;
-        ros::Timer health_pub_timer_;
 
         // State
         bool is_armed_;

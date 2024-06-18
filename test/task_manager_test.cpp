@@ -154,7 +154,5 @@ int main(int argc, char **argv){
   }
   ros::NodeHandle nh;
 
-  std::cout << "Whattup" << std::endl;
-
   return RUN_ALL_TESTS();
 }

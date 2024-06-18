@@ -215,9 +215,6 @@ TaskManager::TaskManager(ros::NodeHandle& node)
 
     task_manager_timer_ = private_nh_.createTimer(task_manager_loop_duration_,
                                [this](const ros::TimerEvent&) { runTaskManager(); });
-
-    health_pub_timer_ = private_nh_.createTimer(health_check_pub_duration_,
-                               [this](const ros::TimerEvent&) { publishHealth(); });
 }
 
 TaskManager::~TaskManager(){}
@@ -411,11 +408,19 @@ void TaskManager::startExploration() {
 }
 
 void TaskManager::startRtl88(std::string reason) {
+    
     std::string str = "Initializing RTL 88 due to " + reason;
     ROS_INFO("%s", str.c_str());
     cmd_history_.append(str + "\n");
+
     pauseOperations();
+
+    if (drone_state_manager_.getFlightMode() != guided_mode_) {
+        drone_state_manager_.setMode(guided_mode_);
+    }
+
     local_pos_pub_.publish(home_pos_);
+
     updateCurrentTask(Task::RTL_88);
 }
 
@@ -423,17 +428,22 @@ void TaskManager::startFailsafeLanding(std::string reason) {
     std::string str = "Initializing failsafe landing due to " + reason;
     ROS_INFO("%s", str.c_str());
     cmd_history_.append(str + "\n");
+
     pauseOperations();
+
     drone_state_manager_.setMode(land_mode_);
+
     updateCurrentTask(Task::FAILSAFE_LANDING);
-    
+
 }
 
 void TaskManager::startPause(std::string reason) {
     std::string str = "Initializing pause due to " + reason;
     ROS_INFO("%s", str.c_str());
     cmd_history_.append(str + "\n");
+
     drone_state_manager_.setMode(brake_mode_);
+
     updateCurrentTask(Task::PAUSE);
 }
 
@@ -460,62 +470,67 @@ void TaskManager::checkHealth() {
     health_checks_.attollo_ok = now - last_attollo_stamp_ < attollo_timeout_;
     health_checks_.thermal_ok = now - last_thermal_stamp_ < thermal_timeout_;
     health_checks_.rosbag_ok = now - last_rosbag_stamp_ < rosbag_timeout_;
+
+    if (now - last_health_pub_stamp_ > health_check_pub_duration_) {
+        publishHealth();
+        last_health_pub_stamp_ = now;
+    }
 }
 
 void TaskManager::checkFailsafes() {
 
-    if (in_autonomous_flight_) {
+    if (!in_autonomous_flight_)
+        return;
 
-        // Check for manual takeover
-        if (drone_state_manager_.getFlightMode() != drone_state_manager_.getLastSetFlightMode()) {
-            ROS_WARN("WARNING: Manual takeover initiated");
-            updateCurrentTask(Task::MANUAL_FLIGHT);
-            in_autonomous_flight_ = false;
-            pauseOperations();
-            return;
-        }
+    // Check for manual takeover
+    if (drone_state_manager_.getFlightMode() != drone_state_manager_.getLastSetFlightMode()) {
+        ROS_WARN("WARNING: Manual takeover initiated");
+        updateCurrentTask(Task::MANUAL_FLIGHT);
+        in_autonomous_flight_ = false;
+        pauseOperations();
+        return;
+    }
 
-        // Check for failsafe landing conditions
-        std::string failsafe_reason = "";
-        bool need_failsafe_landing = false;
-        if (!health_checks_.slam_ok) {
-            failsafe_reason += "SLAM unhealthy, ";
-            need_failsafe_landing = true;
-        }
-        if (!health_checks_.path_ok) {
-            failsafe_reason += "Path unhealthy, ";
-            need_failsafe_landing = true;
-        }
-        if (need_failsafe_landing) {
-            if (current_task_ != Task::FAILSAFE_LANDING) {
-                if (use_failsafes_) {
-                    startFailsafeLanding(failsafe_reason);
-                }
-                else {
-                    if (current_task_ != Task::PAUSE) {
-                        startPause("failsafe landing requested for " + failsafe_reason + "but failsafes not active");
-                    }
+    // Check for failsafe landing conditions
+    std::string failsafe_reason = "";
+    bool need_failsafe_landing = false;
+    if (!health_checks_.slam_ok) {
+        failsafe_reason += "SLAM unhealthy, ";
+        need_failsafe_landing = true;
+    }
+    if (!health_checks_.path_ok) {
+        failsafe_reason += "Path unhealthy, ";
+        need_failsafe_landing = true;
+    }
+    if (need_failsafe_landing) {
+        if (current_task_ != Task::FAILSAFE_LANDING) {
+            if (use_failsafes_) {
+                startFailsafeLanding(failsafe_reason);
+            }
+            else {
+                if (current_task_ != Task::PAUSE) {
+                    ROS_WARN("Failsafe landing requested for %s but failsafes not active", failsafe_reason.c_str());
                 }
             }
-            // Return here because this is the most extreme failsafe and we don't need to check others
-            return;
         }
+        // Return here because this is the most extreme failsafe and we don't need to check others
+        return;
+    }
 
-        // Check for RTL 88 conditions
-        // For now, only battery low will trigger this, but using this structure for future additions
-        std::string rtl_88_reason = "";
-        bool need_rtl_88 = false;
-        if (!health_checks_.battery_ok) {
-            rtl_88_reason += "battery level low, ";
-            need_rtl_88 = true;
-        } 
-        if (need_rtl_88 &&
-            current_task_ != Task::RTL_88 &&
-            current_task_ != Task::LANDING &&
-            current_task_ != Task::COMPLETE) {
+    // Check for RTL 88 conditions
+    // For now, only battery low will trigger this, but using this structure for future additions
+    std::string rtl_88_reason = "";
+    bool need_rtl_88 = false;
+    if (!health_checks_.battery_ok) {
+        rtl_88_reason += "battery level low, ";
+        need_rtl_88 = true;
+    } 
+    if (need_rtl_88 &&
+        current_task_ != Task::RTL_88 &&
+        current_task_ != Task::LANDING &&
+        current_task_ != Task::COMPLETE) {
 
-            startRtl88(rtl_88_reason);
-        }
+        startRtl88(rtl_88_reason);
     }
 }
 
