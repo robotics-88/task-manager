@@ -17,7 +17,11 @@ To build with tests, run
 
 To run the tests, launch the respective test file with, e.g.,
 
-`rostest task_manager_88 tests_drone_state.launch`
+`rostest task_manager tests_hellodecco.launch`
+
+To see print statements at levels lower than WARN, use:
+
+`rostest task_manager tests_hellodecco.launch --text`
 
 Note that the drone state tests require ArduPilot to first be running in SITL. This can either be through Unreal/AirSim, or the simpler ArduPilot SITL. For the latter, in the ArduCopter directory run
 

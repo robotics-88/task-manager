@@ -17,9 +17,7 @@
     <arg name="lidar_z" default="0.11"/>
 
     <arg name="enable_autonomy" default="false"/>
-    <arg name="enable_exploration" default="false"/>
     <arg name="use_failsafes" default="false"/>
-    <arg name="ardupilot" default="true"/>
     
     <arg name="default_alt" default="2.0"/>
     <arg name="min_alt" default="2.0"/>
@@ -48,17 +46,9 @@
     <arg name="simulate" default="false"/>
     <arg name="offline" default="false"/>
 
-    <!-- Params for the case when UTM and map yaw need to be set manually from prior bag -->
-    <arg name="explicit_global" default="false"/>
-    <arg name="map_yaw" default="-1.49837"/>
-    <arg name="utm_y" default="3354710"/>
-    <arg name="utm_x" default="243885"/>
-    <arg name="utm_zone" default="15"/>
-    
-    <node pkg="task_manager_88" type="task_manager" name="task_manager" output="screen">
+    <node pkg="task_manager" type="task_manager" name="task_manager" output="screen">
         <param name="do_slam" value="$(arg do_slam)"/>
         <param name="enable_autonomy" value="$(arg enable_autonomy)"/>
-        <param name="enable_exploration" value="$(arg enable_exploration)"/>
         <param name="use_failsafes" value="$(arg use_failsafes)"/>
         <param name="goal_topic" value="$(arg goal_topic)"/>
         <param name="do_record" value="$(arg do_record)"/>
@@ -79,18 +69,12 @@
         <param name="min_alt" value="$(arg min_alt)"/>
         <param name="max_alt" value="$(arg max_alt)"/>
         <param name="max_dist_to_polygon" value="$(arg max_dist_to_polygon)"/>
-        <param name="ardupilot" value="$(arg ardupilot)"/>
         <param name="flightleg_area_acres" value="$(arg flightleg_area_acres)"/>
         <param name="all_stream_rate" value="5"/>
         <param name="imu_rate" value="120"/>
         <param name="local_pos_rate" value="60"/>
         <param name="simulate" value="$(arg simulate)"/>
         <param name="offline" value="$(arg offline)"/>
-        <param name="explicit_global" value="$(arg explicit_global)"/>
-        <param name="map_yaw" value="$(arg map_yaw)"/>
-        <param name="utm_y" value="$(arg utm_y)"/>
-        <param name="utm_x" value="$(arg utm_x)"/>
-        <param name="utm_zone" value="$(arg utm_zone)"/>
         <param name="battery_size" value="5.2"/> <!-- Battery size in amp hours -->
         <param name="estimated_current" value="20"/> <!-- Starting estimate for current consumption -->
         <param name="estimated_drone_speed" value="2.0"/> <!-- m/s -->

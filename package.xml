@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>task_manager_88</name>
+  <name>task_manager</name>
   <version>1.0.0</version>
   <license>commercial</license>
 
-  <description>Monarch product main: Handles which tasks and capabilities to start, and when, based on UI connection and drone status.</description>
+  <description>Task manager handles which tasks and capabilities to start and when, based on UI connection and drone status.</description>
 
   <author email="erin@robotics88.com">Erin Linebarger</author>
   <maintainer email="erin@robotics88.com">Erin Linebarger</maintainer>
@@ -13,6 +13,7 @@
 
   <depend>actionlib</depend>
   <depend>geometry_msgs</depend>
+  <depend>mavros</depend>
   <depend>messages_88</depend>
   <depend>pcl_ros</depend>
   <depend>roscpp</depend>

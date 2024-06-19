@@ -1,0 +1,5 @@
+<?xml version="1.0"?>
+<launch>
+    <node pkg="task_manager" name="task_manager" type="task_manager"/>
+    <test pkg="task_manager" test-name="tests_hellodecco" type="tests_hellodecco"/>
+</launch>

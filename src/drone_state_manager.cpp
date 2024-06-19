@@ -16,10 +16,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <geometry_msgs/PoseStamped.h>
 #include <visualization_msgs/Marker.h>
 
-#include <GeographicLib/GeoCoords.hpp>
-#include <GeographicLib/Geodesic.hpp>
-#include <GeographicLib/UTMUPS.hpp>
-
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>  
@@ -32,44 +28,50 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
   , offline_(false)
   , simulate_(false)
   , do_slam_(false)
-  , autonomy_active_(false)
   , enable_autonomy_(false)
-  , enable_exploration_(false)
-  , target_altitude_(2.0)
   , ardupilot_(true)
-  , mavros_global_pos_topic_("/mavros/global_position/global")
-  , mavros_state_topic_("/mavros/state")
-  , mavros_alt_topic_("/mavros/global_position/rel_alt")
-  , arming_topic_("/mavros/cmd/arming")
-  , set_mode_topic_("/mavros/set_mode")
-  , takeoff_topic_("/mavros/cmd/takeoff")
-  , compass_count_(0)
-  , altitude_set_(false)
   , connected_(false)
   , armed_(false)
   , in_air_(false)
   , in_guided_mode_(false)
+  , compass_received_(false)
+  , current_altitude_(-1.0)
+  , target_altitude_(2.0)
   , service_wait_duration_(2.0)
   , detected_utm_zone_(-1)
   , utm_set_(false)
+  , battery_percentage_(0.0)
+  , battery_voltage_(0.0)
   , battery_size_(5.2)
   , estimated_current_(20.0)
+  , estimated_flight_time_remaining_(0.0)
+  , imu_averaging_n_(100)
+  , compass_count_(0)
+  , imu_count_(0)
+  , local_pos_count_(0)
+  , battery_count_(0)
+  , imu_rate_ok_(false)
+  , battery_rate_ok_(false)
+  , check_msg_rates_counter_(0)
+  , compass_wait_counter_(0)
   , msg_rate_timer_dt_(5.0)
   , imu_rate_(120.0)
   , local_pos_rate_(60.0)
   , battery_rate_(10.0)
   , all_stream_rate_(5.0)
+  , param_fetch_complete_(false)
+  , heading_src_ok_(false)
+  , stream_rates_ok_(false)
+  , geofence_clear_ok_(false)
+  , mission_clear_ok_(false)
+  , compass_init_ok_(false)
+  , param_set_ok_(false)
+  , drone_initialized_(false)
 {
     // Set params from launch file 
     private_nh_.param<float>("default_alt", target_altitude_, target_altitude_);
     private_nh_.param<float>("battery_size", battery_size_, battery_size_);
     private_nh_.param<float>("estimated_current", estimated_current_, estimated_current_);
-    private_nh_.param<std::string>("mavros_global_pos_topic", mavros_global_pos_topic_, mavros_global_pos_topic_);
-    private_nh_.param<std::string>("mavros_state_topic", mavros_state_topic_, mavros_state_topic_);
-    private_nh_.param<std::string>("mavros_arming_topic", arming_topic_, arming_topic_);
-    private_nh_.param<std::string>("mavros_set_mode_topic", set_mode_topic_, set_mode_topic_);
-    private_nh_.param<std::string>("mavros_takeoff_topic", takeoff_topic_, takeoff_topic_);
-    private_nh_.param<std::string>("mavros_alt_topic", mavros_alt_topic_, mavros_alt_topic_);
     private_nh_.param<bool>("ardupilot", ardupilot_, ardupilot_);
     private_nh_.param<float>("imu_rate", imu_rate_, imu_rate_);
     private_nh_.param<float>("local_pos_rate", local_pos_rate_, local_pos_rate_);
@@ -97,13 +99,14 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
     safety_area_viz_ = nh_.advertise<geometry_msgs::PolygonStamped>("safety_box", 10);
 
     // Set subscribers for Mavros
-    mavros_global_pos_subscriber_ = nh_.subscribe<sensor_msgs::NavSatFix>(mavros_global_pos_topic_, 10, &DroneStateManager::globalPositionCallback, this);
+    mavros_global_pos_subscriber_ = nh_.subscribe<sensor_msgs::NavSatFix>("/mavros/global_position/global", 10, &DroneStateManager::globalPositionCallback, this);
     mavros_local_pos_subscriber_ = nh_.subscribe<geometry_msgs::PoseStamped>("/mavros/local_position/pose", 10, &DroneStateManager::localPositionCallback, this);
-    mavros_state_subscriber_ = nh_.subscribe<mavros_msgs::State>(mavros_state_topic_, 10, &DroneStateManager::statusCallback, this);
-    mavros_alt_subscriber_ = nh_.subscribe<std_msgs::Float64>(mavros_alt_topic_, 10, &DroneStateManager::altitudeCallback, this);
+    mavros_state_subscriber_ = nh_.subscribe<mavros_msgs::State>("/mavros/state", 10, &DroneStateManager::statusCallback, this);
+    mavros_alt_subscriber_ = nh_.subscribe<std_msgs::Float64>("/mavros/global_position/rel_alt", 10, &DroneStateManager::altitudeCallback, this);
     mavros_imu_subscriber_ = nh_.subscribe<sensor_msgs::Imu>("/mavros/imu/data", 10, &DroneStateManager::imuCallback, this);
     mavros_compass_subscriber_ = nh_.subscribe<std_msgs::Float64>("/mavros/global_position/compass_hdg", 10, &DroneStateManager::compassCallback, this);
     mavros_battery_subscriber_ = nh_.subscribe<sensor_msgs::BatteryState>("/mavros/battery", 10, &DroneStateManager::batteryCallback, this);
+    mavros_sys_status_subscriber_ = nh_.subscribe<mavros_msgs::SysStatus>("/mavros/sys_status", 10, &DroneStateManager::sysStatusCallback, this);
 
     // Slam pose subscriber
     slam_pose_subscriber_ = nh_.subscribe<geometry_msgs::PoseStamped>("/decco/pose", 10, &DroneStateManager::slamPoseCallback, this);
@@ -121,19 +124,10 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
 
     local_pos_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/mavros/setpoint_position/local", 10);
 
-    if (ardupilot_) {
-        land_mode_ = "LAND";
-        loiter_mode_ = "LOITER";
-        rtl_mode_ = "RTL";
-        guided_mode_ = "GUIDED";
-    }
-    else {
-        land_mode_ = "AUTO.LAND";
-        loiter_mode_ = "AUTO.LOITER";
-        rtl_mode_ = "AUTO.RTL";
-        guided_mode_ = "OFFBOARD";
-        setMode("POSCTL");
-    }
+    land_mode_ = "LAND";
+    brake_mode_ = "BRAKE";
+    rtl_mode_ = "RTL";
+    guided_mode_ = "GUIDED";
 
     // fill recent current vector with starting estimated current from param
     for (int i = 0; i < 10; i++) {
@@ -327,7 +321,6 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
             compass_init_ok_ = true;
             home_compass_hdg_ = compass_hdg_;
             attempts_ = 0;
-            ROS_INFO("Initial compass heading: %f", home_compass_hdg_);
             ROS_INFO("Setting Arducopter params");
         }
     }
@@ -349,10 +342,10 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
             // Check success
             if (!param_set_srv.response.success) {
                 if (attempts_ == 3) {
-                    ROS_ERROR("Param set of param %s failed after 3 attempts", it->first);
+                    ROS_ERROR("Param set of param %s failed after 3 attempts", it->first.c_str());
                     drone_init_timer_.stop();
                 }
-                ROS_WARN("Param %s set failed, trying again in 1s", it->first);
+                ROS_WARN("Param %s set failed, trying again in 1s", it->first.c_str());
                 attempts_++;
                 return;
             }
@@ -446,64 +439,15 @@ void DroneStateManager::checkMsgRates(const ros::TimerEvent &event) {
 void DroneStateManager::setAutonomyEnabled(bool enabled) {
     enable_autonomy_ = enabled;
     if (enable_autonomy_) {
-        arming_client_ = nh_.serviceClient<mavros_msgs::CommandBool>(arming_topic_);
-        set_mode_client_ = nh_.serviceClient<mavros_msgs::SetMode>(set_mode_topic_);
-        takeoff_client_ = nh_.serviceClient<mavros_msgs::CommandTOL>(takeoff_topic_);
+        arming_client_ = nh_.serviceClient<mavros_msgs::CommandBool>("/mavros/cmd/arming");
+        set_mode_client_ = nh_.serviceClient<mavros_msgs::SetMode>("/mavros/set_mode");
+        takeoff_client_ = nh_.serviceClient<mavros_msgs::CommandTOL>("/mavros/cmd/takeoff");
     }
     else {
         arming_client_.shutdown();
         set_mode_client_.shutdown();
         takeoff_client_.shutdown();
     }
-}
-
-void DroneStateManager::setExplorationEnabled(bool enabled) {
-    enable_exploration_ = enabled;
-}
-
-geometry_msgs::PoseStamped DroneStateManager::getCurrentSlamPosition() {
-    return current_slam_pose_;
-}
-
-geometry_msgs::PoseStamped DroneStateManager::getCurrentLocalPosition() {
-    return current_pose_;
-}
-
-sensor_msgs::NavSatFix DroneStateManager::getCurrentGlobalPosition() {
-    return current_ll_;
-}
-
-void DroneStateManager::waitForGlobal() {
-    ros::topic::waitForMessage<sensor_msgs::NavSatFix>(mavros_global_pos_topic_, nh_);
-}
-
-int DroneStateManager::getUTMZone() {
-    return detected_utm_zone_;
-}
-
-double DroneStateManager::getAltitudeAGL() {
-    if (altitude_set_) {
-        return current_altitude_;
-    }
-    else {
-        return -1;
-    }
-}
-
-std::string DroneStateManager::getFlightMode() {
-    return current_mode_;
-}
-
-bool DroneStateManager::getIsInAir() {
-    return in_air_;
-}
-
-bool DroneStateManager::getAutonomyActive() {
-    return autonomy_active_;
-}
-
-bool DroneStateManager::getIsArmed() {
-    return armed_;
 }
 
 bool DroneStateManager::getMapYaw(double &yaw) {
@@ -513,15 +457,26 @@ bool DroneStateManager::getMapYaw(double &yaw) {
     return compass_init_ok_;
 }
 
-double DroneStateManager::getCompass() {
-    return compass_hdg_;
-}
+bool DroneStateManager::getAveragedOrientation(geometry_msgs::Quaternion &orientation) {
 
-bool DroneStateManager::getImu(sensor_msgs::Imu &imu) {
-    if (imu_count_ < imu_init_threshold_) 
+    if (imu_averaging_vec_.size() < imu_averaging_n_) {
+        ROS_WARN("IMU does not have enough samples for proper averaging");
         return false;
-    
-    imu = mavros_imu_init_;
+    }
+
+    // Calculate average of vector of recent measurements
+    for (auto &meas : imu_averaging_vec_) {
+        orientation.x += meas.orientation.x;
+        orientation.y += meas.orientation.y;
+        orientation.z += meas.orientation.z;
+        orientation.w += meas.orientation.w;
+    }
+
+    orientation.x /= imu_averaging_n_;
+    orientation.y /= imu_averaging_n_;
+    orientation.z /= imu_averaging_n_;
+    orientation.w /= imu_averaging_n_;
+
     return true;
 }
 
@@ -544,18 +499,12 @@ void DroneStateManager::localPositionCallback(const geometry_msgs::PoseStamped::
 void DroneStateManager::imuCallback(const sensor_msgs::Imu::ConstPtr &msg) {
     current_imu_ = *msg;
     imu_count_++;
-    if (imu_count_ < imu_init_threshold_) {
-        mavros_imu_init_.orientation.x += current_imu_.orientation.x;
-        mavros_imu_init_.orientation.y += current_imu_.orientation.y;
-        mavros_imu_init_.orientation.z += current_imu_.orientation.z;
-        mavros_imu_init_.orientation.w += current_imu_.orientation.w;
+
+    // Add to IMU array for averaging
+    if (imu_averaging_vec_.size() == imu_averaging_n_) {
+        imu_averaging_vec_.pop_front();
     }
-    else if (imu_count_ == imu_init_threshold_) {
-        mavros_imu_init_.orientation.x /= imu_init_threshold_;
-        mavros_imu_init_.orientation.y /= imu_init_threshold_;
-        mavros_imu_init_.orientation.z /= imu_init_threshold_;
-        mavros_imu_init_.orientation.w /= imu_init_threshold_;
-    }
+    imu_averaging_vec_.push_back(current_imu_);
 }
 
 void DroneStateManager::compassCallback(const std_msgs::Float64::ConstPtr & msg) {
@@ -568,12 +517,13 @@ void DroneStateManager::batteryCallback(const sensor_msgs::BatteryState::ConstPt
     battery_count_++;
 
     float current = -msg->current; // Mavros current is negative
+    battery_voltage_ = msg->voltage;
 
     // If current is low, we can estimate battery percentage from voltage. 
     // We use this 'last resting percent' as the starting point for calculations for 
     // remaining battery life. 
     if (current < 1.f) {
-        last_resting_percent_ = calculateBatteryPercentage(msg->voltage);
+        last_resting_percent_ = calculateBatteryPercentage(battery_voltage_);
         last_resting_percent_time_ = ros::Time::now();
         current_drawn_since_resting_percent_ = 0.f;
     }
@@ -627,48 +577,11 @@ void DroneStateManager::statusCallback(const mavros_msgs::State::ConstPtr & msg)
 void DroneStateManager::altitudeCallback(const std_msgs::Float64::ConstPtr & msg) {
     in_air_ = msg->data > 1.0 && armed_;
     current_altitude_ = msg->data;
-    if (!altitude_set_) {
-        altitude_set_ = true;
-    }
 }
 
-bool DroneStateManager::setGuided() {
-    if (in_guided_mode_) {
-        return true;
-    }
-    if (!enable_autonomy_) {
-        ROS_WARN("Autonomy disabled in setGuided.");
-        return false;
-    }
-    if (!ardupilot_) {
-        //the setpoint publishing rate MUST be faster than 2Hz
-        ros::Rate rate(20.0);
-        geometry_msgs::PoseStamped pose;
-        pose.pose.position.x = 0;
-        pose.pose.position.y = 0;
-        pose.pose.position.z = 2;
-
-        // PX4 does not accept a switch to offboard mode unless points are already streaming
-        for(int i = 100; ros::ok() && i > 0; --i){
-            local_pos_pub_.publish(pose);
-            rate.sleep();
-        }
-    }
-    mavros_msgs::SetMode offb_set_mode;
-    offb_set_mode.request.custom_mode = guided_mode_;
-
-    set_mode_client_.waitForExistence(service_wait_duration_);
-    if( set_mode_client_.call(offb_set_mode) && offb_set_mode.response.mode_sent){
-        ROS_INFO("Offboard enabled");
-        autonomy_active_ = true;
-        return true;
-    }
-    else {
-        ROS_WARN("Guided mode failed.");
-        autonomy_active_ = false;
-        return false;
-    }
-
+void DroneStateManager::sysStatusCallback(const mavros_msgs::SysStatus::ConstPtr &msg) {
+    // Bitwise check of healthy sensors vs enabled sensors
+    ready_to_arm_ = (msg->sensors_health & msg->sensors_enabled) == msg->sensors_enabled;
 }
 
 bool DroneStateManager::setMode(std::string mode) {
@@ -676,18 +589,19 @@ bool DroneStateManager::setMode(std::string mode) {
     offb_set_mode.request.custom_mode = mode;
     set_mode_client_.waitForExistence(service_wait_duration_);
     if (set_mode_client_.call(offb_set_mode) && offb_set_mode.response.mode_sent) {
-        ROS_INFO("Mode enabled: %s", mode.c_str());
+        ROS_INFO("Mode set to: %s", mode.c_str());
         return true;
     }
     else {
-        ROS_WARN("Mode failed: %s", mode.c_str());
+        ROS_WARN("Mode set failed: %s", mode.c_str());
         return false;
     }
 }
 
 bool DroneStateManager::arm() {
     if (armed_) {
-        return true;
+        ROS_WARN("Not arming, already armed");
+        return false;
     }
     if (!enable_autonomy_) {
         ROS_WARN("Autonomy disabled in arming.");
@@ -696,30 +610,38 @@ bool DroneStateManager::arm() {
     mavros_msgs::CommandBool arm_cmd;
     arm_cmd.request.value = true;
     arming_client_.waitForExistence(service_wait_duration_);
-    if( arming_client_.call(arm_cmd) && arm_cmd.response.success){
+    if(arming_client_.call(arm_cmd) && arm_cmd.response.success){
         ROS_INFO("Vehicle armed");
         return true;
     }
     else {
-        ROS_INFO("Arming failed");
+        ROS_WARN("Arming failed");
         return false;
     }
 }
 
 bool DroneStateManager::takeOff() {
-    if (in_air_) {
-        ROS_WARN("Takeoff command received while in air.");
-        return true;
-    }
-    if (!enable_autonomy_) {
-        ROS_WARN("Autonomy disabled in takeoff.");
+
+    ROS_INFO("Requesting takeoff");
+
+    if (!in_guided_mode_) {
+        ROS_WARN("Not taking off. Not in guided mode");
+        setMode(guided_mode_);
         return false;
     }
-    if (!in_guided_mode_) {
-        setGuided();
+    if (in_air_) {
+        ROS_WARN("Not taking off. Command received while in air.");
+        return false;
+    }
+    if (!enable_autonomy_) {
+        ROS_WARN("Not taking off. Autonomy disabled");
+        return false;
     }
     if (!armed_) {
-        arm();
+        if (!arm()) {
+            ROS_WARN("Not taking off. Arming failed");
+            return false;
+        }
     }
 
     mavros_msgs::CommandTOL takeoff_request;
@@ -727,61 +649,19 @@ bool DroneStateManager::takeOff() {
     if (!ros::param::get("/task_manager/default_alt", target_altitude_))
         ROS_WARN("Drone state manager cannot get default altitude param");
 
-    ROS_INFO("Taking off to %fm", target_altitude_);
+    ROS_INFO("Requesting takeoff to %fm", target_altitude_);
     takeoff_request.request.altitude = target_altitude_;
     takeoff_client_.waitForExistence(service_wait_duration_);
-    int attempts = 0;
-    while (!in_air_ && !takeoff_request.response.success && attempts < 10)
-    {
-        ros::Duration(.1).sleep();
-        takeoff_client_.call(takeoff_request);
-        ros::spinOnce();
-        attempts++;
-    }
-    if (!(in_air_ || takeoff_request.response.success)) {
-        return false;
-    }
-    return true;
-}
-
-bool DroneStateManager::readyForAction() {
-    return (connected_ && armed_ && in_air_ && in_guided_mode_);
-}
-
-bool DroneStateManager::getReadyForAction() {
-    int attempts = 0;
-    while (!altitude_set_ && attempts < 20) {
-        ros::spinOnce();
-        attempts++;
-    }
-    if (in_air_) {
+    takeoff_client_.call(takeoff_request);
+    if (takeoff_client_.call(takeoff_request) && takeoff_request.response.success) {
+        ROS_INFO("Vehicle takeoff succeeded");
         return true;
     }
-    if (!enable_autonomy_) {
-        ROS_WARN("Autonomy disabled in getReady.");
-        return false;;
+    else {
+        ROS_WARN("Vehicle takeoff failed");
+        return false;
     }
-    bool guided = false, armed = false, takeoff = false;
-    if (!in_guided_mode_) {
-        ROS_INFO("setting guided mode to %s", guided_mode_.c_str());
-        guided = setGuided();
-        ros::spinOnce();
-    }
-    if (!armed_) {
-        ROS_INFO("arming");
-        armed = arm();
-        ros::spinOnce();
-    }
-    if (!in_air_) {
-        ros::spinOnce();
-        ros::Duration(5).sleep();
-        takeoff = takeOff();
-        ros::spinOnce();
-        ros::Duration(10).sleep();
-    }
-    return guided && armed && (in_air_ || takeoff);
 }
-
 
 float DroneStateManager::calculateBatteryPercentage(float voltage) {
 

@@ -1,8 +1,0 @@
-<?xml version="1.0"?>
-<launch>
-    <include file="$(find vehicle_launch)/launch/apm.launch">
-        <arg name="fcu_url" value="udp://127.0.0.1:14551@"/>
-    </include>
-    <node pkg="task_manager_88" name="task_manager" type="task_manager"/>
-    <test pkg="task_manager_88" test-name="tests_takeoff" type="tests_takeoff"/>
-</launch>

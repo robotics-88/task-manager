@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(task_manager_88)
+project(task_manager)
 
 ## Find catkin macros and libraries
 find_package(catkin REQUIRED COMPONENTS
@@ -8,6 +8,7 @@ find_package(catkin REQUIRED COMPONENTS
   bag_recorder
   geometry_msgs
   livox_ros_driver
+  mavros
   mavros_msgs
   messages_88
   pcl_ros
@@ -91,10 +92,25 @@ install(DIRECTORY launch/
 if(CATKIN_ENABLE_TESTING)
   find_package(roslaunch REQUIRED)
 
+  add_executable(test_services test/test_services.cpp)
+  target_link_libraries(test_services ${catkin_LIBRARIES})
+
   # test all launch files
   roslaunch_add_file_check(launch)
 
   find_package(rostest REQUIRED)
+
+  add_rostest_gtest(tests_task_manager
+    launch/test/tests_task_manager.launch 
+    src/task_manager.cpp
+    src/hello_decco_manager.cpp
+    src/drone_state_manager.cpp
+    test/task_manager_test.cpp
+  )
+  target_link_libraries(tests_task_manager 
+    ${catkin_LIBRARIES}
+    ${GeographicLib_LIBRARIES}
+  )
 
   add_rostest_gtest(tests_drone_state
     launch/test/tests_drone_state.launch 
@@ -103,14 +119,18 @@ if(CATKIN_ENABLE_TESTING)
   )
   target_link_libraries(tests_drone_state 
     ${catkin_LIBRARIES}
+    ${GeographicLib_LIBRARIES}
   )
 
-  add_rostest_gtest(tests_takeoff
-    launch/test/tests_takeoff.launch 
-    src/drone_state_manager.cpp 
-    test/drone_takeoff_test.cpp
+  add_rostest_gtest(tests_hellodecco
+    launch/test/tests_hellodecco.launch 
+    src/hello_decco_manager.cpp 
+    test/hellodecco_test.cpp
   )
-  target_link_libraries(tests_takeoff 
+  target_link_libraries(tests_hellodecco 
     ${catkin_LIBRARIES}
+    ${GeographicLib_LIBRARIES}
   )
+
+  
 endif()

@@ -27,6 +27,8 @@ HelloDeccoManager::HelloDeccoManager(ros::NodeHandle& node)
     double flightleg_acres;
     private_nh_.param<double>("flightleg_area_acres", flightleg_acres, flightleg_acres);
     flightleg_area_m2_ = 4046.86 * flightleg_acres;
+    private_nh_.param<std::string>("mavros_map_frame", mavros_map_frame_, mavros_map_frame_);
+    private_nh_.param<std::string>("slam_map_frame", slam_map_frame_, slam_map_frame_);
 
     mapver_pub_ = nh_.advertise<std_msgs::String>("/mapversation/to_hello_decco", 10);
     mavros_geofence_client_ = nh_.serviceClient<mavros_msgs::WaypointPush>("/mavros/geofence/push");
@@ -34,11 +36,6 @@ HelloDeccoManager::HelloDeccoManager(ros::NodeHandle& node)
 }
 
 HelloDeccoManager::~HelloDeccoManager() {
-}
-
-void HelloDeccoManager::setFrames(std::string map_frame, std::string slam_frame) {
-    mavros_map_frame_ = map_frame;
-    slam_map_frame_ = slam_frame;
 }
 
 void HelloDeccoManager::packageToMapversation(std::string topic, json gossip) {
@@ -57,7 +54,7 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
     // TODO check trip type to decide what data is recording? Or do that on the HD side?
     // Parse data
     burn_unit_json_ = msgJson;
-    std::cout << "burn json received as: \n" << burn_unit_json_.dump(4) << std::endl;
+    ROS_INFO("Burn unit received");
     std_msgs::String burn_string;
     geometry_msgs::Polygon poly = polygonFromJson(burn_unit_json_["polygon"]);
     // Check if already filled in
@@ -78,7 +75,6 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
         }
         geometry_msgs::Polygon poly = polygonToMap(ll_poly);
         subpolygons_.push_back(poly);
-        std::cout << "burn json was: \n" << burn_unit_json_.dump(4) << std::endl;
     }
     else {
         // Need to fill in
@@ -108,7 +104,6 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
         }
         burn_unit_json_["trips"][0]["flights"] = flightLegArray;
         packageToMapversation("burn_unit_receive", burn_unit_json_);
-        std::cout << "burn json filled in: \n" << burn_unit_json_.dump(4) << std::endl;
     }
 }
 
@@ -163,7 +158,7 @@ void HelloDeccoManager::updateBurnUnit(int index, std::string flight_status) {
         burn_unit_json_["trips"][0]["flights"][index]["duration"] = std::to_string(end_time_ - start_time_);
     }
     packageToMapversation("burn_unit_receive", burn_unit_json_);
-    std::cout << "burn json filled in: \n" << burn_unit_json_.dump(4) << std::endl;
+    ROS_INFO("Burn json filled in");
 }
 
 geometry_msgs::Polygon HelloDeccoManager::polygonFromJson(json jsonPolygon) {
@@ -212,8 +207,6 @@ geometry_msgs::Polygon HelloDeccoManager::polygonToMap(const geometry_msgs::Poly
         poly_point.x = coord.Easting() + utm_x_offset_;
         poly_point.y = coord.Northing() + utm_y_offset_;
         map_polygon.points.push_back(poly_point);
-
-        ROS_INFO("map point was (%f, %f)", poly_point.x, poly_point.y);
     }
     return map_polygon;
 }
@@ -250,7 +243,6 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::Polygon &polygon)
 }
 
 int HelloDeccoManager::polygonNumFlights(const geometry_msgs::Polygon &polygon) {
-    // TODO: add num flights based on fixed flight leg area
     GeographicLib::Geodesic geod(GeographicLib::Constants::WGS84_a(), GeographicLib::Constants::WGS84_f());
     // Alternatively: const Geodesic& geod = Geodesic::WGS84();
     GeographicLib::PolygonArea poly(geod);
@@ -272,7 +264,6 @@ int HelloDeccoManager::polygonNumFlights(const geometry_msgs::Polygon &polygon) 
     else {
         subpolygons_.push_back(map_region_);
     }
-    std::cout << "legs " << num_legs << ", perimeter " << perimeter << " m, area " << area << "m2 \n";
     return num_legs;
 }
 
@@ -307,89 +298,53 @@ void HelloDeccoManager::visualizeLegs() {
     }
 }
 
-int HelloDeccoManager::concaveToMinimalConvexPolygons() {
-    cxd::ConcavePolygon concavePoly(vertices_);
-    concavePoly.convexDecomp();
-    std::vector<cxd::ConcavePolygon > subPolygonList;
-    concavePoly.returnLowestLevelPolys(subPolygonList);
-    int num_legs = concavePoly.getNumberSubPolys();
-    for (int nn = 0; nn < subPolygonList.size(); nn++) {
-        // Set up subpolygon viz
-        visualization_msgs::Marker m;
-        m.scale.x = 2.0;
-        m.header.frame_id = mavros_map_frame_;
-        m.header.stamp = ros::Time::now();
-        m.type = visualization_msgs::Marker::LINE_STRIP;
-        m.action = visualization_msgs::Marker::ADD;
-        m.color.a = 1.0;
-        m.color.r = 0.0;
-        m.color.g = 1.0;
-        m.color.b = 0.0;
-        m.id = nn + 1;
+// TODO decide whether to hang on to this polygon splitter
+// int HelloDeccoManager::concaveToMinimalConvexPolygons() {
+//     cxd::ConcavePolygon concavePoly(vertices_);
+//     concavePoly.convexDecomp();
+//     std::vector<cxd::ConcavePolygon > subPolygonList;
+//     concavePoly.returnLowestLevelPolys(subPolygonList);
+//     int num_legs = concavePoly.getNumberSubPolys();
+//     for (int nn = 0; nn < subPolygonList.size(); nn++) {
+//         // Set up subpolygon viz
+//         visualization_msgs::Marker m;
+//         m.scale.x = 2.0;
+//         m.header.frame_id = mavros_map_frame_;
+//         m.header.stamp = ros::Time::now();
+//         m.type = visualization_msgs::Marker::LINE_STRIP;
+//         m.action = visualization_msgs::Marker::ADD;
+//         m.color.a = 1.0;
+//         m.color.r = 0.0;
+//         m.color.g = 1.0;
+//         m.color.b = 0.0;
+//         m.id = nn + 1;
 
-        // Compute subpolys
-        std::vector<cxd::Vertex > subPolyVerts = subPolygonList.at(nn).getVertices();
-        geometry_msgs::Polygon geom_polygon;
-        std::vector<geometry_msgs::Point32> geom_points;
-        for (int vv = 0; vv < subPolyVerts.size(); vv++) {
-            geometry_msgs::Point32 pt;
-            pt.x = subPolyVerts.at(vv).position.x;
-            pt.y = subPolyVerts.at(vv).position.y;
-            pt.z = 0;
-            geom_points.push_back(pt);
+//         // Compute subpolys
+//         std::vector<cxd::Vertex > subPolyVerts = subPolygonList.at(nn).getVertices();
+//         geometry_msgs::Polygon geom_polygon;
+//         std::vector<geometry_msgs::Point32> geom_points;
+//         for (int vv = 0; vv < subPolyVerts.size(); vv++) {
+//             geometry_msgs::Point32 pt;
+//             pt.x = subPolyVerts.at(vv).position.x;
+//             pt.y = subPolyVerts.at(vv).position.y;
+//             pt.z = 0;
+//             geom_points.push_back(pt);
 
-            // Add marker
-            geometry_msgs::Point p;
-            p.x = pt.x;
-            p.y = pt.y;
-            m.points.push_back(p);
-        }
-        geom_polygon.points = geom_points;
-        subpolygons_.push_back(geom_polygon);
-        // Repost first marker at end to close the loop
-        geometry_msgs::Point p = m.points.at(0);
-        m.points.push_back(p);
-        map_region_pub_.publish(m);
-    }
-    return num_legs;
-}
-
-// geometry_msgs::Polygon HelloDeccoManager::transformPolygon(const geometry_msgs::Polygon &geo_poly) {
-//     geometry_msgs::Polygon map_poly;
-//     geometry_msgs::TransformStamped tf = tf_buffer_.lookupTransform(slam_map_frame_, mavros_map_frame_, ros::Time(0));
-//     for (int nn = 0; nn < geo_poly.points.size(); nn++) {
-//         geometry_msgs::PointStamped point_tf;
-//         geometry_msgs::PointStamped map_pt;
-//         map_pt.point.x = geo_poly.points.at(nn).x;
-//         map_pt.point.y = geo_poly.points.at(nn).y;
-//         map_pt.header.frame_id = mavros_map_frame_;
-//         tf2::doTransform(map_pt, point_tf, tf);
-//         geometry_msgs::Point32 point;
-//         point.x = point_tf.point.x;
-//         point.y = point_tf.point.y;
-//         map_poly.points.push_back(point);
+//             // Add marker
+//             geometry_msgs::Point p;
+//             p.x = pt.x;
+//             p.y = pt.y;
+//             m.points.push_back(p);
+//         }
+//         geom_polygon.points = geom_points;
+//         subpolygons_.push_back(geom_polygon);
+//         // Repost first marker at end to close the loop
+//         geometry_msgs::Point p = m.points.at(0);
+//         m.points.push_back(p);
+//         map_region_pub_.publish(m);
 //     }
-//     return map_poly;
+//     return num_legs;
 // }
-
-void HelloDeccoManager::mapToGeopoint(const geometry_msgs::PointStamped &point_in, geometry_msgs::PointStamped &point_out, double yaw) {
-    // TODO init tf at the start, doesn't change
-    // tf2::Vector3 translate(-utm_x_offset_, -utm_y_offset_, 0.0);
-    // tf2::Transform utm2slam_tf;
-    // tf2::Quaternion quat;
-    // quat.setRPY(0.0, 0.0, yaw);
-    // utm2slam_tf.setRotation(quat);
-    // utm2slam_tf.setOrigin(translate);
-    //  = tf2::toMsg(utm2slam_tf);
-    tf_buffer_.transform(point_in, point_out, "utm");
-    // Apply tf
-    // geometry_msgs::TransformStamped geom_stamped_tf;
-    // geom_stamped_tf.header.frame_id = slam_map_frame_;
-    // geom_stamped_tf.header.stamp = ros::Time(0);
-    // geom_stamped_tf.child_frame_id = "utm";
-    // geom_stamped_tf.transform = slam2utm;
-    // tf2::doTransform(point_in, point_out, geom_stamped_tf);
-}
 
 void HelloDeccoManager::utmToLL(const double utm_x, const double utm_y, const int zone, double &lat, double &lon) {
     double k, gamma;

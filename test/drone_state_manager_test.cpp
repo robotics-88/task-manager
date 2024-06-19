@@ -3,7 +3,7 @@
 #include <actionlib/server/simple_action_server.h>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
-#include <boost/uuid/uuid_io.hpp>  
+#include <boost/uuid/uuid_io.hpp>
 
 #include <gtest/gtest.h>
 
@@ -16,20 +16,20 @@ inline static bool operator==(const geometry_msgs::Point& one,
   return dx==0 && dy==0 && dz==0;
 }
 
-TEST(Accessors, autonomy)
-{
-    ros::NodeHandle node;
-    drone_state_manager::DroneStateManager drone_state_manager(node);
-    drone_state_manager.setAutonomyEnabled(true);
-    drone_state_manager.setAutonomyEnabled(false);
-}
 
-TEST(Accessors, exploration)
+TEST(Accessors, slamPose) 
 {
     ros::NodeHandle node;
     drone_state_manager::DroneStateManager drone_state_manager(node);
-    drone_state_manager.setExplorationEnabled(true);
-    drone_state_manager.setExplorationEnabled(false);
+    geometry_msgs::PoseStamped msg;
+    msg.pose.position.x = 1.0;
+    msg.pose.position.z = 2.0;
+    msg.pose.position.y = 3.0;
+    geometry_msgs::PoseStamped::ConstPtr msg_p(new geometry_msgs::PoseStamped(msg));
+    drone_state_manager.slamPoseCallback(msg_p);
+
+    geometry_msgs::PoseStamped position = drone_state_manager.getCurrentSlamPosition();
+    ASSERT_EQ(position.pose.position, msg.pose.position);
 }
 
 TEST(Accessors, localPosition)
@@ -37,16 +37,41 @@ TEST(Accessors, localPosition)
     ros::NodeHandle node;
     drone_state_manager::DroneStateManager drone_state_manager(node);
     geometry_msgs::PoseStamped msg;
-    msg.pose.position.x = 0;
-    msg.pose.position.z = 0;
-    msg.pose.position.y = 0;
+    msg.pose.position.x = 4.0;
+    msg.pose.position.z = 5.0;
+    msg.pose.position.y = 6.0;
     geometry_msgs::PoseStamped::ConstPtr msg_p(new geometry_msgs::PoseStamped(msg));
     drone_state_manager.localPositionCallback(msg_p);
-    geometry_msgs::Point position = drone_state_manager.getCurrentLocalPosition();
-    ASSERT_EQ(position, msg.pose.position);
+
+    geometry_msgs::PoseStamped position = drone_state_manager.getCurrentLocalPosition();
+    ASSERT_EQ(position.pose.position, msg.pose.position);
 }
 
-TEST(Accessors, altitudeAGL)
+TEST(Accessors, globalPose)
+{
+    ros::NodeHandle node;
+    drone_state_manager::DroneStateManager drone_state_manager(node);
+    sensor_msgs::NavSatFix msg;
+    msg.latitude = 1.234;
+    msg.longitude = -1.234;
+    msg.altitude = 50.0;
+    sensor_msgs::NavSatFix::ConstPtr msg_p(new sensor_msgs::NavSatFix(msg));
+    drone_state_manager.globalPositionCallback(msg_p);
+
+    sensor_msgs::NavSatFix ll = drone_state_manager.getCurrentGlobalPosition();
+
+    ASSERT_EQ(ll.latitude, msg.latitude);
+    ASSERT_EQ(ll.longitude, msg.longitude);
+    ASSERT_EQ(ll.altitude, msg.altitude);
+
+    int utm_1 = GeographicLib::UTMUPS::StandardZone(msg.latitude, msg.longitude);
+    int utm_2 = drone_state_manager.getUTMZone();
+
+    ASSERT_EQ(utm_1, utm_2);
+
+}
+
+TEST(Accessors, altitude)
 {
     ros::NodeHandle node;
     drone_state_manager::DroneStateManager drone_state_manager(node);
@@ -54,77 +79,210 @@ TEST(Accessors, altitudeAGL)
     msg.data = 10.0;
     std_msgs::Float64::ConstPtr msg_p(new std_msgs::Float64(msg));
     drone_state_manager.altitudeCallback(msg_p);
+
     double altitude = drone_state_manager.getAltitudeAGL();
-    ASSERT_GE(altitude, 0);
+    ASSERT_EQ(msg.data, altitude);
 }
 
-TEST(MavrosCallbacks, globalPose)
-{
-    ros::NodeHandle node;
-    drone_state_manager::DroneStateManager drone_state_manager(node);
-    sensor_msgs::NavSatFix msg;
-    msg.latitude = 0;
-    msg.longitude = 0;
-    sensor_msgs::NavSatFix::ConstPtr msg_p(new sensor_msgs::NavSatFix(msg));
-    drone_state_manager.globalPositionCallback(msg_p);
-}
-
-TEST(MavrosCallbacks, localPose)
-{
-    ros::NodeHandle node;
-    drone_state_manager::DroneStateManager drone_state_manager(node);
-    geometry_msgs::PoseStamped msg;
-    msg.pose.position.x = 0;
-    msg.pose.position.z = 0;
-    msg.pose.position.y = 0;
-    geometry_msgs::PoseStamped::ConstPtr msg_p(new geometry_msgs::PoseStamped(msg));
-    drone_state_manager.localPositionCallback(msg_p);
-}
-
-TEST(MavrosCallbacks, status)
-{
-    ros::NodeHandle node;
-    drone_state_manager::DroneStateManager drone_state_manager(node);
-    mavros_msgs::State msg;
-    msg.armed = false;
-    mavros_msgs::State::ConstPtr msg_p(new mavros_msgs::State(msg));
-    drone_state_manager.statusCallback(msg_p);
-}
-
-TEST(MavrosCallbacks, altitude)
+TEST(Accessors, compass)
 {
     ros::NodeHandle node;
     drone_state_manager::DroneStateManager drone_state_manager(node);
     std_msgs::Float64 msg;
-    msg.data = 2.0;
+    msg.data = 145.0;
     std_msgs::Float64::ConstPtr msg_p(new std_msgs::Float64(msg));
-    drone_state_manager.altitudeCallback(msg_p);
+    drone_state_manager.compassCallback(msg_p);
+
+    double compass = drone_state_manager.getCompass();
+    ASSERT_EQ(msg.data, compass);
 }
 
-TEST(MavrosStateControl, setGuided)
+TEST(Accessors, battery)
 {
     ros::NodeHandle node;
     drone_state_manager::DroneStateManager drone_state_manager(node);
-    drone_state_manager.setAutonomyEnabled(false);
-    ASSERT_FALSE(drone_state_manager.setGuided());
+    sensor_msgs::BatteryState msg;
+    msg.voltage = 26.0;
+    msg.current = 0.0;
 
-    drone_state_manager.setAutonomyEnabled(true);
-    ASSERT_TRUE(drone_state_manager.setGuided());
+    sensor_msgs::BatteryState::ConstPtr msg_p(new sensor_msgs::BatteryState(msg));
+    drone_state_manager.batteryCallback(msg_p);
+
+    double voltage = drone_state_manager.getBatteryVoltage();
+    ASSERT_EQ(voltage, msg.voltage);
+    double batt_percent = drone_state_manager.getBatteryPercentage();
+    ASSERT_GE(batt_percent, 99.0);
+
+    msg.voltage = 22.5;
+
+    sensor_msgs::BatteryState::ConstPtr msg_p_2(new sensor_msgs::BatteryState(msg));
+    drone_state_manager.batteryCallback(msg_p_2);
+
+    voltage = drone_state_manager.getBatteryVoltage();
+    ASSERT_EQ(voltage, msg.voltage);
+    batt_percent = drone_state_manager.getBatteryPercentage();
+    ASSERT_GE(batt_percent, 1.0);
+    ASSERT_LE(batt_percent, 99.0);
+
+
+    msg.voltage = 19.0;
+
+    sensor_msgs::BatteryState::ConstPtr msg_p_3(new sensor_msgs::BatteryState(msg));
+    drone_state_manager.batteryCallback(msg_p_3);
+
+    voltage = drone_state_manager.getBatteryVoltage();
+    ASSERT_EQ(voltage, msg.voltage);
+    batt_percent = drone_state_manager.getBatteryPercentage();
+    ASSERT_LE(batt_percent, 1.0);
 }
 
-TEST(MavrosStateControl, setMode)
+TEST(Accessors, state)
+{
+    ros::NodeHandle node;
+    drone_state_manager::DroneStateManager drone_state_manager(node);
+
+    mavros_msgs::State msg;
+    msg.armed = false;
+    msg.mode = "STABILIZED";
+
+    mavros_msgs::State::ConstPtr msg_p(new mavros_msgs::State(msg));
+    drone_state_manager.statusCallback(msg_p);
+
+    ASSERT_EQ(drone_state_manager.getFlightMode(), msg.mode);
+    ASSERT_FALSE(drone_state_manager.getIsArmed());
+    ASSERT_FALSE(drone_state_manager.getIsInAir());
+
+    // Arm and takeoff
+    msg.mode = "GUIDED";
+    msg.armed = true;
+
+    mavros_msgs::State::ConstPtr msg_p_2(new mavros_msgs::State(msg));
+    drone_state_manager.statusCallback(msg_p_2);
+
+    drone_state_manager.setAutonomyEnabled(true);
+
+    ASSERT_TRUE(drone_state_manager.takeOff());
+
+    std_msgs::Float64 alt_msg;
+    alt_msg.data = 10.0;
+    std_msgs::Float64::ConstPtr alt_msg_p(new std_msgs::Float64(alt_msg));
+    drone_state_manager.altitudeCallback(alt_msg_p);
+
+    ASSERT_TRUE(drone_state_manager.getIsInAir());
+
+}
+
+TEST(Accessors, sysStatus) 
+{
+    ros::NodeHandle node;
+    drone_state_manager::DroneStateManager drone_state_manager(node);
+
+    mavros_msgs::SysStatus status;
+    status.sensors_enabled = 1;
+    status.sensors_health = 1;
+
+    mavros_msgs::SysStatusConstPtr msg_p(new mavros_msgs::SysStatus(status));
+    drone_state_manager.sysStatusCallback(msg_p);
+
+    ASSERT_TRUE(drone_state_manager.getDroneReadyToArm());
+
+    status.sensors_enabled = 1;
+    status.sensors_health = 0;
+
+    mavros_msgs::SysStatusConstPtr msg_p2(new mavros_msgs::SysStatus(status));
+    drone_state_manager.sysStatusCallback(msg_p2);
+
+    ASSERT_FALSE(drone_state_manager.getDroneReadyToArm());
+}
+
+TEST(Utility, initializeImu)
+{
+    ros::NodeHandle node;
+    drone_state_manager::DroneStateManager drone_state_manager(node);
+
+    sensor_msgs::Imu imu;
+    imu.orientation.w = 0.01;
+    imu.orientation.x = 0.02;
+    imu.orientation.y = 0.03;
+    imu.orientation.z = 0.04;
+
+    sensor_msgs::ImuConstPtr msg_p(new sensor_msgs::Imu(imu));
+
+    geometry_msgs::Quaternion avg_orientation;
+
+    // Add fewer than required number of samples to pass
+    int averaging_n = drone_state_manager.getImuAveragingN();
+    for (int i = 0; i < averaging_n - 1; i++) {
+        drone_state_manager.imuCallback(msg_p);
+    }
+
+    ASSERT_FALSE(drone_state_manager.getAveragedOrientation(avg_orientation));
+
+    // Add one more sample to pass
+    drone_state_manager.imuCallback(msg_p);
+
+    ASSERT_TRUE(drone_state_manager.getAveragedOrientation(avg_orientation));
+
+    ASSERT_FLOAT_EQ(imu.orientation.x, avg_orientation.x);
+    ASSERT_FLOAT_EQ(imu.orientation.y, avg_orientation.y);
+    ASSERT_FLOAT_EQ(imu.orientation.z, avg_orientation.z);
+    ASSERT_FLOAT_EQ(imu.orientation.w, avg_orientation.w);
+}
+
+TEST(Utility, initUTM)
+{
+    ros::NodeHandle node;
+    drone_state_manager::DroneStateManager drone_state_manager(node);
+
+    sensor_msgs::NavSatFix msg;
+    msg.latitude = 1.234;
+    msg.longitude = -1.234;
+    msg.altitude = 50.0;
+
+    GeographicLib::GeoCoords coords(msg.latitude, msg.longitude);
+
+    sensor_msgs::NavSatFix::ConstPtr msg_p(new sensor_msgs::NavSatFix(msg));
+    drone_state_manager.globalPositionCallback(msg_p);
+
+    double utm_x, utm_y;
+    drone_state_manager.initUTM(utm_x, utm_y);
+
+    ASSERT_EQ(utm_x, coords.Easting());
+    ASSERT_EQ(utm_y, coords.Northing());
+
+}
+
+TEST(Utility, getUTMZone)
+{
+    ros::NodeHandle node;
+    drone_state_manager::DroneStateManager drone_state_manager(node);
+    sensor_msgs::NavSatFix msg;
+    msg.latitude = 1.234;
+    msg.longitude = -1.234;
+    msg.altitude = 50.0;
+    sensor_msgs::NavSatFix::ConstPtr msg_p(new sensor_msgs::NavSatFix(msg));
+    drone_state_manager.globalPositionCallback(msg_p);
+
+    int utm_1 = GeographicLib::UTMUPS::StandardZone(msg.latitude, msg.longitude);
+    int utm_2 = drone_state_manager.getUTMZone();
+
+    ASSERT_EQ(utm_1, utm_2);
+}
+
+TEST(StateControl, setMode)
 {
     ros::NodeHandle node;
     drone_state_manager::DroneStateManager drone_state_manager(node);
     drone_state_manager.setAutonomyEnabled(true);
-    drone_state_manager.setGuided();
+
     std::string mode = "fake_mode";
     ASSERT_FALSE(drone_state_manager.setMode(mode));
+
     mode = "LOITER";
     ASSERT_TRUE(drone_state_manager.setMode(mode));
 }
 
-TEST(MavrosStateControl, arm)
+TEST(StateControl, arm)
 {
     ros::NodeHandle node;
     drone_state_manager::DroneStateManager drone_state_manager(node);
@@ -132,27 +290,6 @@ TEST(MavrosStateControl, arm)
     ASSERT_FALSE(drone_state_manager.arm());
     drone_state_manager.setAutonomyEnabled(true);
     ASSERT_TRUE(drone_state_manager.arm());
-}
-
-TEST(Safety, readiness)
-{
-    // isReady and getReady tests are combined by necessity
-    ros::NodeHandle node;
-    drone_state_manager::DroneStateManager drone_state_manager(node);
-    drone_state_manager.setAutonomyEnabled(false);
-    ASSERT_FALSE(drone_state_manager.getReadyForAction());
-    ASSERT_FALSE(drone_state_manager.readyForAction());
-
-    drone_state_manager.setAutonomyEnabled(true);
-    ros::spinOnce();
-    ASSERT_TRUE(drone_state_manager.getReadyForAction());
-    ros::spinOnce();
-    ASSERT_TRUE(drone_state_manager.readyForAction());
-}
-
-TEST(Safety, safetyArea)
-{
-    // TODO (not yet implemented)
 }
 
 // Run all the tests that were declared with TEST()
@@ -164,5 +301,6 @@ int main(int argc, char **argv){
     ros::console::notifyLoggerLevelsChanged();
   }
   ros::NodeHandle nh;
+
   return RUN_ALL_TESTS();
 }

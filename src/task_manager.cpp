@@ -38,12 +38,12 @@ namespace task_manager
 TaskManager::TaskManager(ros::NodeHandle& node)
     : private_nh_("~")
     , nh_(node)
+    , current_task_(Task::INITIALIZING)
+    , task_manager_loop_duration_(1.0)
     , simulate_(false)
     , offline_(false)
     , hello_decco_manager_(node)
     , enable_autonomy_(false)
-    , enable_exploration_(false)
-    , ardupilot_(true)
     , use_failsafes_(false)
     , target_altitude_(2.0)
     , min_altitude_(2.0)
@@ -63,28 +63,40 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , drone_state_manager_(node)
     , cmd_history_("")
     , explore_action_client_("explore", true)
-    , health_check_s_(5.0)
+    , health_check_pub_duration_(5.0)
     , path_planner_topic_("/kd_pointcloud_accumulated")
-    , costmap_topic_("/costmap_node/costmap/costmap")
+    , costmap_topic_("/costmap_node/costmap/costmap_updates")
     , lidar_topic_("/cloud_registered")
     , thermal_topic_("/thermal_cam/image_rect_color")
     , attollo_topic_("/mapir_rgn/image_rect")
     , mapir_topic_("/mapir_rgn/image_rect_color")
     , mapir_rgb_topic_("/mapir_rgn/image_rect_color")
     , rosbag_topic_("/record/heartbeat")
-    , did_takeoff_(false)
     , is_armed_(false)
+    , in_autonomous_flight_(false)
     , explicit_global_params_(false)
+    , init_remote_id_message_sent_(false)
+    , takeoff_attempts_(0)
     , estimated_drone_speed_(2.0)
     , battery_failsafe_safety_factor_(2.0)
     , do_slam_(false)
     , lidar_pitch_(0.0)
     , lidar_x_(0.0)
     , lidar_z_(0.0)
+    , needs_takeoff_(false)
+    , last_rid_updated_timestamp_(0)
+    , operator_id_("")
+    , lidar_timeout_(0.5)
+    , slam_timeout_(0.5)
+    , path_timeout_(0.5)
+    , costmap_timeout_(3.0)
+    , explore_timeout_(1.0)
+    , mapir_timeout_(1.0)
+    , attollo_timeout_(1.0)
+    , thermal_timeout_(1.0)
+    , rosbag_timeout_(1.0)
 {
     private_nh_.param<bool>("enable_autonomy", enable_autonomy_, enable_autonomy_);
-    private_nh_.param<bool>("enable_exploration", enable_exploration_, enable_exploration_);
-    private_nh_.param<bool>("ardupilot", ardupilot_, ardupilot_);
     private_nh_.param<bool>("use_failsafes", use_failsafes_, use_failsafes_);
     private_nh_.param<float>("default_alt", target_altitude_, target_altitude_);
     private_nh_.param<float>("min_alt", min_altitude_, min_altitude_);
@@ -125,22 +137,8 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<double>("lidar_x", lidar_x_, lidar_x_);
     private_nh_.param<double>("lidar_z", lidar_z_, lidar_z_);
 
-    hello_decco_manager_.setFrames(mavros_map_frame_, slam_map_frame_);
-
     // SLAM pose sub
-    decco_pose_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>(slam_pose_topic_, 10, &TaskManager::deccoPoseCallback, this);
-
-    // TODO eventually remove this, just a patch for TX data where separate bags for MAVROS/Attollo
-    if (!explicit_global_params_) {
-        map_tf_timer_ = nh_.createTimer(ros::Duration(1.0), &TaskManager::mapTfTimerCallback, this);
-    }
-    else {
-        map_tf_timer_ = nh_.createTimer(ros::Duration(1.0), &TaskManager::mapTfTimerCallbackNoGlobal, this);
-        global_pose_pub_ = nh_.advertise<sensor_msgs::NavSatFix>("/mavros/global_position/global", 10);
-    }
-
-    mode_monitor_timer_ = private_nh_.createTimer(ros::Duration(1.0),
-                               [this](const ros::TimerEvent&) { modeMonitor(); });
+    slam_pose_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>(slam_pose_topic_, 10, &TaskManager::slamPoseCallback, this);
 
     // Health pubs/subs
     health_pub_ = nh_.advertise<std_msgs::String>("/mapversation/health_report", 10);
@@ -210,189 +208,343 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     // Mapversation subscriber
     mapver_sub_ = nh_.subscribe<std_msgs::String>("/mapversation/to_decco", 10, &TaskManager::packageFromMapversation, this);
 
-    // Initialize home pos struct
-    home_pos_.header.frame_id = mavros_map_frame_;
-    home_pos_.pose.position.x = 0;
-    home_pos_.pose.position.y = 0;
-    home_pos_.pose.position.z = target_altitude_;
-
     initDroneStateManager();
+
+    health_check_timer_ = private_nh_.createTimer(ros::Duration(0.1),
+                               [this](const ros::TimerEvent&) { checkHealth(); });
+
+    task_manager_timer_ = private_nh_.createTimer(task_manager_loop_duration_,
+                               [this](const ros::TimerEvent&) { runTaskManager(); });
 }
 
 TaskManager::~TaskManager(){}
 
-void TaskManager::packageFromMapversation(const std_msgs::String::ConstPtr &msg) {
-    json mapver_json = json::parse(msg->data);
-    std::string topic = mapver_json["topic"];
-    json gossip_json = mapver_json["gossip"];
-    if (topic == "burn_unit_send") {
-        makeBurnUnitJson(gossip_json);
+void TaskManager::runTaskManager() {
+
+    // Check arm status and make sure bag recording is happening properly.
+    checkArmStatus();
+
+    checkFailsafes();
+
+    switch (current_task_) {
+        case Task::INITIALIZING: {
+            if (getMapTf()) {
+                drone_state_manager_.setMode(guided_mode_);
+                if (drone_state_manager_.getDroneReadyToArm())
+                    updateCurrentTask(Task::READY);
+                else
+                    updateCurrentTask(Task::PREFLIGHT_CHECK);
+            }
+            break;
+        }
+        case Task::PREFLIGHT_CHECK: {
+            // TODO sim should pass arming checks too, they don't for some weird reasons.
+            // Like loop rate 222 (which can be fixed by putting ClockSpeed: 0.8 in settings.json)
+            // However, other things still fail. Eventually we should fix this and set ARMING_CHECK to 1 in ardupilot
+            if (drone_state_manager_.getDroneReadyToArm() || simulate_)
+                updateCurrentTask(Task::READY);
+            break;
+        }
+        case Task::READY: {
+            // This flag gets triggered when received a burn unit
+            if (needs_takeoff_) 
+            {
+                if (takeoff_attempts_ > 5) {
+                    ROS_WARN("Takeoff failed after 5 attempts");
+                    needs_takeoff_ = false;
+                    takeoff_attempts_ = 0;
+                }
+                else {
+                    startTakeoff();
+                }
+            }
+            else if (drone_state_manager_.getIsArmed()) {
+                updateCurrentTask(Task::MANUAL_FLIGHT);
+            }
+            break;
+        }
+        case Task::MANUAL_FLIGHT: {
+            if (!drone_state_manager_.getIsArmed()) {
+                updateCurrentTask(Task::COMPLETE);
+            }
+            break;
+        }
+        case Task::PAUSE: {
+            // Handle resuming exploration when that is available.
+            break;
+        }
+        case Task::TAKING_OFF: {
+            // Once we reach takeoff altitude, transition to next flight state
+            if (drone_state_manager_.getAltitudeAGL() > (target_altitude_ - 1)) {
+                // If not in polygon, start navigation task
+                if (!isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition().pose.position)) {
+                    startTransit();
+                }
+                else {
+                    startExploration();
+                }
+            }
+            break;
+        }
+        case Task::IN_TRANSIT: {
+            if (isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition().pose.position)) {
+                startExploration();
+            }
+            break;
+        }
+        case Task::EXPLORING: {            
+            // Check action client status to see if complete
+            actionlib::SimpleClientGoalState goal_state = explore_action_client_.getState();
+            if (goal_state == actionlib::SimpleClientGoalState::ABORTED || 
+                goal_state == actionlib::SimpleClientGoalState::LOST ||
+                goal_state == actionlib::SimpleClientGoalState::SUCCEEDED
+                ) {
+
+                startRtl88("exploration " + goal_state.getText());
+                hello_decco_manager_.updateBurnUnit(current_index_, "COMPLETED");
+            }
+
+            break;
+        }
+        case Task::RTL_88: {
+            if (drone_state_manager_.getCurrentLocalPosition().pose.position == home_pos_.pose.position) {
+                ROS_INFO("RTL_88 completed, landing");
+                drone_state_manager_.setMode(land_mode_);
+                updateCurrentTask(Task::LANDING);
+            }
+            break;
+        }
+        case Task::LANDING:
+        case Task::FAILSAFE_LANDING: {
+            if (!drone_state_manager_.getIsArmed()) {
+                updateCurrentTask(Task::COMPLETE);
+            }
+            break;
+        }
+        case Task::COMPLETE: {
+            in_autonomous_flight_ = false;
+            // Return to preflight check as we have already initialized. 
+            updateCurrentTask(Task::PREFLIGHT_CHECK);
+            break;
+        }
+        default: {
+            break;
+        }
     }
-    else if (topic == "target_polygon") {
-        json burn_unit = hello_decco_manager_.polygonToBurnUnit(gossip_json);
-        makeBurnUnitJson(burn_unit);
-    }
-    else if (topic == "target_setpoint") {
-        setpointResponse(gossip_json);
-    }
-    else if (topic == "emergency") {
-        std::string severity = gossip_json["severity"];
-        emergencyResponse(severity);
-    }
-    else if (topic == "altitudes") {
-        altitudesResponse(gossip_json);
-    }
-    else if (topic == "heartbeat") {
-        remoteIDResponse(gossip_json);
-    }
+
+    task_msg_.header.stamp = ros::Time::now();
+    task_msg_.cmd_history.data = cmd_history_.c_str();
+    task_msg_.current_status.data = getTaskString(current_task_);
+    task_pub_.publish(task_msg_);
+    json task_json = makeTaskJson();
+    hello_decco_manager_.packageToMapversation("task_status", task_json);
 }
 
-void TaskManager::makeBurnUnitJson(json burn_unit) {
-    if (!enable_exploration_) {
-        ROS_WARN("Exploration disabled, burn unit ignored.");
+void TaskManager::startTakeoff() {
+
+    // Set home position
+    home_pos_.header.stamp = ros::Time::now();
+    home_pos_.header.frame_id = mavros_map_frame_;
+    home_pos_.pose.position.x = drone_state_manager_.getCurrentLocalPosition().pose.position.x;
+    home_pos_.pose.position.y = drone_state_manager_.getCurrentLocalPosition().pose.position.y;
+    home_pos_.pose.position.z = target_altitude_;
+
+    // This is a redundant check but probably good to keep
+    if (!task_msg_.enable_autonomy) {
+        ROS_WARN("Not taking off, autonomy disabled");
         return;
     }
-    if (!map_tf_init_) {
-        ROS_WARN("Not ready for flight, try again after initialized.");
-        return;
-    }
-    std::string name = burn_unit["name"];
-    burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
-    hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
-    current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
-    if (current_index_ < 0) {
-        ROS_WARN("No burn polygon was found, all are already complete.");
-        std::string burn_status_string = "No burn units subpolygons were incomplete, not exploring. \n";
-        cmd_history_.append(burn_status_string);
-    }
+
+    if (drone_state_manager_.takeOff()) {
+        if (do_record_) {
+            startBag();
+        }
+        in_autonomous_flight_ = true;
+        updateCurrentTask(Task::TAKING_OFF);
+        needs_takeoff_ = false;
+        takeoff_attempts_ = 0; 
+    } 
     else {
-        getReadyForExplore();
+        ROS_INFO("Takeoff request failed. Retrying.");
+        takeoff_attempts_++;
     }
+
 }
 
-void TaskManager::setpointResponse(json &json_msg) {
-    // ATM, this response is purely a testing function. 
-    startBag();
+void TaskManager::startTransit() {    
+    padNavTarget(initial_transit_point_);
+
+    current_target_ = initial_transit_point_.pose.position;
+    initial_transit_point_.header.frame_id = slam_map_frame_;
+    initial_transit_point_.header.stamp = ros::Time::now();
+    local_pos_pub_.publish(initial_transit_point_);
+
+    updateCurrentTask(Task::IN_TRANSIT);
 }
 
-void TaskManager::emergencyResponse(const std::string severity) {
-    ROS_WARN("Emergency response initiated, level %s.", severity.c_str());
-    // Immediately set to hover
-    drone_state_manager_.setMode(loiter_mode_);
-    cmd_history_.append("Emergency init with severity " + severity + "\n");
+void TaskManager::startExploration() {
 
-    // Then respond based on severity 
-    if (severity == "PAUSE") {
-        // NOTICE = PAUSE
-        // TODO, tell exploration to stop searching frontiers. For now, will keep blacklisting them, but the drone is in loiter mode. Currently no way to pick back up and set to guided mode (here or in HD)
-    }
-    else if (severity == "LAND") {
-        // EMERGENCY = LAND IMMEDIATELY
-        pauseOperations();
-        drone_state_manager_.setMode(land_mode_);
-    }
-    else if (severity == "RTL") {
-        // CRITICAL = RTL
-        pauseOperations();
-        drone_state_manager_.setMode(rtl_mode_);
-    }
+    current_explore_goal_.polygon = current_polygon_;
+    current_explore_goal_.altitude = target_altitude_;
+    current_explore_goal_.min_altitude = min_altitude_;
+    current_explore_goal_.max_altitude = max_altitude_;
+
+    explore_action_client_.waitForServer();
+    cmd_history_.append("Sending explore goal.\n");
+
+    // Start with a rotation command in case no frontiers immediately processed, will be overridden with first exploration goal
+    geometry_msgs::Twist vel;
+    vel.angular.x = 0;
+    vel.angular.y = 0;
+    vel.angular.z = M_PI_2; // PI/2 rad/s
+    local_vel_pub_.publish(vel);
+
+    explore_action_client_.sendGoal(current_explore_goal_);
+
+    cmd_history_.append("Sent explore goal.\n");
+    hello_decco_manager_.updateBurnUnit(current_index_, "ACTIVE");
+
+    updateCurrentTask(Task::EXPLORING);
 }
 
-void TaskManager::altitudesResponse(json &json_msg) {
-
-    if (!json_msg["max_altitude"].is_number() || 
-        !json_msg["min_altitude"].is_number() || 
-        !json_msg["default_altitude"].is_number()) {
-        ROS_WARN("Altitude message from mapversation contains invalid data");
-        return;
-    }
-
-    float max_altitude = json_msg["max_altitude"];
-    float min_altitude = json_msg["min_altitude"];
-    float default_altitude = json_msg["default_altitude"];
-
-    // Set altitude params in all nodes that use them
-    ros::param::set("/task_manager/max_alt", max_altitude);
-    ros::param::set("/task_manager/min_alt", min_altitude);
-    ros::param::set("/task_manager/default_alt", default_altitude);
-
-    // It's simpler just to set the task manager altitude data here instead of re-fetching the param dynamically
-    max_altitude_ = max_altitude;
-    min_altitude_ = min_altitude;
-    target_altitude_ = default_altitude;
-
-    ros::param::set("/path_planning_node/search/max_alt", max_altitude);
-    ros::param::set("/path_planning_node/search/min_alt", min_altitude);
-   
-}
-
-void TaskManager::remoteIDResponse(json &json) {
-
-    // Unpack JSON here for convenience
-    std::string uas_id_str = json["uas_id"].is_null() ? "" : json["uas_id"];
-    std::string operator_id_str = json["operator_id"].is_null() ? "" : json["operator_id"];
-    float operator_latitude = json["operator_latitude"].is_number_float() ? (float)json["operator_latitude"] : 0.f;
-    float operator_longitude = json["operator_longitude"].is_number_float() ? (float)json["operator_longitude"] : 0.f;
-    float operator_altitude_geo = json["operator_altitude_geo"].is_number_float() ? (float)json["operator_altitude_geo"] : 0.f;
-    int timestamp = json["timestamp"].is_number_integer() ? (int)json["timestamp"] : 0; 
+void TaskManager::startRtl88(std::string reason) {
     
-    if (!init_remote_id_message_sent_) {
-        // Basic ID
-        mavros_msgs::BasicID basic_id;
-        basic_id.header.stamp = ros::Time::now();
-        basic_id.id_type = mavros_msgs::BasicID::MAV_ODID_ID_TYPE_CAA_REGISTRATION_ID;
-        basic_id.ua_type = mavros_msgs::BasicID::MAV_ODID_UA_TYPE_HELICOPTER_OR_MULTIROTOR;
-        basic_id.uas_id = uas_id_str;
-        odid_basic_id_pub_.publish(basic_id);
+    std::string str = "Initializing RTL 88 due to " + reason;
+    ROS_INFO("%s", str.c_str());
+    cmd_history_.append(str + "\n");
 
-        // Operator ID
-        mavros_msgs::OperatorID operator_id;
-        operator_id.header.stamp = ros::Time::now();
-        operator_id.operator_id_type = mavros_msgs::OperatorID::MAV_ODID_OPERATOR_ID_TYPE_CAA;
-        operator_id.operator_id = operator_id_str;
-        odid_operator_id_pub_.publish(operator_id);
-        operator_id_ = operator_id_str;
+    pauseOperations();
 
-        // System
-        // This should probably just be published at startup, and System Update published here
-        mavros_msgs::System system;
-        system.header.stamp = ros::Time::now();
-        system.operator_location_type = mavros_msgs::System::MAV_ODID_OPERATOR_LOCATION_TYPE_TAKEOFF; // TODO dynamic operator location
-        system.classification_type = mavros_msgs::System::MAV_ODID_CLASSIFICATION_TYPE_UNDECLARED;
-        system.operator_latitude = operator_latitude * 1E7;
-        system.operator_longitude = operator_longitude * 1E7;
-        system.operator_altitude_geo = operator_altitude_geo;
-        system.timestamp = timestamp;
-        odid_system_pub_.publish(system);
-
-        init_remote_id_message_sent_ = true;
+    if (drone_state_manager_.getFlightMode() != guided_mode_) {
+        drone_state_manager_.setMode(guided_mode_);
     }
 
-    // SystemUpdate
-    mavros_msgs::SystemUpdate system_update;
-    system_update.header.stamp = ros::Time::now();
-    system_update.operator_latitude = operator_latitude * 1E7;
-    system_update.operator_longitude = operator_longitude * 1E7;
-    system_update.operator_altitude_geo = operator_altitude_geo;
-    if (timestamp > last_updated_timestamp) {
-        system_update.timestamp = timestamp;
-        last_updated_timestamp = timestamp;
-    }
-    else {
-        system_update.timestamp = ros::Time::now().toSec();
-    }
-    odid_system_update_pub_.publish(system_update);
+    local_pos_pub_.publish(home_pos_);
+
+    updateCurrentTask(Task::RTL_88);
+}
+
+void TaskManager::startFailsafeLanding(std::string reason) {
+    std::string str = "Initializing failsafe landing due to " + reason;
+    ROS_INFO("%s", str.c_str());
+    cmd_history_.append(str + "\n");
+
+    pauseOperations();
+
+    drone_state_manager_.setMode(land_mode_);
+
+    updateCurrentTask(Task::FAILSAFE_LANDING);
 
 }
 
-void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
+void TaskManager::startPause(std::string reason) {
+    std::string str = "Initializing pause due to " + reason;
+    ROS_INFO("%s", str.c_str());
+    cmd_history_.append(str + "\n");
+
+    drone_state_manager_.setMode(brake_mode_);
+
+    updateCurrentTask(Task::PAUSE);
+}
+
+void TaskManager::updateCurrentTask(Task task) {
+    std::string task_str = getTaskString(task);
+    ROS_INFO("Current task updated to: %s", task_str.c_str());
+    current_task_ = task;
+}
+
+TaskManager::Task TaskManager::getCurrentTask() {
+    return current_task_;
+}
+
+void TaskManager::checkHealth() {
+    ros::Time now = ros::Time::now();
+
+    health_checks_.battery_ok = isBatteryOk();
+    health_checks_.lidar_ok = now - last_lidar_stamp_ < lidar_timeout_;
+    health_checks_.slam_ok = now - last_slam_pos_stamp_ < slam_timeout_;
+    health_checks_.path_ok = now - last_path_planner_stamp_ < path_timeout_;
+    health_checks_.costmap_ok = now - last_costmap_stamp_ < costmap_timeout_;
+    health_checks_.explore_ok = explore_action_client_.waitForServer(explore_timeout_);
+    health_checks_.mapir_ok = now - last_mapir_stamp_ < mapir_timeout_;
+    health_checks_.attollo_ok = now - last_attollo_stamp_ < attollo_timeout_;
+    health_checks_.thermal_ok = now - last_thermal_stamp_ < thermal_timeout_;
+    health_checks_.rosbag_ok = now - last_rosbag_stamp_ < rosbag_timeout_;
+
+    if (now - last_health_pub_stamp_ > health_check_pub_duration_) {
+        publishHealth();
+        last_health_pub_stamp_ = now;
+    }
+}
+
+void TaskManager::checkFailsafes() {
+
+    if (!in_autonomous_flight_)
+        return;
+
+    // Check for manual takeover
+    std::string mode = drone_state_manager_.getFlightMode();
+    if (mode == "STABILIZE" || 
+        mode == "ALT_HOLD" ||
+        mode == "POSHOLD") {
+        ROS_WARN("WARNING: Manual takeover initiated");
+        updateCurrentTask(Task::MANUAL_FLIGHT);
+        in_autonomous_flight_ = false;
+        pauseOperations();
+        return;
+    }
+
+    // Check for failsafe landing conditions
+    std::string failsafe_reason = "";
+    bool need_failsafe_landing = false;
+    if (!health_checks_.slam_ok) {
+        failsafe_reason += "SLAM unhealthy, ";
+        need_failsafe_landing = true;
+    }
+    if (!health_checks_.path_ok) {
+        failsafe_reason += "Path unhealthy, ";
+        need_failsafe_landing = true;
+    }
+    if (need_failsafe_landing) {
+        if (current_task_ != Task::FAILSAFE_LANDING) {
+            if (use_failsafes_) {
+                startFailsafeLanding(failsafe_reason);
+            }
+            else {
+                if (current_task_ != Task::PAUSE) {
+                    ROS_WARN("Failsafe landing requested for %s but failsafes not active", failsafe_reason.c_str());
+                }
+            }
+        }
+        // Return here because this is the most extreme failsafe and we don't need to check others
+        return;
+    }
+
+    // Check for RTL 88 conditions
+    // For now, only battery low will trigger this, but using this structure for future additions
+    std::string rtl_88_reason = "";
+    bool need_rtl_88 = false;
+    if (!health_checks_.battery_ok) {
+        rtl_88_reason += "battery level low, ";
+        need_rtl_88 = true;
+    } 
+    if (need_rtl_88 &&
+        current_task_ != Task::RTL_88 &&
+        current_task_ != Task::LANDING &&
+        current_task_ != Task::COMPLETE) {
+
+        startRtl88(rtl_88_reason);
+    }
+}
+
+bool TaskManager::getMapTf() {
 
     // Get drone heading
     if (!offline_) {
         double yaw = 0;
         if (!drone_state_manager_.getMapYaw(yaw)) {
             ROS_WARN_THROTTLE(10, "Waiting for heading from autopilot...");
-            return;
+            return false;
         }
 
         ROS_INFO("Initial heading: %f", yaw);
@@ -410,19 +562,18 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
         ros::topic::waitForMessage<std_msgs::Float64>("map_yaw", nh_);
     }
 
-
     // Get roll, pitch for map stabilization
-    sensor_msgs::Imu mavros_init_imu;
-    ros::Rate r(0.1);
-    while (!drone_state_manager_.getImu(mavros_init_imu)) {
+    geometry_msgs::Quaternion init_orientation;
+    ros::Rate r(0.5);
+    ROS_INFO("Initializing IMU");
+    while (!drone_state_manager_.getAveragedOrientation(init_orientation)) {
         r.sleep();
-        std::cout << "waiting for IMU initial" << std::endl;
     }
-    tf2::Quaternion quatmav(mavros_init_imu.orientation.x, mavros_init_imu.orientation.y, mavros_init_imu.orientation.z, mavros_init_imu.orientation.w);
+    tf2::Quaternion quatmav(init_orientation.x, init_orientation.y, init_orientation.z, init_orientation.w);
     tf2::Matrix3x3 m(quatmav);
     double roll, pitch, yaw;
     m.getRPY(roll, pitch, yaw);
-    std::cout << "roll: " << roll << ", pitch: " << pitch << ", yaw: " << yaw << std::endl;
+    ROS_INFO("Roll: %f, Pitch: %f, Yaw, %f", roll * 180 / M_PI, pitch * 180 / M_PI, yaw * 180 / M_PI);
 
     // If using tilted lidar, add the lidar pitch to the map to slam tf, since
     // the lidar is used as the basis for the slam map frame
@@ -468,8 +619,8 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
     map_tf_timer_.stop();
     map_tf_init_ = true;
 
-    ROS_INFO("waiting for global...");
-    drone_state_manager_.waitForGlobal();
+    ROS_INFO("Waiting for global...");
+    ros::topic::waitForMessage<sensor_msgs::NavSatFix>("/mavros/global_position/global", nh_);
     while (home_utm_zone_ < 0) {
         home_utm_zone_ = drone_state_manager_.getUTMZone();
         ros::spinOnce();
@@ -480,7 +631,7 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
     drone_state_manager_.initUTM(utm_x, utm_y);
     hello_decco_manager_.setUtmOffsets(utm_x, utm_y);
     ROS_INFO("UTM offsets: (%f, %f)", utm_x, utm_y);
-    std::cout << "utm x: " << utm_x << "\nutm y: " << utm_y << "\nmap yaw: " << map_yaw_ << std::endl;
+    ROS_INFO("Map yaw: %f", map_yaw_ * 180 / M_PI);
     utm2map_tf_.header.frame_id = "utm";
     utm2map_tf_.header.stamp = ros::Time::now();
     utm2map_tf_.child_frame_id = mavros_map_frame_;
@@ -493,123 +644,7 @@ void TaskManager::mapTfTimerCallback(const ros::TimerEvent&) {
     utm2map_tf_.transform.rotation.w = 1;
     static_tf_broadcaster_.sendTransform(utm2map_tf_);
 
-    current_status_ = CurrentStatus::INITIALIZED;
-    health_pub_timer_ = private_nh_.createTimer(health_check_s_,
-                               [this](const ros::TimerEvent&) { publishHealth(); });
-}
-
-void TaskManager::mapTfTimerCallbackNoGlobal(const ros::TimerEvent&) {
-
-    private_nh_.param<double>("map_yaw", map_yaw_, map_yaw_);
-    double utm_x, utm_y;
-    private_nh_.param<double>("utm_y", utm_y, utm_y);
-    private_nh_.param<double>("utm_x", utm_x, utm_x);
-    private_nh_.param<int>("utm_zone", home_utm_zone_, home_utm_zone_);
-
-    // Fill in data
-    map_to_slam_tf_.header.frame_id = mavros_map_frame_;
-    map_to_slam_tf_.header.stamp = ros::Time::now();
-    map_to_slam_tf_.child_frame_id = slam_map_frame_;
-    map_to_slam_tf_.transform.translation.x = 0.0;
-    map_to_slam_tf_.transform.translation.y = 0.0;
-    map_to_slam_tf_.transform.translation.z = 0.0;
-
-    tf2::Quaternion quat_tf;
-    quat_tf.setRPY(0.0, 0.0, map_yaw_);
-
-    geometry_msgs::Quaternion quat;
-    tf2::convert(quat_tf, quat);
-    map_to_slam_tf_.transform.rotation = quat;
-
-    // Send transform and stop timer
-    static_tf_broadcaster_.sendTransform(map_to_slam_tf_);
-    map_tf_timer_.stop();
-    map_tf_init_ = true;
-
-    hello_decco_manager_.setUtmOffsets(utm_x, utm_y);
-    ROS_INFO("UTM offsets: (%f, %f)", utm_x, utm_y);
-    std::cout << "utm x: " << utm_x << "\nutm y: " << utm_y << "\nmap yaw: " << map_yaw_ << std::endl;
-    utm2map_tf_.header.frame_id = "utm";
-    utm2map_tf_.header.stamp = ros::Time::now();
-    utm2map_tf_.child_frame_id = mavros_map_frame_;
-    utm2map_tf_.transform.translation.x = utm_x;
-    utm2map_tf_.transform.translation.y = utm_y;
-    utm2map_tf_.transform.translation.z = 0;
-    utm2map_tf_.transform.rotation.x = 0;
-    utm2map_tf_.transform.rotation.y = 0;
-    utm2map_tf_.transform.rotation.z = 0;
-    utm2map_tf_.transform.rotation.w = 1;
-    static_tf_broadcaster_.sendTransform(utm2map_tf_);
-
-    hello_decco_manager_.utmToLL(utm_x, utm_y, home_utm_zone_, home_lat_, home_lon_);
-    sensor_msgs::NavSatFix nav_msg;
-    nav_msg.header.frame_id = "base_link";
-    nav_msg.header.stamp = ros::Time::now();
-    nav_msg.latitude = home_lat_;
-    nav_msg.longitude = home_lon_;
-    global_pose_pub_.publish(nav_msg);
-
-    current_status_ = CurrentStatus::INITIALIZED;
-    health_pub_timer_ = private_nh_.createTimer(health_check_s_,
-                               [this](const ros::TimerEvent&) { publishHealth(); });
-}
-
-void TaskManager::failsafe() {
-    in_failsafe_ = true;
-    cmd_history_.append("Failsafe init. Failsafes active?" + std::to_string(use_failsafes_) + "\n");
-    ROS_WARN("Failsafe init. Failsafes active? %d", use_failsafes_);
-    if (use_failsafes_) {
-        in_failsafe_ = true;
-        drone_state_manager_.setMode(land_mode_);
-        stop();
-    }
-}
-
-void TaskManager::deccoPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose) {
-
-    // Transform decco pose (in slam_map frame) and publish it in mavros_map frame as /mavros/vision_pose/pose
-    if (!map_tf_init_) {
-        return;
-    }
-
-    geometry_msgs::TransformStamped tf;
-    try {
-        tf = tf_buffer_.lookupTransform(mavros_map_frame_, slam_map_frame_, ros::Time(0));
-    } catch (tf2::TransformException & ex) {
-        ROS_WARN_THROTTLE(10, "Cannot publish vision pose as map<>slam_map tf not yet available");
-        return;
-    }
-
-    // Apply the transform to the drone pose
-    geometry_msgs::PoseStamped msg_body_pose;
-    geometry_msgs::PoseStamped slam = *slam_pose;
-
-    tf2::doTransform(slam, msg_body_pose, tf);
-    msg_body_pose.header.frame_id = mavros_map_frame_;
-    msg_body_pose.header.stamp = slam_pose->header.stamp;
-
-    vision_pose_publisher_.publish(msg_body_pose);
-
-    last_slam_pos_stamp_ = slam_pose->header.stamp;
-
-    // Map tf for offline
-    if (explicit_global_params_) {
-        geometry_msgs::PointStamped point_in, point_out;
-        point_in.header = slam_pose->header;
-        point_in.point.x = 0;
-        point_in.point.y = 0;
-        point_in.point.z = 0;
-        tf2::doTransform(point_in, point_out, utm2map_tf_);
-        double lat, lon;
-        hello_decco_manager_.utmToLL(point_out.point.x, point_out.point.y, home_utm_zone_, lat, lon);
-        sensor_msgs::NavSatFix nav_msg;
-        nav_msg.header.frame_id = mavros_base_frame_;
-        nav_msg.header.stamp = slam_pose->header.stamp;
-        nav_msg.latitude = lat;
-        nav_msg.longitude = lon;
-        global_pose_pub_.publish(nav_msg);
-
-    }
+    return true;
 }
 
 bool TaskManager::convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp) {
@@ -625,7 +660,7 @@ bool TaskManager::convert2Geo(messages_88::Geopoint::Request& req, messages_88::
     in.point.x = req.slam_position.x;
     in.point.y = req.slam_position.y;
     in.point.z = req.slam_position.z;
-    hello_decco_manager_.mapToGeopoint(in, out, -map_yaw_);
+    tf_buffer_.transform(in, out, "utm");
     resp.utm_position.x = out.point.x;
     resp.utm_position.y = out.point.y;
     return true;
@@ -665,13 +700,13 @@ void TaskManager::odidTimerCallback(const ros::TimerEvent&) {
     // Self ID
     mavros_msgs::SelfID self_id;
     self_id.header.stamp = ros::Time::now();
-    if (in_failsafe_) {
+    if (current_task_ == Task::FAILSAFE_LANDING) {
         self_id.description_type = mavros_msgs::SelfID::MAV_ODID_DESC_TYPE_EMERGENCY;
-        self_id.description = "FAILSAFE. LANDING NOW";
+        self_id.description = "FAILSAFE. CAUTION";
     }
     else {
         self_id.description_type = mavros_msgs::SelfID::MAV_ODID_DESC_TYPE_TEXT;
-        self_id.description = getStatusString();
+        self_id.description = getTaskString(current_task_);
     }
     odid_self_id_pub_.publish(self_id);
 }
@@ -693,143 +728,19 @@ void TaskManager::initDroneStateManager() {
     // Drone state manager setup
     drone_state_manager_.setAutonomyEnabled(enable_autonomy_);
     task_msg_.enable_autonomy = enable_autonomy_;
-    task_msg_.enable_exploration = enable_exploration_;
+    task_msg_.enable_exploration = true; // TODO just remove this
 
-    if (ardupilot_) {
-        land_mode_ = "LAND";
-        loiter_mode_ = "LOITER";
-        rtl_mode_ = "RTL";
-        guided_mode_ = "GUIDED";
-    }
-    else {
-        land_mode_ = "AUTO.LAND";
-        loiter_mode_ = "AUTO.LOITER";
-        rtl_mode_ = "AUTO.RTL";
-        guided_mode_ = "OFFBOARD";
-        drone_state_manager_.setMode("POSCTL");
-    }
+    land_mode_ = "LAND";
+    brake_mode_ = "BRAKE";
+    rtl_mode_ = "RTL";
+    guided_mode_ = "GUIDED";
 }
 
-bool TaskManager::getReadyForAction() {
-    cmd_history_.append("Get ready command received.\n ");
-    getDroneReady();
-    return true;
-}
-
-void TaskManager::getReadyForExplore() {
-    cmd_history_.append("Get ready to explore command received.\n ");
-    bool needs_transit = false;
-    geometry_msgs::PoseStamped target_position;
-    if (!isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition().pose.position)) {
-        cmd_history_.append("Transit to explore required.\n ");
-        needs_transit = true;
-        // Find nearest point on the polygon
-        // Check polygon area and distance
-        double min_dist;
-        if (!polygonDistanceOk(min_dist, target_position, current_polygon_)) {
-            ROS_WARN("Polygon rejected, exceeds maximum starting distance threshold.");
-            return;
-        }
-        else {
-            ROS_DEBUG("Polygon received, distance ok.");
-        }
-        ROS_INFO("target position x,y was %f, %f", target_position.pose.position.x, target_position.pose.position.y);
-        target_position.pose.position.z = target_altitude_;
-    }
-
-    if (task_msg_.enable_autonomy) {
-        getDroneReady();
-    }
-
-    boost::uuids::random_generator generator;
-    boost::uuids::uuid u = generator();
-    messages_88::ExploreGoal explore_goal;
-    if (task_msg_.enable_autonomy && needs_transit) {
-        padNavTarget(target_position);
-        messages_88::NavToPointGoal nav_goal;
-        nav_goal.point = target_position.pose.position;
-        nav_goal.uuid.data = boost::uuids::to_string(u);
-        explore_goal.uuid.data = boost::uuids::to_string(u);
-        startNav2PointTask(nav_goal);
-    }
-    else {
-        explore_goal.uuid.data = "NO_TRANSIT";
-    }
-    explore_goal.polygon = current_polygon_;
-    explore_goal.altitude = target_altitude_;
-    explore_goal.min_altitude = min_altitude_;
-    explore_goal.max_altitude = max_altitude_;
-    if (task_msg_.enable_exploration) {
-        explore_action_client_.waitForServer();
-        sendExploreTask(explore_goal);
-        cmd_history_.append("Sent explore goal.\n");
-        hello_decco_manager_.updateBurnUnit(current_index_, "ACTIVE");
-    }
-    return;
-}
-
-void TaskManager::startNav2PointTask(messages_88::NavToPointGoal &nav_goal) {
-    messages_88::NavToPointGoal goal = nav_goal;
-    current_status_ = CurrentStatus::NAVIGATING;
-    geometry_msgs::Point point = goal.point;
-    current_target_ = point;
-    geometry_msgs::PoseStamped target;
-    target.header.frame_id = slam_map_frame_;
-    target.header.stamp = ros::Time::now();
-    target.pose.position = point;
-    local_pos_pub_.publish(target);
-    while (!(isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition().pose.position) || current_status_ == CurrentStatus::WAITING_TO_EXPLORE)) {
-        ros::Duration(1.0).sleep();    
-    }
-}
-
-void TaskManager::sendExploreTask(messages_88::ExploreGoal &goal) {
-    cmd_history_.append("Sending explore goal.\n");
-    current_explore_goal_ = goal;
-    // TODO inspect uuid/waiting logic now that drone state mgr lives here instead of monarch
-    std::string uuid = current_explore_goal_.uuid.data; // If no transit, uuid=NO_TRANSIT, otherwise should match transit uuid
-
-    if (uuid == "NO_TRANSIT" || current_status_ == CurrentStatus::WAITING_TO_EXPLORE) {
-        startExploreTask();
-    }
-    else {
-        status_timer_ = private_nh_.createTimer(ros::Duration(1.0),
-                               [this](const ros::TimerEvent&) { readyToExplore(); });
-    }
-
-}
-
-void TaskManager::readyToExplore() {
-    if (current_status_ == CurrentStatus::WAITING_TO_EXPLORE) {
-        status_timer_.stop();
-        startExploreTask();
-    }
-}
-
-void TaskManager::startExploreTask() {
-    // Start with a rotation command in case no frontiers immediately processed, will be overridden with first exploration goal
-    geometry_msgs::Twist vel;
-    vel.angular.x = 0;
-    vel.angular.y = 0;
-    vel.angular.z = M_PI_2; // PI/2 rad/s
-    local_vel_pub_.publish(vel);
-
-    current_status_ = CurrentStatus::EXPLORING;
-    explore_action_client_.sendGoal(current_explore_goal_);
-}
-
-void TaskManager::stop() {
-    stopBag();
-    pauseOperations();
-}
-
-void TaskManager::modeMonitor() {
-
+void TaskManager::checkArmStatus() {
     std::string mode = drone_state_manager_.getFlightMode();
     bool armed = drone_state_manager_.getIsArmed();
-    bool in_air = drone_state_manager_.getIsInAir();
     if (!is_armed_ && armed) {
-        cmd_history_.append("Manually set armed state to true. \n ");
+        cmd_history_.append("Manually set armed state to true. \n");
         is_armed_ = true;
     }
     if (is_armed_ && !bag_active_) {
@@ -840,68 +751,10 @@ void TaskManager::modeMonitor() {
     if (is_armed_ && !armed) {
         cmd_history_.append("Disarm detected. \n ");
         // Handle save bag during disarm (manual or auton)
-        stop();
+        stopBag();
+        pauseOperations();
         is_armed_ = false; // Reset so can restart if another arming
     }
-
-    // Update home position
-    home_pos_.header.stamp = ros::Time::now();
-
-    // This is the primary state machine
-    switch (current_status_) {
-        case CurrentStatus::EXPLORING:
-        {
-            // Check if we can make it home on current battery levels
-            if (!isBatteryOk()) {
-                std::string action_string = "Battery level low, returning home";
-                ROS_WARN("%s", action_string.c_str());
-                cmd_history_.append(action_string);
-                pauseOperations();
-                doRtl88();
-            }
-            
-            // Check action client status to see if complete
-            actionlib::SimpleClientGoalState goal_state = explore_action_client_.getState();
-            bool is_aborted = goal_state == actionlib::SimpleClientGoalState::ABORTED;
-            bool is_lost = goal_state == actionlib::SimpleClientGoalState::LOST;
-            bool is_completed = goal_state == actionlib::SimpleClientGoalState::SUCCEEDED;
-            if (is_aborted || is_lost || is_completed) {
-                ROS_INFO("explore action client state: %s", explore_action_client_.getState().getText().c_str());
-                std::string action_string = "Exploration complete, action client status: " + explore_action_client_.getState().getText() + ", sending SLAM origin as position target. \n";
-                cmd_history_.append(action_string);
-                doRtl88();
-                hello_decco_manager_.updateBurnUnit(current_index_, "COMPLETED");
-            }
-        }
-        break;
-
-        case CurrentStatus::RTL_88:
-        {
-            if (drone_state_manager_.getCurrentLocalPosition().pose.position == home_pos_.pose.position) {
-                ROS_INFO("RTL_88 completed, landing");
-                drone_state_manager_.setMode(land_mode_);
-                current_status_ = CurrentStatus::LANDING;
-            }
-        }
-        break;
-    }
-
-
-    task_msg_.header.stamp = ros::Time::now();
-    task_msg_.cmd_history.data = cmd_history_.c_str();
-    task_msg_.current_status.data = getStatusString();
-    task_pub_.publish(task_msg_);
-    json task_json = makeTaskJson();
-    hello_decco_manager_.packageToMapversation("task_status", task_json);
-    // std_msgs::String task_json_msg;
-    // task_json_msg.data = task_json.dump();
-    // task_json_pub_.publish(task_json_msg);
-}
-
-void TaskManager::doRtl88() {
-    ROS_INFO("Doing RTL 88");
-    local_pos_pub_.publish(home_pos_);
-    current_status_ = CurrentStatus::RTL_88;
 }
 
 bool TaskManager::isBatteryOk() {
@@ -938,17 +791,6 @@ void TaskManager::stopBag() {
     bag_active_ = false;
 }
 
-void TaskManager::getDroneReady() {
-    ROS_INFO("getting ready for action");
-    if (do_record_) {
-        startBag();
-    }
-    if (!drone_state_manager_.readyForAction()) {
-        did_takeoff_ = drone_state_manager_.getReadyForAction();
-        cmd_history_.append("Drone ready for action result: " + std::to_string(did_takeoff_) + "\n");
-    }
-}
-
 bool TaskManager::isInside(const geometry_msgs::Polygon& polygon, const geometry_msgs::Point& point)
 {
   // Determine if the given point is inside the polygon using the number of crossings method
@@ -971,10 +813,14 @@ bool TaskManager::isInside(const geometry_msgs::Polygon& polygon, const geometry
   return cross % 2 > 0;
 }
 
-bool TaskManager::polygonDistanceOk(double &min_dist, geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region) {
+bool TaskManager::polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region) {
+
+    if (isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition().pose.position))
+        return true;
+
     // Medium check, computes distance to nearest point on 2 most likely polygon edges
     // Polygon is already in map coordinates, i.e., expressed in meters from UAS home
-    min_dist = DBL_MAX;
+    double min_dist = DBL_MAX;
     int closest_point_ind = 0;
     for (int ii=0; ii < map_region.points.size(); ii++) {
         double d = std::pow(map_region.points.at(ii).x, 2) + std::pow(map_region.points.at(ii).y, 2);
@@ -1086,116 +932,69 @@ void TaskManager::padNavTarget(geometry_msgs::PoseStamped &target) {
 
 }
 
-std::string TaskManager::getStatusString() {
-    switch (current_status_) {
-        case CurrentStatus::ON_START:           return "ON_START";
-        case CurrentStatus::EXPLORING:          return "EXPLORING";
-        case CurrentStatus::WAITING_TO_EXPLORE: return "WAITING_TO_EXPLORE";
-        case CurrentStatus::INITIALIZED:        return "INITIALIZED";
-        case CurrentStatus::NAVIGATING:         return "NAVIGATING";
-        case CurrentStatus::RTL_88:             return "RTL_88";
-        case CurrentStatus::TAKING_OFF:         return "TAKING_OFF";
-        case CurrentStatus::LANDING:            return "LANDING";
-        default:                                return "unknown";
+std::string TaskManager::getTaskString(Task task) {
+    switch (task) {
+        case Task::INITIALIZING:           return "INITIALIZING";
+        case Task::PREFLIGHT_CHECK:        return "PREFLIGHT_CHECK";
+        case Task::READY:                  return "READY";
+        case Task::MANUAL_FLIGHT:          return "MANUAL_FLIGHT";
+        case Task::PAUSE:                  return "PAUSE";
+        case Task::EXPLORING:              return "EXPLORING";
+        case Task::IN_TRANSIT:             return "IN_TRANSIT";
+        case Task::RTL_88:                 return "RTL_88";
+        case Task::TAKING_OFF:             return "TAKING_OFF";
+        case Task::LANDING:                return "LANDING";
+        case Task::FAILSAFE_LANDING:       return "FAILSAFE_LANDING";
+        case Task::COMPLETE:               return "COMPLETE";
+        default:                           return "unknown";
     }
 }
 
-void TaskManager::publishHealth() {
-    // TODO fill in json string and publish
-    ros::Duration half_dur = ros::Duration(0.5 * health_check_s_.toSec() );
-    bool explore_healthy = explore_action_client_.waitForServer(half_dur);
-    auto jsonObjects = json::object();
-    ros::Time t = ros::Time::now();
-    json header = {
-        {"frame_id", "decco"},
-        {"stamp", t.toSec()},
-    };
-    jsonObjects["header"] = header;
+void TaskManager::slamPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose) {
 
-    auto healthObjects = json::array();
-    // 1) Path planner. TODO, replace with ROS node binding
-    bool path_healthy = (t - last_path_planner_stamp_ < health_check_s_);
-    if (!path_healthy && do_slam_) {
-        cmd_history_.append("Failsafe triggered by path unhealthy. \n");
-        failsafe();
+    // Transform decco pose (in slam_map frame) and publish it in mavros_map frame as /mavros/vision_pose/pose
+    if (!map_tf_init_) {
+        return;
     }
-    json j = {
-        {"name", "lidar"},
-        {"label", "LiDAR"},
-        {"isHealthy", (t - last_lidar_stamp_ < health_check_s_)}
-    };
-    if (do_slam_) {
-        // SLAM position
-        bool slam_healthy = (t - last_slam_pos_stamp_ < health_check_s_);
-        if (!slam_healthy) {
-            cmd_history_.append("Failsafe triggered by SLAM unhealthy. \n");
-            failsafe();
-        }
-        j = {
-            {"name", "slamPosition"},
-            {"label", "SLAM position"},
-            {"isHealthy", slam_healthy}
-        };
-        healthObjects.push_back(j);
-        j = {
-            {"name", "pathPlanner"},
-            {"label", "Path planner"},
-            {"isHealthy", path_healthy}
-        };
-        healthObjects.push_back(j);
-        // costmap
-        j = {
-            {"name", "costmap"},
-            {"label", "Costmap"},
-            {"isHealthy", (t - last_costmap_stamp_ < health_check_s_)}
-        };
-        healthObjects.push_back(j);
-        // 6) Explore
-        j = {
-            {"name", "explore"},
-            {"label", "Explore Service"},
-            {"isHealthy", explore_healthy}
-        };
-        healthObjects.push_back(j);
+
+    geometry_msgs::TransformStamped tf;
+    try {
+        tf = tf_buffer_.lookupTransform(mavros_map_frame_, slam_map_frame_, ros::Time(0));
+    } catch (tf2::TransformException & ex) {
+        ROS_WARN_THROTTLE(10, "Cannot publish vision pose as map<>slam_map tf not yet available");
+        return;
     }
-    // MAPIR
-    if (do_mapir_ || do_mapir_rgb_) {
-        j = {
-            {"name", "mapir"},
-            {"label", "MAPIR Camera"},
-            {"isHealthy", (t - last_mapir_stamp_ < health_check_s_)}
-        };
-        healthObjects.push_back(j);
+
+    // Apply the transform to the drone pose
+    geometry_msgs::PoseStamped msg_body_pose;
+    geometry_msgs::PoseStamped slam = *slam_pose;
+
+    tf2::doTransform(slam, msg_body_pose, tf);
+    msg_body_pose.header.frame_id = mavros_map_frame_;
+    msg_body_pose.header.stamp = slam_pose->header.stamp;
+
+    vision_pose_publisher_.publish(msg_body_pose);
+
+    last_slam_pos_stamp_ = slam_pose->header.stamp;
+
+    // Map tf for offline
+    if (explicit_global_params_) {
+        geometry_msgs::PointStamped point_in, point_out;
+        point_in.header = slam_pose->header;
+        point_in.point.x = 0;
+        point_in.point.y = 0;
+        point_in.point.z = 0;
+        tf2::doTransform(point_in, point_out, utm2map_tf_);
+        double lat, lon;
+        hello_decco_manager_.utmToLL(point_out.point.x, point_out.point.y, home_utm_zone_, lat, lon);
+        sensor_msgs::NavSatFix nav_msg;
+        nav_msg.header.frame_id = mavros_base_frame_;
+        nav_msg.header.stamp = slam_pose->header.stamp;
+        nav_msg.latitude = lat;
+        nav_msg.longitude = lon;
+        global_pose_pub_.publish(nav_msg);
+
     }
-    // Attollo
-    if (do_attollo_) {
-        j = {
-            {"name", "attollo"},
-            {"label", "Attollo Camera"},
-            {"isHealthy", (t - last_attollo_stamp_ < health_check_s_)}
-        };
-        healthObjects.push_back(j);
-    }
-    // Thermal
-    if (do_thermal_) {
-        j = {
-            {"name", "thermal"},
-            {"label", "Thermal Camera"},
-            {"isHealthy", (t - last_thermal_stamp_ < health_check_s_)}
-        };
-        healthObjects.push_back(j);
-    }
-    // ROS bag
-    if (is_armed_ && !simulate_) {
-        j = {
-            {"name", "rosbag"},
-            {"label", "ROS bag"},
-            {"isHealthy", (t - last_rosbag_stamp_ < health_check_s_)}
-        };
-        healthObjects.push_back(j);
-    }
-    jsonObjects["healthIndicators"] = healthObjects;
-    hello_decco_manager_.packageToMapversation("health_report", jsonObjects);
 }
 
 void TaskManager::registeredPclCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
@@ -1252,7 +1051,265 @@ void TaskManager::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) 
 
 void TaskManager::mapYawCallback(const std_msgs::Float64::ConstPtr &msg) {
     map_yaw_ = msg->data;
-    ROS_INFO("got map yaw: %f", map_yaw_);
+    ROS_INFO("Got map yaw: %f", map_yaw_ * 180 / M_PI);
+}
+
+void TaskManager::packageFromMapversation(const std_msgs::String::ConstPtr &msg) {
+    json mapver_json = json::parse(msg->data);
+    std::string topic = mapver_json["topic"];
+    json gossip_json = mapver_json["gossip"];
+    if (topic == "burn_unit_send") {
+        makeBurnUnitJson(gossip_json);
+    }
+    else if (topic == "target_polygon") {
+        json burn_unit = hello_decco_manager_.polygonToBurnUnit(gossip_json);
+        makeBurnUnitJson(burn_unit);
+    }
+    else if (topic == "target_setpoint") {
+        setpointResponse(gossip_json);
+    }
+    else if (topic == "emergency") {
+        std::string severity = gossip_json["severity"];
+        emergencyResponse(severity);
+    }
+    else if (topic == "altitudes") {
+        altitudesResponse(gossip_json);
+    }
+    else if (topic == "heartbeat") {
+        remoteIDResponse(gossip_json);
+    }
+}
+
+void TaskManager::makeBurnUnitJson(json burn_unit) {
+
+    if (!map_tf_init_) {
+        ROS_WARN("Not ready for flight, try again after initialized.");
+        return;
+    }
+    std::string name = burn_unit["name"];
+    burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
+    hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
+    current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
+    if (current_index_ < 0) {
+        std::string str = "No burn polygon was found, all are already complete, not exploring.";
+        ROS_WARN("%s", str.c_str());
+        cmd_history_.append(str + "\n");
+        return;
+    }
+    
+    if (!polygonDistanceOk(initial_transit_point_, current_polygon_)) {
+        std::string str = "Polygon rejected, exceeds maximum starting distance threshold.";
+        ROS_WARN("%s", str.c_str());
+        cmd_history_.append(str + "\n");
+        return;
+    }
+
+    needs_takeoff_ = true;
+}
+
+void TaskManager::setpointResponse(json &json_msg) {
+    // ATM, this response is purely a testing function. 
+    startBag();
+}
+
+void TaskManager::emergencyResponse(const std::string severity) {
+    std::string str = "Emergency response initiated with level " + severity;
+    ROS_WARN("%s", str.c_str());
+    cmd_history_.append(str + "\n");
+
+    // Then respond based on severity 
+    if (severity == "PAUSE") {
+        // NOTICE = PAUSE
+        // TODO, tell exploration to stop searching frontiers. For now, will keep blacklisting them, but the drone is in PAUSE mode. Currently no way to pick back up and set to guided mode (here or in HD)
+        // Immediately set to hover
+        startPause("pilot request");
+    }
+    else if (severity == "LAND") {
+        // EMERGENCY = LAND IMMEDIATELY
+        startFailsafeLanding("pilot request");
+    }
+    else if (severity == "RTL") {
+        // CRITICAL = RTL
+        startRtl88("pilot request");
+    }
+}
+
+void TaskManager::altitudesResponse(json &json_msg) {
+
+    if (!json_msg["max_altitude"].is_number() || 
+        !json_msg["min_altitude"].is_number() || 
+        !json_msg["default_altitude"].is_number()) {
+        ROS_WARN("Altitude message from mapversation contains invalid data");
+        return;
+    }
+
+    float max_altitude = json_msg["max_altitude"];
+    float min_altitude = json_msg["min_altitude"];
+    float default_altitude = json_msg["default_altitude"];
+
+    // Set altitude params in all nodes that use them
+    ros::param::set("/task_manager/max_alt", max_altitude);
+    ros::param::set("/task_manager/min_alt", min_altitude);
+    ros::param::set("/task_manager/default_alt", default_altitude);
+
+    // It's simpler just to set the task manager altitude data here instead of re-fetching the param dynamically
+    max_altitude_ = max_altitude;
+    min_altitude_ = min_altitude;
+    target_altitude_ = default_altitude;
+
+    ros::param::set("/path_planning_node/search/max_alt", max_altitude);
+    ros::param::set("/path_planning_node/search/min_alt", min_altitude);
+}
+
+void TaskManager::remoteIDResponse(json &json) {
+
+    // Unpack JSON here for convenience
+    std::string uas_id_str = json["uas_id"].is_null() ? "" : json["uas_id"];
+    std::string operator_id_str = json["operator_id"].is_null() ? "" : json["operator_id"];
+    float operator_latitude = json["operator_latitude"].is_number_float() ? (float)json["operator_latitude"] : 0.f;
+    float operator_longitude = json["operator_longitude"].is_number_float() ? (float)json["operator_longitude"] : 0.f;
+    float operator_altitude_geo = json["operator_altitude_geo"].is_number_float() ? (float)json["operator_altitude_geo"] : 0.f;
+    int timestamp = json["timestamp"].is_number_integer() ? (int)json["timestamp"] : 0; 
+    
+    if (!init_remote_id_message_sent_) {
+        // Basic ID
+        mavros_msgs::BasicID basic_id;
+        basic_id.header.stamp = ros::Time::now();
+        basic_id.id_type = mavros_msgs::BasicID::MAV_ODID_ID_TYPE_CAA_REGISTRATION_ID;
+        basic_id.ua_type = mavros_msgs::BasicID::MAV_ODID_UA_TYPE_HELICOPTER_OR_MULTIROTOR;
+        basic_id.uas_id = uas_id_str;
+        odid_basic_id_pub_.publish(basic_id);
+
+        // Operator ID
+        mavros_msgs::OperatorID operator_id;
+        operator_id.header.stamp = ros::Time::now();
+        operator_id.operator_id_type = mavros_msgs::OperatorID::MAV_ODID_OPERATOR_ID_TYPE_CAA;
+        operator_id.operator_id = operator_id_str;
+        odid_operator_id_pub_.publish(operator_id);
+        operator_id_ = operator_id_str;
+
+        // System
+        // This should probably just be published at startup, and System Update published here
+        mavros_msgs::System system;
+        system.header.stamp = ros::Time::now();
+        system.operator_location_type = mavros_msgs::System::MAV_ODID_OPERATOR_LOCATION_TYPE_TAKEOFF; // TODO dynamic operator location
+        system.classification_type = mavros_msgs::System::MAV_ODID_CLASSIFICATION_TYPE_UNDECLARED;
+        system.operator_latitude = operator_latitude * 1E7;
+        system.operator_longitude = operator_longitude * 1E7;
+        system.operator_altitude_geo = operator_altitude_geo;
+        system.timestamp = timestamp;
+        odid_system_pub_.publish(system);
+
+        init_remote_id_message_sent_ = true;
+    }
+
+    // SystemUpdate
+    mavros_msgs::SystemUpdate system_update;
+    system_update.header.stamp = ros::Time::now();
+    system_update.operator_latitude = operator_latitude * 1E7;
+    system_update.operator_longitude = operator_longitude * 1E7;
+    system_update.operator_altitude_geo = operator_altitude_geo;
+    if (timestamp > last_rid_updated_timestamp_) {
+        system_update.timestamp = timestamp;
+        last_rid_updated_timestamp_ = timestamp;
+    }
+    else {
+        system_update.timestamp = ros::Time::now().toSec();
+    }
+    odid_system_update_pub_.publish(system_update);
+
+}
+
+void TaskManager::publishHealth() {
+
+    auto jsonObjects = json::object();
+    json header = {
+        {"frame_id", "decco"},
+        {"stamp", ros::Time::now().toSec()},
+    };
+    jsonObjects["header"] = header;
+
+    auto healthObjects = json::array();
+
+    json j = {
+        {"name", "battery"},
+        {"label", "Battery"},
+        {"isHealthy", health_checks_.battery_ok}
+    };
+    healthObjects.push_back(j);
+    j = {
+        {"name", "lidar"},
+        {"label", "LiDAR"},
+        {"isHealthy", health_checks_.lidar_ok}
+    };
+    healthObjects.push_back(j);
+    if (do_slam_) {
+        j = {
+            {"name", "slamPosition"},
+            {"label", "SLAM position"},
+            {"isHealthy", health_checks_.slam_ok}
+        };
+        healthObjects.push_back(j);
+        j = {
+            {"name", "pathPlanner"},
+            {"label", "Path planner"},
+            {"isHealthy", health_checks_.path_ok}
+        };
+        healthObjects.push_back(j);
+        // costmap
+        j = {
+            {"name", "costmap"},
+            {"label", "Costmap"},
+            {"isHealthy", health_checks_.costmap_ok}
+        };
+        healthObjects.push_back(j);
+        // 6) Explore
+        j = {
+            {"name", "explore"},
+            {"label", "Explore Service"},
+            {"isHealthy", health_checks_.explore_ok}
+        };
+        healthObjects.push_back(j);
+    }
+    // MAPIR
+    if (do_mapir_ || do_mapir_rgb_) {
+        j = {
+            {"name", "mapir"},
+            {"label", "MAPIR Camera"},
+            {"isHealthy", health_checks_.mapir_ok}
+        };
+        healthObjects.push_back(j);
+    }
+    // Attollo
+    if (do_attollo_) {
+        j = {
+            {"name", "attollo"},
+            {"label", "Attollo Camera"},
+            {"isHealthy", health_checks_.attollo_ok}
+        };
+        healthObjects.push_back(j);
+    }
+    // Thermal
+    if (do_thermal_) {
+        j = {
+            {"name", "thermal"},
+            {"label", "Thermal Camera"},
+            {"isHealthy", health_checks_.thermal_ok}
+        };
+        healthObjects.push_back(j);
+    }
+    // ROS bag
+    if (is_armed_ && !simulate_) {
+        j = {
+            {"name", "rosbag"},
+            {"label", "ROS bag"},
+            {"isHealthy", health_checks_.rosbag_ok}
+        };
+        healthObjects.push_back(j);
+    }
+
+    jsonObjects["healthIndicators"] = healthObjects;
+    hello_decco_manager_.packageToMapversation("health_report", jsonObjects);
 }
 
 json TaskManager::makeTaskJson() {
@@ -1264,12 +1321,15 @@ json TaskManager::makeTaskJson() {
     goalArray.push_back(xval);
     goalArray.push_back(yval);
     j["goal"] = goalArray;
-    j["taskStatus"] = getStatusString();
+    j["taskStatus"] = getTaskString(current_task_);
     j["minAltitude"] = min_altitude_;
     j["maxAltitude"] = max_altitude_;
     j["targetAltitude"] = target_altitude_;
     j["flightMinLeft"] = (int)(drone_state_manager_.getFlightTimeRemaining() / 60.f);
     j["operatorID"] = operator_id_;
+    j["rawVoltage"] = (int)(drone_state_manager_.getBatteryVoltage() * 100);
+    j["readyToArm"] = drone_state_manager_.getDroneReadyToArm();
+    j["isArmed"] = drone_state_manager_.getIsArmed();
     return j;
 }
 
