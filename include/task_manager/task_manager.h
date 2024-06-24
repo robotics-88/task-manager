@@ -32,7 +32,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "messages_88/NavToPointAction.h"
 #include "messages_88/Save.h"
 #include "messages_88/TaskStatus.h"
-#include "task_manager/drone_state_manager.h"
+#include "task_manager/flight_controller_interface.h"
 #include "task_manager/hello_decco_manager.h"
 
 #include <task_manager/json.hpp>
@@ -221,7 +221,7 @@ class TaskManager {
         geometry_msgs::TransformStamped slam_to_map_tf_;
 
         // Drone state and services
-        drone_state_manager::DroneStateManager drone_state_manager_;
+        flight_controller_interface::FlightControllerInterface flight_controller_interface_;
         ros::ServiceServer geopoint_service_;
 
         // Heartbeat
@@ -322,7 +322,7 @@ class TaskManager {
         std::string getTaskString(Task task);
         std::string getEventTypeString(EventType type);
         std::string getSeverityString(Severity sev);
-        void initDroneStateManager();
+        void initFlightControllerInterface();
         bool convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp);
         void logEvent(EventType type, Severity sev, std::string description);
 

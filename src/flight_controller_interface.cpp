@@ -3,7 +3,7 @@
 Author: Erin Linebarger <erin@robotics88.com> 
 */
 
-#include "task_manager/drone_state_manager.h"
+#include "task_manager/flight_controller_interface.h"
 #include "messages_88/ExploreAction.h"
 #include "messages_88/Battery.h"
 
@@ -20,9 +20,9 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>  
 #include <float.h>
-namespace drone_state_manager
+namespace flight_controller_interface
 {
-DroneStateManager::DroneStateManager(ros::NodeHandle& node)
+FlightControllerInterface::FlightControllerInterface(ros::NodeHandle& node)
   : private_nh_("~")
   , nh_(node)
   , offline_(false)
@@ -99,17 +99,17 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
     safety_area_viz_ = nh_.advertise<geometry_msgs::PolygonStamped>("safety_box", 10);
 
     // Set subscribers for Mavros
-    mavros_global_pos_subscriber_ = nh_.subscribe<sensor_msgs::NavSatFix>("/mavros/global_position/global", 10, &DroneStateManager::globalPositionCallback, this);
-    mavros_local_pos_subscriber_ = nh_.subscribe<geometry_msgs::PoseStamped>("/mavros/local_position/pose", 10, &DroneStateManager::localPositionCallback, this);
-    mavros_state_subscriber_ = nh_.subscribe<mavros_msgs::State>("/mavros/state", 10, &DroneStateManager::statusCallback, this);
-    mavros_alt_subscriber_ = nh_.subscribe<std_msgs::Float64>("/mavros/global_position/rel_alt", 10, &DroneStateManager::altitudeCallback, this);
-    mavros_imu_subscriber_ = nh_.subscribe<sensor_msgs::Imu>("/mavros/imu/data", 10, &DroneStateManager::imuCallback, this);
-    mavros_compass_subscriber_ = nh_.subscribe<std_msgs::Float64>("/mavros/global_position/compass_hdg", 10, &DroneStateManager::compassCallback, this);
-    mavros_battery_subscriber_ = nh_.subscribe<sensor_msgs::BatteryState>("/mavros/battery", 10, &DroneStateManager::batteryCallback, this);
-    mavros_sys_status_subscriber_ = nh_.subscribe<mavros_msgs::SysStatus>("/mavros/sys_status", 10, &DroneStateManager::sysStatusCallback, this);
+    mavros_global_pos_subscriber_ = nh_.subscribe<sensor_msgs::NavSatFix>("/mavros/global_position/global", 10, &FlightControllerInterface::globalPositionCallback, this);
+    mavros_local_pos_subscriber_ = nh_.subscribe<geometry_msgs::PoseStamped>("/mavros/local_position/pose", 10, &FlightControllerInterface::localPositionCallback, this);
+    mavros_state_subscriber_ = nh_.subscribe<mavros_msgs::State>("/mavros/state", 10, &FlightControllerInterface::statusCallback, this);
+    mavros_alt_subscriber_ = nh_.subscribe<std_msgs::Float64>("/mavros/global_position/rel_alt", 10, &FlightControllerInterface::altitudeCallback, this);
+    mavros_imu_subscriber_ = nh_.subscribe<sensor_msgs::Imu>("/mavros/imu/data", 10, &FlightControllerInterface::imuCallback, this);
+    mavros_compass_subscriber_ = nh_.subscribe<std_msgs::Float64>("/mavros/global_position/compass_hdg", 10, &FlightControllerInterface::compassCallback, this);
+    mavros_battery_subscriber_ = nh_.subscribe<sensor_msgs::BatteryState>("/mavros/battery", 10, &FlightControllerInterface::batteryCallback, this);
+    mavros_sys_status_subscriber_ = nh_.subscribe<mavros_msgs::SysStatus>("/mavros/sys_status", 10, &FlightControllerInterface::sysStatusCallback, this);
 
     // Slam pose subscriber
-    slam_pose_subscriber_ = nh_.subscribe<geometry_msgs::PoseStamped>("/decco/pose", 10, &DroneStateManager::slamPoseCallback, this);
+    slam_pose_subscriber_ = nh_.subscribe<geometry_msgs::PoseStamped>("/decco/pose", 10, &FlightControllerInterface::slamPoseCallback, this);
 
     battery_pub_ = nh_.advertise<messages_88::Battery>("/decco/battery", 10);
 
@@ -118,8 +118,8 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
         requestMavlinkStreams();
 
         attempts_ = 0;
-        drone_init_timer_ = private_nh_.createTimer(ros::Duration(1.0), &DroneStateManager::initializeDrone, this);
-        msg_rate_timer_ = private_nh_.createTimer(ros::Duration(msg_rate_timer_dt_), &DroneStateManager::checkMsgRates, this);
+        drone_init_timer_ = private_nh_.createTimer(ros::Duration(1.0), &FlightControllerInterface::initializeDrone, this);
+        msg_rate_timer_ = private_nh_.createTimer(ros::Duration(msg_rate_timer_dt_), &FlightControllerInterface::checkMsgRates, this);
     }
 
     local_pos_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/mavros/setpoint_position/local", 10);
@@ -141,13 +141,13 @@ DroneStateManager::DroneStateManager(ros::NodeHandle& node)
     mavros_imu_init_.orientation.w = 0;
 }
 
-DroneStateManager::~DroneStateManager() {
+FlightControllerInterface::~FlightControllerInterface() {
     arming_client_.shutdown();
     set_mode_client_.shutdown();
     takeoff_client_.shutdown();
 }
 
-void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
+void FlightControllerInterface::initializeDrone(const ros::TimerEvent &event) {
 
     // Try setting a dummy param to check if param fetch has completed
     if (!param_fetch_complete_) {
@@ -361,7 +361,7 @@ void DroneStateManager::initializeDrone(const ros::TimerEvent &event) {
 
 }
 
-void DroneStateManager::requestMavlinkStreams() {
+void FlightControllerInterface::requestMavlinkStreams() {
 
     ROS_INFO_THROTTLE(5, "Requesting MAVLink streams from autopilot");
 
@@ -392,13 +392,13 @@ void DroneStateManager::requestMavlinkStreams() {
     msg_interval_client.call(msg_interval_srv);
 }
 
-void DroneStateManager::initUTM(double &utm_x, double &utm_y) {
+void FlightControllerInterface::initUTM(double &utm_x, double &utm_y) {
     GeographicLib::GeoCoords c(current_ll_.latitude, current_ll_.longitude);
     utm_x = c.Easting();
     utm_y = c.Northing();
 }
 
-void DroneStateManager::checkMsgRates(const ros::TimerEvent &event) {
+void FlightControllerInterface::checkMsgRates(const ros::TimerEvent &event) {
 
     // Don't run until param fetch is complete (avoids annoying warnings)
     if (!param_fetch_complete_) {
@@ -436,7 +436,7 @@ void DroneStateManager::checkMsgRates(const ros::TimerEvent &event) {
     battery_count_ = 0;
 }
 
-void DroneStateManager::setAutonomyEnabled(bool enabled) {
+void FlightControllerInterface::setAutonomyEnabled(bool enabled) {
     enable_autonomy_ = enabled;
     if (enable_autonomy_) {
         arming_client_ = nh_.serviceClient<mavros_msgs::CommandBool>("/mavros/cmd/arming");
@@ -450,14 +450,14 @@ void DroneStateManager::setAutonomyEnabled(bool enabled) {
     }
 }
 
-bool DroneStateManager::getMapYaw(double &yaw) {
+bool FlightControllerInterface::getMapYaw(double &yaw) {
     if (compass_init_ok_) {
         yaw = home_compass_hdg_;
     }
     return compass_init_ok_;
 }
 
-bool DroneStateManager::getAveragedOrientation(geometry_msgs::Quaternion &orientation) {
+bool FlightControllerInterface::getAveragedOrientation(geometry_msgs::Quaternion &orientation) {
 
     if (imu_averaging_vec_.size() < imu_averaging_n_) {
         ROS_WARN("IMU does not have enough samples for proper averaging");
@@ -480,23 +480,23 @@ bool DroneStateManager::getAveragedOrientation(geometry_msgs::Quaternion &orient
     return true;
 }
 
-void DroneStateManager::slamPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
+void FlightControllerInterface::slamPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
     current_slam_pose_ = *msg;
 }
 
-void DroneStateManager::globalPositionCallback(const sensor_msgs::NavSatFix::ConstPtr &msg) {
+void FlightControllerInterface::globalPositionCallback(const sensor_msgs::NavSatFix::ConstPtr &msg) {
     current_ll_ = *msg;
     // Check UTM zone
     double lat = msg->latitude, lon = msg->longitude;
     detected_utm_zone_ = GeographicLib::UTMUPS::StandardZone(lat, lon);
 }
 
-void DroneStateManager::localPositionCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
+void FlightControllerInterface::localPositionCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
     current_pose_ = *msg;
     local_pos_count_++;
 }
 
-void DroneStateManager::imuCallback(const sensor_msgs::Imu::ConstPtr &msg) {
+void FlightControllerInterface::imuCallback(const sensor_msgs::Imu::ConstPtr &msg) {
     current_imu_ = *msg;
     imu_count_++;
 
@@ -507,12 +507,12 @@ void DroneStateManager::imuCallback(const sensor_msgs::Imu::ConstPtr &msg) {
     imu_averaging_vec_.push_back(current_imu_);
 }
 
-void DroneStateManager::compassCallback(const std_msgs::Float64::ConstPtr & msg) {
+void FlightControllerInterface::compassCallback(const std_msgs::Float64::ConstPtr & msg) {
     compass_hdg_ = msg->data;
     compass_received_ = true;
 }
 
-void DroneStateManager::batteryCallback(const sensor_msgs::BatteryState::ConstPtr &msg) {
+void FlightControllerInterface::batteryCallback(const sensor_msgs::BatteryState::ConstPtr &msg) {
     current_battery_ = *msg;
     battery_count_++;
 
@@ -566,7 +566,7 @@ void DroneStateManager::batteryCallback(const sensor_msgs::BatteryState::ConstPt
     battery_pub_.publish(batt_msg);
 }
 
-void DroneStateManager::statusCallback(const mavros_msgs::State::ConstPtr & msg) {
+void FlightControllerInterface::statusCallback(const mavros_msgs::State::ConstPtr & msg) {
     // TODO add system status with enum matching MAV_STATE defined by Mavlink
     connected_ = msg->connected;
     armed_ = msg->armed;
@@ -574,17 +574,17 @@ void DroneStateManager::statusCallback(const mavros_msgs::State::ConstPtr & msg)
     in_guided_mode_ = current_mode_ == guided_mode_;
 }
 
-void DroneStateManager::altitudeCallback(const std_msgs::Float64::ConstPtr & msg) {
+void FlightControllerInterface::altitudeCallback(const std_msgs::Float64::ConstPtr & msg) {
     in_air_ = msg->data > 1.0 && armed_;
     current_altitude_ = msg->data;
 }
 
-void DroneStateManager::sysStatusCallback(const mavros_msgs::SysStatus::ConstPtr &msg) {
+void FlightControllerInterface::sysStatusCallback(const mavros_msgs::SysStatus::ConstPtr &msg) {
     // Bitwise check of healthy sensors vs enabled sensors
     ready_to_arm_ = (msg->sensors_health & msg->sensors_enabled) == msg->sensors_enabled;
 }
 
-bool DroneStateManager::setMode(std::string mode) {
+bool FlightControllerInterface::setMode(std::string mode) {
     mavros_msgs::SetMode offb_set_mode;
     offb_set_mode.request.custom_mode = mode;
     set_mode_client_.waitForExistence(service_wait_duration_);
@@ -598,7 +598,7 @@ bool DroneStateManager::setMode(std::string mode) {
     }
 }
 
-bool DroneStateManager::arm() {
+bool FlightControllerInterface::arm() {
     if (armed_) {
         ROS_WARN("Not arming, already armed");
         return false;
@@ -620,7 +620,7 @@ bool DroneStateManager::arm() {
     }
 }
 
-bool DroneStateManager::takeOff() {
+bool FlightControllerInterface::takeOff() {
 
     ROS_INFO("Requesting takeoff");
 
@@ -663,7 +663,7 @@ bool DroneStateManager::takeOff() {
     }
 }
 
-float DroneStateManager::calculateBatteryPercentage(float voltage) {
+float FlightControllerInterface::calculateBatteryPercentage(float voltage) {
 
     float battery_percentage = 0.f;
 
@@ -700,7 +700,7 @@ float DroneStateManager::calculateBatteryPercentage(float voltage) {
 
 // These are old methods of getting battery percentage. They aren't currently used but I don't want to delete them just yet.
 
-// void DroneStateManager::calculateBatteryPercentage(float voltage_adj) {
+// void FlightControllerInterface::calculateBatteryPercentage(float voltage_adj) {
 
 //     // Battery voltage to battery percentage conversion is not linear. 
 //     // Use this piecewise function based on gathered data to estimate battery percentage.
@@ -736,7 +736,7 @@ float DroneStateManager::calculateBatteryPercentage(float voltage) {
 //     }
 // }
 
-// float DroneStateManager::findValidRoot(float a, float b, float c) {
+// float FlightControllerInterface::findValidRoot(float a, float b, float c) {
 //     float discriminant = b*b - 4*a*c;
 //     float x1, x2;
     

@@ -60,7 +60,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , do_record_(true)
     , bag_active_(false)
     , record_config_name_("r88_default")
-    , drone_state_manager_(node)
+    , flight_controller_interface_(node)
     , cmd_history_("")
     , explore_action_client_("explore", true)
     , health_check_pub_duration_(5.0)
@@ -208,7 +208,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     // Mapversation subscriber
     mapver_sub_ = nh_.subscribe<std_msgs::String>("/mapversation/to_decco", 10, &TaskManager::packageFromMapversation, this);
 
-    initDroneStateManager();
+    initFlightControllerInterface();
 
     health_check_timer_ = private_nh_.createTimer(ros::Duration(0.1),
                                [this](const ros::TimerEvent&) { checkHealth(); });
@@ -230,9 +230,9 @@ void TaskManager::runTaskManager() {
         case Task::INITIALIZING: {
             if (initialized()) {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Drone initialized");
-                drone_state_manager_.setMode(guided_mode_);
+                flight_controller_interface_.setMode(guided_mode_);
 
-                if (drone_state_manager_.getDroneReadyToArm()){
+                if (flight_controller_interface_.getDroneReadyToArm()){
                     logEvent(EventType::STATE_MACHINE, Severity::LOW, "Preflight checks passed, ready to arm");
                     updateCurrentTask(Task::READY);
                 }
@@ -247,7 +247,7 @@ void TaskManager::runTaskManager() {
             // TODO sim should pass arming checks too, they don't for some weird reasons.
             // Like loop rate 222 (which can be fixed by putting ClockSpeed: 0.8 in settings.json)
             // However, other things still fail. Eventually we should fix this and set ARMING_CHECK to 1 in ardupilot
-            if (drone_state_manager_.getDroneReadyToArm() || simulate_)
+            if (flight_controller_interface_.getDroneReadyToArm() || simulate_)
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Preflight checks passed, ready to arm");
                 updateCurrentTask(Task::READY);
             break;
@@ -266,14 +266,14 @@ void TaskManager::runTaskManager() {
                     startTakeoff();
                 }
             }
-            else if (drone_state_manager_.getIsArmed()) {
+            else if (flight_controller_interface_.getIsArmed()) {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Drone armed manually");
                 updateCurrentTask(Task::MANUAL_FLIGHT);
             }
             break;
         }
         case Task::MANUAL_FLIGHT: {
-            if (!drone_state_manager_.getIsArmed()) {
+            if (!flight_controller_interface_.getIsArmed()) {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Drone disarmed manually");
                 updateCurrentTask(Task::COMPLETE);
             }
@@ -285,9 +285,9 @@ void TaskManager::runTaskManager() {
         }
         case Task::TAKING_OFF: {
             // Once we reach takeoff altitude, transition to next flight state
-            if (drone_state_manager_.getAltitudeAGL() > (target_altitude_ - 1)) {
+            if (flight_controller_interface_.getAltitudeAGL() > (target_altitude_ - 1)) {
                 // If not in polygon, start navigation task
-                if (!isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition().pose.position)) {
+                if (!isInside(current_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position)) {
                     logEvent(EventType::STATE_MACHINE, Severity::LOW, "Transiting to polygon");
                     startTransit();
                 }
@@ -299,7 +299,7 @@ void TaskManager::runTaskManager() {
             break;
         }
         case Task::IN_TRANSIT: {
-            if (isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition().pose.position)) {
+            if (isInside(current_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position)) {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Starting exploration");
                 startExploration();
             }
@@ -320,7 +320,7 @@ void TaskManager::runTaskManager() {
             break;
         }
         case Task::RTL_88: {
-            if (drone_state_manager_.getCurrentLocalPosition().pose.position == home_pos_.pose.position) {
+            if (flight_controller_interface_.getCurrentLocalPosition().pose.position == home_pos_.pose.position) {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "RTL_88 completed, landing");
                 startLanding();
             }
@@ -328,7 +328,7 @@ void TaskManager::runTaskManager() {
         }
         case Task::LANDING:
         case Task::FAILSAFE_LANDING: {
-            if (!drone_state_manager_.getIsArmed()) {
+            if (!flight_controller_interface_.getIsArmed()) {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Flight complete");
                 updateCurrentTask(Task::COMPLETE);
             }
@@ -358,8 +358,8 @@ void TaskManager::startTakeoff() {
     // Set home position
     home_pos_.header.stamp = ros::Time::now();
     home_pos_.header.frame_id = mavros_map_frame_;
-    home_pos_.pose.position.x = drone_state_manager_.getCurrentLocalPosition().pose.position.x;
-    home_pos_.pose.position.y = drone_state_manager_.getCurrentLocalPosition().pose.position.y;
+    home_pos_.pose.position.x = flight_controller_interface_.getCurrentLocalPosition().pose.position.x;
+    home_pos_.pose.position.y = flight_controller_interface_.getCurrentLocalPosition().pose.position.y;
     home_pos_.pose.position.z = target_altitude_;
 
     // This is a redundant check but probably good to keep
@@ -368,7 +368,7 @@ void TaskManager::startTakeoff() {
         return;
     }
 
-    if (drone_state_manager_.takeOff()) {
+    if (flight_controller_interface_.takeOff()) {
         if (do_record_) {
             startBag();
         }
@@ -422,8 +422,8 @@ void TaskManager::startExploration() {
 void TaskManager::startRtl88() {
     pauseOperations();
 
-    if (drone_state_manager_.getFlightMode() != guided_mode_) {
-        drone_state_manager_.setMode(guided_mode_);
+    if (flight_controller_interface_.getFlightMode() != guided_mode_) {
+        flight_controller_interface_.setMode(guided_mode_);
     }
 
     local_pos_pub_.publish(home_pos_);
@@ -431,18 +431,18 @@ void TaskManager::startRtl88() {
 }
 
 void TaskManager::startLanding() {
-    drone_state_manager_.setMode(land_mode_);
+    flight_controller_interface_.setMode(land_mode_);
     updateCurrentTask(Task::LANDING);
 }
 
 void TaskManager::startFailsafeLanding() {
     pauseOperations();
-    drone_state_manager_.setMode(land_mode_);
+    flight_controller_interface_.setMode(land_mode_);
     updateCurrentTask(Task::FAILSAFE_LANDING);
 }
 
 void TaskManager::startPause() {
-    drone_state_manager_.setMode(brake_mode_);
+    flight_controller_interface_.setMode(brake_mode_);
     updateCurrentTask(Task::PAUSE);
 }
 
@@ -482,7 +482,7 @@ void TaskManager::checkFailsafes() {
         return;
 
     // Check for manual takeover
-    std::string mode = drone_state_manager_.getFlightMode();
+    std::string mode = flight_controller_interface_.getFlightMode();
     if (mode == "STABILIZE" || 
         mode == "ALT_HOLD" ||
         mode == "POSHOLD") {
@@ -544,7 +544,7 @@ bool TaskManager::initialized() {
     // Get drone heading
     if (!offline_) {
         double yaw = 0;
-        if (!drone_state_manager_.getMapYaw(yaw)) {
+        if (!flight_controller_interface_.getMapYaw(yaw)) {
             ROS_WARN_THROTTLE(10, "Waiting for heading from autopilot...");
             return false;
         }
@@ -568,7 +568,7 @@ bool TaskManager::initialized() {
     geometry_msgs::Quaternion init_orientation;
     ros::Rate r(0.5);
     logEvent(EventType::INFO, Severity::LOW, "Initializing IMU");
-    while (!drone_state_manager_.getAveragedOrientation(init_orientation)) {
+    while (!flight_controller_interface_.getAveragedOrientation(init_orientation)) {
         r.sleep();
     }
     tf2::Quaternion quatmav(init_orientation.x, init_orientation.y, init_orientation.z, init_orientation.w);
@@ -624,13 +624,13 @@ bool TaskManager::initialized() {
     logEvent(EventType::INFO, Severity::LOW, "Waiting for global position");
     ros::topic::waitForMessage<sensor_msgs::NavSatFix>("/mavros/global_position/global", nh_);
     while (home_utm_zone_ < 0) {
-        home_utm_zone_ = drone_state_manager_.getUTMZone();
+        home_utm_zone_ = flight_controller_interface_.getUTMZone();
         ros::spinOnce();
         ros::Duration(0.2).sleep();
     }
-    ROS_INFO("Got global, UTM zone: %d. LL : (%f, %f)", home_utm_zone_, drone_state_manager_.getCurrentGlobalPosition().latitude, drone_state_manager_.getCurrentGlobalPosition().longitude);
+    ROS_INFO("Got global, UTM zone: %d. LL : (%f, %f)", home_utm_zone_, flight_controller_interface_.getCurrentGlobalPosition().latitude, flight_controller_interface_.getCurrentGlobalPosition().longitude);
     double utm_x, utm_y;
-    drone_state_manager_.initUTM(utm_x, utm_y);
+    flight_controller_interface_.initUTM(utm_x, utm_y);
     hello_decco_manager_.setUtmOffsets(utm_x, utm_y);
     ROS_INFO("UTM offsets: (%f, %f)", utm_x, utm_y);
     ROS_INFO("Map yaw: %f", map_yaw_ * 180 / M_PI);
@@ -653,9 +653,9 @@ bool TaskManager::initialized() {
 
 bool TaskManager::convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp) {
     // Sanity check UTM
-    if (home_utm_zone_ != drone_state_manager_.getUTMZone()) {
+    if (home_utm_zone_ != flight_controller_interface_.getUTMZone()) {
         logEvent(EventType::INFO, Severity::LOW, "UTM zones crossed. Home UTM: " + std::to_string(home_utm_zone_) + 
-                                                 "Now UTM: " + std::to_string(drone_state_manager_.getUTMZone()));
+                                                 "Now UTM: " + std::to_string(flight_controller_interface_.getUTMZone()));
         return false;
         // TODO decide what to do about it
     }
@@ -672,11 +672,11 @@ bool TaskManager::convert2Geo(messages_88::Geopoint::Request& req, messages_88::
 }
 
 void TaskManager::heartbeatTimerCallback(const ros::TimerEvent&) {
-    sensor_msgs::NavSatFix hb = drone_state_manager_.getCurrentGlobalPosition();
-    geometry_msgs::PoseStamped local = drone_state_manager_.getCurrentLocalPosition();
-    double altitudeAgl = drone_state_manager_.getAltitudeAGL();
+    sensor_msgs::NavSatFix hb = flight_controller_interface_.getCurrentGlobalPosition();
+    geometry_msgs::PoseStamped local = flight_controller_interface_.getCurrentLocalPosition();
+    double altitudeAgl = flight_controller_interface_.getAltitudeAGL();
     geometry_msgs::Quaternion quat_flu = local.pose.orientation;
-    double yaw = drone_state_manager_.getCompass();
+    double yaw = flight_controller_interface_.getCompass();
     json j = {
         {"latitude", hb.latitude},
         {"longitude", hb.longitude},
@@ -729,9 +729,9 @@ bool TaskManager::pauseOperations() {
     return true;
 }
 
-void TaskManager::initDroneStateManager() {
+void TaskManager::initFlightControllerInterface() {
     // Drone state manager setup
-    drone_state_manager_.setAutonomyEnabled(enable_autonomy_);
+    flight_controller_interface_.setAutonomyEnabled(enable_autonomy_);
     task_msg_.enable_autonomy = enable_autonomy_;
     task_msg_.enable_exploration = true; // TODO just remove this
 
@@ -742,8 +742,8 @@ void TaskManager::initDroneStateManager() {
 }
 
 void TaskManager::checkArmStatus() {
-    std::string mode = drone_state_manager_.getFlightMode();
-    bool armed = drone_state_manager_.getIsArmed();
+    std::string mode = flight_controller_interface_.getFlightMode();
+    bool armed = flight_controller_interface_.getIsArmed();
     if (!is_armed_ && armed) {
         logEvent(EventType::INFO, Severity::LOW, "Manually set armed state to true");
         is_armed_ = true;
@@ -764,10 +764,10 @@ void TaskManager::checkArmStatus() {
 }
 
 bool TaskManager::isBatteryOk() {
-    geometry_msgs::Point location = drone_state_manager_.getCurrentLocalPosition().pose.position;
+    geometry_msgs::Point location = flight_controller_interface_.getCurrentLocalPosition().pose.position;
     double distance = sqrt(location.x * location.x + location.y * location.y);
     double time_to_home = distance / estimated_drone_speed_;
-    double flight_time_remaining = drone_state_manager_.getFlightTimeRemaining();
+    double flight_time_remaining = flight_controller_interface_.getFlightTimeRemaining();
 
     return (flight_time_remaining > battery_failsafe_safety_factor_ * time_to_home);
 }
@@ -821,7 +821,7 @@ bool TaskManager::isInside(const geometry_msgs::Polygon& polygon, const geometry
 
 bool TaskManager::polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region) {
 
-    if (isInside(current_polygon_, drone_state_manager_.getCurrentLocalPosition().pose.position))
+    if (isInside(current_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position))
         return true;
 
     // Medium check, computes distance to nearest point on 2 most likely polygon edges
@@ -855,7 +855,7 @@ bool TaskManager::polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry
 
     // Compute intersection
     bool intersection1 = false, intersection2 = false;
-    geometry_msgs::Point my_position = drone_state_manager_.getCurrentLocalPosition().pose.position;
+    geometry_msgs::Point my_position = flight_controller_interface_.getCurrentLocalPosition().pose.position;
     // Compute first edge
     double dx1 = closest_point.x - point1.x;
     double dy1 = closest_point.y - point1.y;
@@ -927,7 +927,7 @@ bool TaskManager::polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry
 void TaskManager::padNavTarget(geometry_msgs::PoseStamped &target) {
     // Add 2m to ensure fully inside polygon, otherwise exploration won't start
     float padding = 2.0;
-    geometry_msgs::Point my_position = drone_state_manager_.getCurrentLocalPosition().pose.position;
+    geometry_msgs::Point my_position = flight_controller_interface_.getCurrentLocalPosition().pose.position;
     double dif_x = target.pose.position.x - my_position.x;
     double dif_y = target.pose.position.y - my_position.y;
     double norm = sqrt(std::pow(dif_x, 2) + std::pow(dif_y, 2));
@@ -1357,7 +1357,7 @@ void TaskManager::logEvent(EventType type, Severity sev, std::string description
 
 json TaskManager::makeTaskJson() {
     json j;
-    j["flightMode"] = drone_state_manager_.getFlightMode();
+    j["flightMode"] = flight_controller_interface_.getFlightMode();
     double xval = goal_.pose.position.x;
     double yval = goal_.pose.position.y;
     json goalArray;
@@ -1368,11 +1368,11 @@ json TaskManager::makeTaskJson() {
     j["minAltitude"] = min_altitude_;
     j["maxAltitude"] = max_altitude_;
     j["targetAltitude"] = target_altitude_;
-    j["flightMinLeft"] = (int)(drone_state_manager_.getFlightTimeRemaining() / 60.f);
+    j["flightMinLeft"] = (int)(flight_controller_interface_.getFlightTimeRemaining() / 60.f);
     j["operatorID"] = operator_id_;
-    j["rawVoltage"] = (int)(drone_state_manager_.getBatteryVoltage() * 100);
-    j["readyToArm"] = drone_state_manager_.getDroneReadyToArm();
-    j["isArmed"] = drone_state_manager_.getIsArmed();
+    j["rawVoltage"] = (int)(flight_controller_interface_.getBatteryVoltage() * 100);
+    j["readyToArm"] = flight_controller_interface_.getDroneReadyToArm();
+    j["isArmed"] = flight_controller_interface_.getIsArmed();
     return j;
 }
 

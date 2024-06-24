@@ -3,8 +3,8 @@
 Author: Erin Linebarger <erin@robotics88.com> 
 */
 
-#ifndef DRONE_STATE_MANAGER_H_
-#define DRONE_STATE_MANAGER_H_
+#ifndef FLIGHT_CONTROLLER_INTERFACE_H_
+#define FLIGHT_CONTROLLER_INTERFACE_H_
 
 #include <ros/ros.h>
 
@@ -34,16 +34,16 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "messages_88/ExploreAction.h"
 #include "messages_88/NavToPointAction.h"
 
-namespace drone_state_manager {
+namespace flight_controller_interface {
 /**
- * @class DroneStateManager
+ * @class FlightControllerInterface
  * @brief Manages task and flight state of drone.
  */
-class DroneStateManager {
+class FlightControllerInterface {
 
     public:
-        DroneStateManager(ros::NodeHandle& node);
-        ~DroneStateManager();
+        FlightControllerInterface(ros::NodeHandle& node);
+        ~FlightControllerInterface();
 
         // State access methods
         void setAutonomyEnabled(bool enabled);

@@ -55,7 +55,7 @@ include_directories(
 )
 
 add_executable(task_manager
-  src/drone_state_manager.cpp
+  src/flight_controller_interface.cpp
   src/hello_decco_manager.cpp
   src/task_manager.cpp
   src/task_manager_node.cpp
@@ -104,7 +104,7 @@ if(CATKIN_ENABLE_TESTING)
     launch/test/tests_task_manager.launch 
     src/task_manager.cpp
     src/hello_decco_manager.cpp
-    src/drone_state_manager.cpp
+    src/flight_controller_interface.cpp
     test/task_manager_test.cpp
   )
   target_link_libraries(tests_task_manager 
@@ -112,12 +112,12 @@ if(CATKIN_ENABLE_TESTING)
     ${GeographicLib_LIBRARIES}
   )
 
-  add_rostest_gtest(tests_drone_state
-    launch/test/tests_drone_state.launch 
-    src/drone_state_manager.cpp 
-    test/drone_state_manager_test.cpp
+  add_rostest_gtest(tests_flight_controller_interface
+    launch/test/tests_flight_controller_interface.launch 
+    src/flight_controller_interface.cpp 
+    test/flight_controller_interface_test.cpp
   )
-  target_link_libraries(tests_drone_state 
+  target_link_libraries(tests_flight_controller_interface 
     ${catkin_LIBRARIES}
     ${GeographicLib_LIBRARIES}
   )
