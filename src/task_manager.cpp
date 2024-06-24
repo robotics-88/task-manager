@@ -313,8 +313,9 @@ void TaskManager::runTaskManager() {
                 goal_state == actionlib::SimpleClientGoalState::SUCCEEDED
                 ) {
 
-                logEvent(EventType::STATE_MACHINE, Severity::LOW, "Initiating RTL_88 due to exploration " + goal_state.getText());
+                logEvent(EventType::STATE_MACHINE, Severity::LOW, "Initiating RTL_88 due to exploration " + goal_state.toString());
                 hello_decco_manager_.updateBurnUnit(current_index_, "COMPLETED");
+                startRtl88();
             }
 
             break;
