@@ -42,7 +42,6 @@ FlightControllerInterface::FlightControllerInterface(ros::NodeHandle& node)
   , service_wait_duration_(2.0)
   , detected_utm_zone_(-1)
   , utm_set_(false)
-  , last_prearm_text_(0)
   , battery_percentage_(0.0)
   , battery_voltage_(0.0)
   , battery_size_(5.2)
@@ -110,7 +109,7 @@ FlightControllerInterface::FlightControllerInterface(ros::NodeHandle& node)
     mavros_compass_subscriber_ = nh_.subscribe<std_msgs::Float64>("/mavros/global_position/compass_hdg", 10, &FlightControllerInterface::compassCallback, this);
     mavros_battery_subscriber_ = nh_.subscribe<sensor_msgs::BatteryState>("/mavros/battery", 10, &FlightControllerInterface::batteryCallback, this);
     mavros_sys_status_subscriber_ = nh_.subscribe<mavros_msgs::SysStatus>("/mavros/sys_status", 10, &FlightControllerInterface::sysStatusCallback, this);
-    mavros_status_text_subscriber_ = nh_.subscribe<mavros_msgs::StatusText>("/mavros/sys_status", 10, &FlightControllerInterface::statusTextCallback, this);
+    mavros_status_text_subscriber_ = nh_.subscribe<mavros_msgs::StatusText>("/mavros/statustext/recv", 10, &FlightControllerInterface::statusTextCallback, this);
 
     // Slam pose subscriber
     slam_pose_subscriber_ = nh_.subscribe<geometry_msgs::PoseStamped>("/decco/pose", 10, &FlightControllerInterface::slamPoseCallback, this);
@@ -710,8 +709,8 @@ void FlightControllerInterface::sysStatusCallback(const mavros_msgs::SysStatus::
     if (msg->sensors_enabled & (uint32_t)STS::PREARM_CHECK &&
         !(msg->sensors_health & (uint32_t)STS::PREARM_CHECK)) {
         // Add prearm text from statustext message
-        reasons += "prearm check: ";
-        reasons += prearm_text_;
+        reasons += "prearm checks: [";
+        reasons += prearm_text_ + "], ";
     }
 
     if (msg->sensors_enabled & (uint32_t)STS::OBSTACLE_AVOIDANCE &&
@@ -727,15 +726,19 @@ void FlightControllerInterface::sysStatusCallback(const mavros_msgs::SysStatus::
 
 void FlightControllerInterface::statusTextCallback(const mavros_msgs::StatusText::ConstPtr & msg) {
     std::string text = msg->text;
-    std::string prefix = "PreArm";
+    std::string prefix = "PreArm: ";
 
-    // Prearm text gets updated every 5 seconds
+    // Prearm text gets updated every 30 seconds, so clear it out just before then for a reset
+    std::cout << "Diff: " << (ros::Time::now() - last_prearm_text_).toSec() << std::endl;
+    if ((ros::Time::now() - last_prearm_text_).toSec() > 29.0) {
+        prearm_text_ = "";
+    }
+
+    // Add to prearm text if statustext starts with "PreArm"
     if (text.compare(0, prefix.size(), prefix) == 0) {
-        if (ros::Time::now() - last_prearm_text_ > ros::Duration(4.0)) {
-            prearm_text_ = "";
-            prearm_text_ += text;
-            last_prearm_text_ == ros::Time::now();
-        }
+        std::string reason = text.substr(prefix.size(), text.size());
+        prearm_text_ += reason + ", ";
+        last_prearm_text_ = ros::Time::now();
     }
 }
 
