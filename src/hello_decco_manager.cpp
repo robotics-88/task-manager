@@ -97,7 +97,6 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
             flight_leg["endTime"] = 0;
             flight_leg["duration"] = 0;
             flightLegArray.push_back(flight_leg);
-            // GOnna end up with a blank first leg, fix it
         }
         burn_unit_json_["trips"][0]["flights"] = flightLegArray;
         packageToMapversation("burn_unit_receive", burn_unit_json_);
@@ -245,7 +244,6 @@ int HelloDeccoManager::polygonNumFlights(const geometry_msgs::Polygon &polygon) 
     // Alternatively: const Geodesic& geod = Geodesic::WGS84();
     GeographicLib::PolygonArea poly(geod);
     for (int ii = 0; ii<polygon.points.size(); ii++) {
-        // TODO fix on UI side: x,y currently are lat, long. should be long, lat to match Cartesian (also UTM) x/y understanding.
         poly.AddPoint(polygon.points.at(ii).x, polygon.points.at(ii).y);
     }
     double perimeter, area;
@@ -253,7 +251,6 @@ int HelloDeccoManager::polygonNumFlights(const geometry_msgs::Polygon &polygon) 
     int num_legs = 1;
     local_subpolygons_.clear();
     if (std::abs(area) > flightleg_area_m2_) {
-        // num_legs = concaveToMinimalConvexPolygons();
         centroid_splitter::CentroidSplitter splitter(map_region_, flightleg_area_m2_);
         local_subpolygons_ = splitter.slicePolygon();
         num_legs = local_subpolygons_.size();
