@@ -964,6 +964,7 @@ std::string TaskManager::getEventTypeString(EventType type) {
         case EventType::FLIGHT_CONTROL: return "FLIGHT_CONTROL";
         case EventType::FAILSAFE:       return "FAILSAFE";
         case EventType::INFO:           return "INFO";
+        default:                        return "unknown";
     }
 }
 
@@ -972,6 +973,7 @@ std::string TaskManager::getSeverityString(Severity sev) {
         case Severity::LOW:      return "LOW";
         case Severity::MEDIUM:   return "MEDIUM";
         case Severity::HIGH:     return "HIGH";
+        default:                 return "unknown";
     }
 }
 
@@ -1339,9 +1341,13 @@ void TaskManager::logEvent(EventType type, Severity sev, std::string description
             break;
         }
         case Severity::MEDIUM:
-        case Severity::HIGH:
         {
             ROS_WARN("%s", description.c_str());
+            break;
+        }
+        case Severity::HIGH:
+        {
+            ROS_ERROR("%s", description.c_str());
             break;
         }
     }
@@ -1354,6 +1360,8 @@ void TaskManager::logEvent(EventType type, Severity sev, std::string description
     j["timestamp"] = (int)(ros::Time::now().toNSec() * 1E-6);
     j["type"] = getEventTypeString(type);
     j["description"] = description.substr(0, 256); // Limit string size to 256
+
+    hello_decco_manager_.packageToMapversation("event", j);
 }
 
 json TaskManager::makeTaskJson() {
