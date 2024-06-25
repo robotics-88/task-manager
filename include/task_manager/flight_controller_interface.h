@@ -78,6 +78,7 @@ class FlightControllerInterface {
         void batteryCallback(const sensor_msgs::BatteryState::ConstPtr &msg);
         void sysStatusCallback(const mavros_msgs::SysStatus::ConstPtr &msg);
         void statusCallback(const mavros_msgs::State::ConstPtr & msg);
+        void statusTextCallback(const mavros_msgs::StatusText::ConstPtr & msg);
 
         // Mavros state control
         bool setMode(std::string mode);
@@ -125,6 +126,7 @@ class FlightControllerInterface {
         ros::Subscriber mavros_battery_subscriber_;
         ros::Subscriber slam_pose_subscriber_;
         ros::Subscriber mavros_sys_status_subscriber_;
+        ros::Subscriber mavros_status_text_subscriber_;
 
         // Mavros service clients
         ros::ServiceClient arming_client_;
@@ -159,6 +161,8 @@ class FlightControllerInterface {
         int detected_utm_zone_;
         bool utm_set_;
         std::string preflight_check_reasons_;
+        std::string prearm_text_;
+        ros::Time last_prearm_text_;
 
         // Battery estimation stuff
         sensor_msgs::BatteryState current_battery_;
