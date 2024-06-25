@@ -63,6 +63,20 @@ class TaskManager {
             COMPLETE
         };
 
+        enum EventType {
+            TASK_STATUS,
+            STATE_MACHINE,
+            FLIGHT_CONTROL,
+            FAILSAFE,
+            INFO
+        };
+
+        enum Severity {
+            LOW,
+            MEDIUM,
+            HIGH
+        };
+
         TaskManager(ros::NodeHandle& node);
         ~TaskManager();
 
@@ -288,15 +302,16 @@ class TaskManager {
         void startTakeoff();
         void startTransit();
         void startExploration();
-        void startRtl88(std::string reason);
-        void startFailsafeLanding(std::string reason);
-        void startPause(std::string reason);
+        void startRtl88();
+        void startLanding();
+        void startFailsafeLanding();
+        void startPause();
         
         // Other methods
         bool isBatteryOk();
         void checkHealth();
         void checkFailsafes();
-        bool getMapTf();
+        bool initialized();
         void checkArmStatus();
         bool pauseOperations();
         void startBag();
@@ -305,8 +320,12 @@ class TaskManager {
         bool polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region);
         void padNavTarget(geometry_msgs::PoseStamped &target);
         std::string getTaskString(Task task);
+        std::string getEventTypeString(EventType type);
+        std::string getSeverityString(Severity sev);
         void initFlightControllerInterface();
         bool convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp);
+        void logEvent(EventType type, Severity sev, std::string description);
+
 
         // mapversation methods
         void setpointResponse(json &json_msg);

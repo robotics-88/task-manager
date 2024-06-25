@@ -228,12 +228,18 @@ void TaskManager::runTaskManager() {
 
     switch (current_task_) {
         case Task::INITIALIZING: {
-            if (getMapTf()) {
+            if (initialized()) {
+                logEvent(EventType::STATE_MACHINE, Severity::LOW, "Drone initialized");
                 flight_controller_interface_.setMode(guided_mode_);
-                if (flight_controller_interface_.getDroneReadyToArm())
+
+                if (flight_controller_interface_.getDroneReadyToArm()){
+                    logEvent(EventType::STATE_MACHINE, Severity::LOW, "Preflight checks passed, ready to arm");
                     updateCurrentTask(Task::READY);
-                else
+                }
+                else {
+                    logEvent(EventType::STATE_MACHINE, Severity::LOW, "Waiting for preflight checks to pass");
                     updateCurrentTask(Task::PREFLIGHT_CHECK);
+                }
             }
             break;
         }
@@ -242,6 +248,7 @@ void TaskManager::runTaskManager() {
             // Like loop rate 222 (which can be fixed by putting ClockSpeed: 0.8 in settings.json)
             // However, other things still fail. Eventually we should fix this and set ARMING_CHECK to 1 in ardupilot
             if (flight_controller_interface_.getDroneReadyToArm() || simulate_)
+                logEvent(EventType::STATE_MACHINE, Severity::LOW, "Preflight checks passed, ready to arm");
                 updateCurrentTask(Task::READY);
             else {
                 std::cout << "preflight check reasons: " << flight_controller_interface_.getPreflightCheckReasons() << std::endl;
@@ -253,21 +260,24 @@ void TaskManager::runTaskManager() {
             if (needs_takeoff_) 
             {
                 if (takeoff_attempts_ > 5) {
-                    ROS_WARN("Takeoff failed after 5 attempts");
+                    logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Takeoff failed after 5 attempts");
                     needs_takeoff_ = false;
                     takeoff_attempts_ = 0;
                 }
                 else {
+                    logEvent(EventType::STATE_MACHINE, Severity::LOW, "Starting takeoff");
                     startTakeoff();
                 }
             }
             else if (flight_controller_interface_.getIsArmed()) {
+                logEvent(EventType::STATE_MACHINE, Severity::LOW, "Drone armed manually");
                 updateCurrentTask(Task::MANUAL_FLIGHT);
             }
             break;
         }
         case Task::MANUAL_FLIGHT: {
             if (!flight_controller_interface_.getIsArmed()) {
+                logEvent(EventType::STATE_MACHINE, Severity::LOW, "Drone disarmed manually");
                 updateCurrentTask(Task::COMPLETE);
             }
             break;
@@ -281,9 +291,11 @@ void TaskManager::runTaskManager() {
             if (flight_controller_interface_.getAltitudeAGL() > (target_altitude_ - 1)) {
                 // If not in polygon, start navigation task
                 if (!isInside(current_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position)) {
+                    logEvent(EventType::STATE_MACHINE, Severity::LOW, "Transiting to designated survey unit");
                     startTransit();
                 }
                 else {
+                    logEvent(EventType::STATE_MACHINE, Severity::LOW, "Starting exploration");
                     startExploration();
                 }
             }
@@ -291,6 +303,7 @@ void TaskManager::runTaskManager() {
         }
         case Task::IN_TRANSIT: {
             if (isInside(current_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position)) {
+                logEvent(EventType::STATE_MACHINE, Severity::LOW, "Starting exploration");
                 startExploration();
             }
             break;
@@ -303,23 +316,24 @@ void TaskManager::runTaskManager() {
                 goal_state == actionlib::SimpleClientGoalState::SUCCEEDED
                 ) {
 
-                startRtl88("exploration " + goal_state.getText());
+                logEvent(EventType::STATE_MACHINE, Severity::LOW, "Initiating RTL_88 due to exploration " + goal_state.toString());
                 hello_decco_manager_.updateBurnUnit(current_index_, "COMPLETED");
+                startRtl88();
             }
 
             break;
         }
         case Task::RTL_88: {
             if (flight_controller_interface_.getCurrentLocalPosition().pose.position == home_pos_.pose.position) {
-                ROS_INFO("RTL_88 completed, landing");
-                flight_controller_interface_.setMode(land_mode_);
-                updateCurrentTask(Task::LANDING);
+                logEvent(EventType::STATE_MACHINE, Severity::LOW, "RTL_88 completed, landing");
+                startLanding();
             }
             break;
         }
         case Task::LANDING:
         case Task::FAILSAFE_LANDING: {
             if (!flight_controller_interface_.getIsArmed()) {
+                logEvent(EventType::STATE_MACHINE, Severity::LOW, "Flight complete");
                 updateCurrentTask(Task::COMPLETE);
             }
             break;
@@ -354,7 +368,7 @@ void TaskManager::startTakeoff() {
 
     // This is a redundant check but probably good to keep
     if (!task_msg_.enable_autonomy) {
-        ROS_WARN("Not taking off, autonomy disabled");
+        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Not taking off, autonomy disabled");
         return;
     }
 
@@ -368,7 +382,7 @@ void TaskManager::startTakeoff() {
         takeoff_attempts_ = 0; 
     } 
     else {
-        ROS_INFO("Takeoff request failed. Retrying.");
+        logEvent(EventType::FLIGHT_CONTROL, Severity::MEDIUM, "Takeoff request failed. Retrying.");
         takeoff_attempts_++;
     }
 
@@ -393,7 +407,6 @@ void TaskManager::startExploration() {
     current_explore_goal_.max_altitude = max_altitude_;
 
     explore_action_client_.waitForServer();
-    cmd_history_.append("Sending explore goal.\n");
 
     // Start with a rotation command in case no frontiers immediately processed, will be overridden with first exploration goal
     geometry_msgs::Twist vel;
@@ -404,18 +417,13 @@ void TaskManager::startExploration() {
 
     explore_action_client_.sendGoal(current_explore_goal_);
 
-    cmd_history_.append("Sent explore goal.\n");
+    logEvent(EventType::STATE_MACHINE, Severity::LOW, "Sent explore goal");
     hello_decco_manager_.updateBurnUnit(current_index_, "ACTIVE");
 
     updateCurrentTask(Task::EXPLORING);
 }
 
-void TaskManager::startRtl88(std::string reason) {
-    
-    std::string str = "Initializing RTL 88 due to " + reason;
-    ROS_INFO("%s", str.c_str());
-    cmd_history_.append(str + "\n");
-
+void TaskManager::startRtl88() {
     pauseOperations();
 
     if (flight_controller_interface_.getFlightMode() != guided_mode_) {
@@ -423,36 +431,28 @@ void TaskManager::startRtl88(std::string reason) {
     }
 
     local_pos_pub_.publish(home_pos_);
-
     updateCurrentTask(Task::RTL_88);
 }
 
-void TaskManager::startFailsafeLanding(std::string reason) {
-    std::string str = "Initializing failsafe landing due to " + reason;
-    ROS_INFO("%s", str.c_str());
-    cmd_history_.append(str + "\n");
-
-    pauseOperations();
-
+void TaskManager::startLanding() {
     flight_controller_interface_.setMode(land_mode_);
-
-    updateCurrentTask(Task::FAILSAFE_LANDING);
-
+    updateCurrentTask(Task::LANDING);
 }
 
-void TaskManager::startPause(std::string reason) {
-    std::string str = "Initializing pause due to " + reason;
-    ROS_INFO("%s", str.c_str());
-    cmd_history_.append(str + "\n");
+void TaskManager::startFailsafeLanding() {
+    pauseOperations();
+    flight_controller_interface_.setMode(land_mode_);
+    updateCurrentTask(Task::FAILSAFE_LANDING);
+}
 
+void TaskManager::startPause() {
     flight_controller_interface_.setMode(brake_mode_);
-
     updateCurrentTask(Task::PAUSE);
 }
 
 void TaskManager::updateCurrentTask(Task task) {
     std::string task_str = getTaskString(task);
-    ROS_INFO("Current task updated to: %s", task_str.c_str());
+    logEvent(EventType::TASK_STATUS, Severity::LOW, "Current task updated to " + task_str);
     current_task_ = task;
 }
 
@@ -490,7 +490,7 @@ void TaskManager::checkFailsafes() {
     if (mode == "STABILIZE" || 
         mode == "ALT_HOLD" ||
         mode == "POSHOLD") {
-        ROS_WARN("WARNING: Manual takeover initiated");
+        logEvent(EventType::FLIGHT_CONTROL, Severity::MEDIUM, "Manual takeover initiated");
         updateCurrentTask(Task::MANUAL_FLIGHT);
         in_autonomous_flight_ = false;
         pauseOperations();
@@ -511,11 +511,13 @@ void TaskManager::checkFailsafes() {
     if (need_failsafe_landing) {
         if (current_task_ != Task::FAILSAFE_LANDING) {
             if (use_failsafes_) {
-                startFailsafeLanding(failsafe_reason);
+                logEvent(EventType::FAILSAFE, Severity::HIGH, "Failsafe landing initiated due to " + failsafe_reason);
+                startFailsafeLanding();
             }
             else {
                 if (current_task_ != Task::PAUSE) {
-                    ROS_WARN("Failsafe landing requested for %s but failsafes not active", failsafe_reason.c_str());
+                    logEvent(EventType::FAILSAFE, Severity::MEDIUM, "Failsafe landing requested for "
+                                                                    + failsafe_reason + " but failsafes not active");
                 }
             }
         }
@@ -536,11 +538,12 @@ void TaskManager::checkFailsafes() {
         current_task_ != Task::LANDING &&
         current_task_ != Task::COMPLETE) {
 
-        startRtl88(rtl_88_reason);
+        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Starting RTL 88 due to " + rtl_88_reason);
+        startRtl88();
     }
 }
 
-bool TaskManager::getMapTf() {
+bool TaskManager::initialized() {
 
     // Get drone heading
     if (!offline_) {
@@ -550,7 +553,7 @@ bool TaskManager::getMapTf() {
             return false;
         }
 
-        ROS_INFO("Initial heading: %f", yaw);
+        logEvent(EventType::INFO, Severity::LOW, "Initial heading: " + std::to_string(yaw));
 
         // Convert yaw from NED to ENU
         yaw = -yaw + 90.0;
@@ -568,7 +571,7 @@ bool TaskManager::getMapTf() {
     // Get roll, pitch for map stabilization
     geometry_msgs::Quaternion init_orientation;
     ros::Rate r(0.5);
-    ROS_INFO("Initializing IMU");
+    logEvent(EventType::INFO, Severity::LOW, "Initializing IMU");
     while (!flight_controller_interface_.getAveragedOrientation(init_orientation)) {
         r.sleep();
     }
@@ -622,7 +625,7 @@ bool TaskManager::getMapTf() {
     map_tf_timer_.stop();
     map_tf_init_ = true;
 
-    ROS_INFO("Waiting for global...");
+    logEvent(EventType::INFO, Severity::LOW, "Waiting for global position");
     ros::topic::waitForMessage<sensor_msgs::NavSatFix>("/mavros/global_position/global", nh_);
     while (home_utm_zone_ < 0) {
         home_utm_zone_ = flight_controller_interface_.getUTMZone();
@@ -647,13 +650,16 @@ bool TaskManager::getMapTf() {
     utm2map_tf_.transform.rotation.w = 1;
     static_tf_broadcaster_.sendTransform(utm2map_tf_);
 
+    logEvent(EventType::INFO, Severity::LOW, "Got global position, UTM zone, and map yaw");
+
     return true;
 }
 
 bool TaskManager::convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp) {
     // Sanity check UTM
     if (home_utm_zone_ != flight_controller_interface_.getUTMZone()) {
-        ROS_WARN("UTM zones crossed. Home UTM: %d. Now UTM: %d", home_utm_zone_, flight_controller_interface_.getUTMZone());
+        logEvent(EventType::INFO, Severity::LOW, "UTM zones crossed. Home UTM: " + std::to_string(home_utm_zone_) + 
+                                                 "Now UTM: " + std::to_string(flight_controller_interface_.getUTMZone()));
         return false;
         // TODO decide what to do about it
     }
@@ -743,17 +749,15 @@ void TaskManager::checkArmStatus() {
     std::string mode = flight_controller_interface_.getFlightMode();
     bool armed = flight_controller_interface_.getIsArmed();
     if (!is_armed_ && armed) {
-        cmd_history_.append("Manually set armed state to true. \n");
+        logEvent(EventType::INFO, Severity::LOW, "Manually set armed state to true");
         is_armed_ = true;
     }
     if (is_armed_ && !bag_active_) {
-        cmd_history_.append("Checking start bag record due to arming detected. Armed: " + std::to_string(armed) + ", flight mode: " + mode + "\n");
-        // Handle recording during manual take off
+        logEvent(EventType::INFO, Severity::LOW, "Armed but bag not active"); 
         startBag();
     }
     if (is_armed_ && !armed) {
-        cmd_history_.append("Disarm detected. \n ");
-        // Handle save bag during disarm (manual or auton)
+        logEvent(EventType::INFO, Severity::MEDIUM, "Disarm detected");
         stopBag();
         pauseOperations();
         is_armed_ = false; // Reset so can restart if another arming
@@ -773,7 +777,7 @@ void TaskManager::startBag() {
     if (bag_active_) {
         return;
     }
-    cmd_history_.append("Bag starting, prefix " + burn_dir_prefix_ + " .\n ");
+    logEvent(EventType::INFO, Severity::LOW, "Bag starting, prefix: " + burn_dir_prefix_);
     bag_recorder::Rosbag start_bag_msg;
     start_bag_msg.data_dir = burn_dir_prefix_;
     start_bag_msg.bag_name = "decco";
@@ -787,7 +791,7 @@ void TaskManager::stopBag() {
     if (!bag_active_) {
         return;
     }
-    cmd_history_.append("Stopping bag.\n");
+    logEvent(EventType::INFO, Severity::LOW, "Stopping bag");
     std_msgs::String stop_msg;
     stop_msg.data = record_config_name_;
     stop_record_pub_.publish(stop_msg);
@@ -915,7 +919,10 @@ bool TaskManager::polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry
     target.pose.position = target_position;
 
     if (min_dist > std::pow(max_dist_to_polygon_, 2)) {
-        ROS_WARN("Max dist exceeded (%f m), will not execute flight.", std::sqrt(min_dist));
+        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, 
+                    "Max dist to polygon exceeded, will not execute flight. Max distance is: " + 
+                    std::to_string(max_dist_to_polygon_) + "m, Closest point: " +
+                    std::to_string(std::sqrt(min_dist)) + "m");
         return false;
     }
     return true;
@@ -950,6 +957,26 @@ std::string TaskManager::getTaskString(Task task) {
         case Task::FAILSAFE_LANDING:       return "FAILSAFE_LANDING";
         case Task::COMPLETE:               return "COMPLETE";
         default:                           return "unknown";
+    }
+}
+
+std::string TaskManager::getEventTypeString(EventType type) {
+    switch (type) {
+        case EventType::TASK_STATUS:    return "TASK_STATUS";
+        case EventType::STATE_MACHINE:  return "STATE_MACHINE";
+        case EventType::FLIGHT_CONTROL: return "FLIGHT_CONTROL";
+        case EventType::FAILSAFE:       return "FAILSAFE";
+        case EventType::INFO:           return "INFO";
+        default:                        return "unknown";
+    }
+}
+
+std::string TaskManager::getSeverityString(Severity sev) {
+    switch (sev) {
+        case Severity::LOW:      return "LOW";
+        case Severity::MEDIUM:   return "MEDIUM";
+        case Severity::HIGH:     return "HIGH";
+        default:                 return "unknown";
     }
 }
 
@@ -1086,7 +1113,7 @@ void TaskManager::packageFromMapversation(const std_msgs::String::ConstPtr &msg)
 void TaskManager::makeBurnUnitJson(json burn_unit) {
 
     if (!map_tf_init_) {
-        ROS_WARN("Not ready for flight, try again after initialized.");
+        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Not ready for flight, try again after initialized");
         return;
     }
     std::string name = burn_unit["name"];
@@ -1094,16 +1121,12 @@ void TaskManager::makeBurnUnitJson(json burn_unit) {
     hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
     current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
     if (current_index_ < 0) {
-        std::string str = "No burn polygon was found, all are already complete, not exploring.";
-        ROS_WARN("%s", str.c_str());
-        cmd_history_.append(str + "\n");
+        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "No burn polygon was found, all are already complete, not exploring");
         return;
     }
     
     if (!polygonDistanceOk(initial_transit_point_, current_polygon_)) {
-        std::string str = "Polygon rejected, exceeds maximum starting distance threshold.";
-        ROS_WARN("%s", str.c_str());
-        cmd_history_.append(str + "\n");
+        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Polygon rejected, exceeds maximum starting distance threshold");
         return;
     }
 
@@ -1116,24 +1139,22 @@ void TaskManager::setpointResponse(json &json_msg) {
 }
 
 void TaskManager::emergencyResponse(const std::string severity) {
-    std::string str = "Emergency response initiated with level " + severity;
-    ROS_WARN("%s", str.c_str());
-    cmd_history_.append(str + "\n");
+    logEvent(EventType::FAILSAFE, Severity::HIGH, severity + " initiated due to pilot request");
 
     // Then respond based on severity 
     if (severity == "PAUSE") {
         // NOTICE = PAUSE
         // TODO, tell exploration to stop searching frontiers. For now, will keep blacklisting them, but the drone is in PAUSE mode. Currently no way to pick back up and set to guided mode (here or in HD)
         // Immediately set to hover
-        startPause("pilot request");
+        startPause();
     }
     else if (severity == "LAND") {
         // EMERGENCY = LAND IMMEDIATELY
-        startFailsafeLanding("pilot request");
+        startFailsafeLanding();
     }
     else if (severity == "RTL") {
         // CRITICAL = RTL
-        startRtl88("pilot request");
+        startRtl88();
     }
 }
 
@@ -1313,6 +1334,37 @@ void TaskManager::publishHealth() {
 
     jsonObjects["healthIndicators"] = healthObjects;
     hello_decco_manager_.packageToMapversation("health_report", jsonObjects);
+}
+
+void TaskManager::logEvent(EventType type, Severity sev, std::string description) {
+    switch (sev) {
+        case Severity::LOW:
+        {
+            ROS_INFO("%s", description.c_str());
+            break;
+        }
+        case Severity::MEDIUM:
+        {
+            ROS_WARN("%s", description.c_str());
+            break;
+        }
+        case Severity::HIGH:
+        {
+            ROS_ERROR("%s", description.c_str());
+            break;
+        }
+    }
+
+    cmd_history_.append(description + "\n");
+
+    json j;
+    j["flightId"] = 0; // TODO
+    j["level"] = getSeverityString(sev);
+    j["timestamp"] = (int)(ros::Time::now().toNSec() * 1E-6);
+    j["type"] = getEventTypeString(type);
+    j["description"] = description.substr(0, 256); // Limit string size to 256
+
+    hello_decco_manager_.packageToMapversation("event", j);
 }
 
 json TaskManager::makeTaskJson() {
