@@ -63,6 +63,7 @@ class FlightControllerInterface {
         float getBatteryVoltage() {return battery_voltage_;}
         bool getDroneReadyToArm() {return ready_to_arm_;}
         int getImuAveragingN() {return imu_averaging_n_;}
+        std::string getPreflightCheckReasons() {return preflight_check_reasons_;}
 
         bool getMapYaw(double &yaw);
         bool getAveragedOrientation(geometry_msgs::Quaternion &orientation);
@@ -157,6 +158,7 @@ class FlightControllerInterface {
         ros::Duration service_wait_duration_;
         int detected_utm_zone_;
         bool utm_set_;
+        std::string preflight_check_reasons_;
 
         // Battery estimation stuff
         sensor_msgs::BatteryState current_battery_;

@@ -243,6 +243,9 @@ void TaskManager::runTaskManager() {
             // However, other things still fail. Eventually we should fix this and set ARMING_CHECK to 1 in ardupilot
             if (flight_controller_interface_.getDroneReadyToArm() || simulate_)
                 updateCurrentTask(Task::READY);
+            else {
+                std::cout << "preflight check reasons: " << flight_controller_interface_.getPreflightCheckReasons() << std::endl;
+            }
             break;
         }
         case Task::READY: {
