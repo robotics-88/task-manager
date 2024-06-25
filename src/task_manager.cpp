@@ -629,7 +629,7 @@ bool TaskManager::getMapTf() {
     ROS_INFO("Got global, UTM zone: %d. LL : (%f, %f)", home_utm_zone_, flight_controller_interface_.getCurrentGlobalPosition().latitude, flight_controller_interface_.getCurrentGlobalPosition().longitude);
     double utm_x, utm_y;
     flight_controller_interface_.initUTM(utm_x, utm_y);
-    hello_decco_manager_.setUtmOffsets(utm_x, utm_y);
+    hello_decco_manager_.setUtm(utm_x, utm_y, home_utm_zone_);
     ROS_INFO("UTM offsets: (%f, %f)", utm_x, utm_y);
     ROS_INFO("Map yaw: %f", map_yaw_ * 180 / M_PI);
     utm2map_tf_.header.frame_id = "utm";

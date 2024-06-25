@@ -36,10 +36,14 @@ class HelloDeccoManager {
         json polygonToBurnUnit(const json &polygon);
         int initBurnUnit(geometry_msgs::Polygon &polygon);
         void updateBurnUnit(int index, std::string flight_status);
+        void mapToLl(const double px, const double py, double &lat, double &lon);
+        void llToMap(const double lat, const double lon, double &px, double &py);
+        void llToUtm(const double lat, const double lon, int &zone, double &utm_x, double &utm_y);
         void utmToLL(const double utm_x, const double utm_y, const int zone, double &lat, double &lon);
-        void setUtmOffsets(double utm_x, double utm_y) {
+        void setUtm(double utm_x, double utm_y, int zone) {
             utm_x_offset_ = -utm_x;
             utm_y_offset_ = -utm_y;
+            utm_zone_ = zone;
         }
         geometry_msgs::Polygon polygonFromJson(json jsonPolygon);
         geometry_msgs::Polygon polygonToMap(const geometry_msgs::Polygon &polygon);
@@ -62,6 +66,7 @@ class HelloDeccoManager {
         tf2_ros::TransformListener tf_listener_;
         double utm_x_offset_;
         double utm_y_offset_;
+        int utm_zone_;
 
         // Mapversation
         ros::Publisher mapver_pub_;
@@ -77,7 +82,7 @@ class HelloDeccoManager {
         // Subpolygon creation variables
         std::vector<cxd::Vertex > vertices_;
         geometry_msgs::Polygon map_region_; // Entire unit
-        std::vector<geometry_msgs::Polygon> subpolygons_; // Flight units
+        std::vector<geometry_msgs::Polygon> local_subpolygons_; // Flight units
         double flightleg_area_m2_;
 
         void polygonInitializer(const geometry_msgs::Polygon &msg, bool make_legs);

@@ -130,27 +130,76 @@ TEST(MapversationPackage, mapversationPackage)
     }
 }
 
+TEST(CoordConversions, latLong)
+{
+    ros::NodeHandle node;
+    hello_decco_manager::HelloDeccoManager hello_decco_manager(node);
+    
+    double lat = 41.496334075927905;
+    double lon = -71.30898284911267;
+
+    double utm_x, utm_y;
+    int zone;
+    hello_decco_manager.llToUtm(lat, lon, zone, utm_x, utm_y);
+    double new_lat, new_lon;
+    hello_decco_manager.utmToLL(utm_x, utm_y, zone, new_lat, new_lon);
+
+    ASSERT_DOUBLE_EQ(lat, new_lat);
+    ASSERT_DOUBLE_EQ(lon, new_lon);
+}
+
+TEST(CoordConversions, utm)
+{
+    ros::NodeHandle node;
+    hello_decco_manager::HelloDeccoManager hello_decco_manager(node);
+
+    double utm_x = 307268.564434;
+    double utm_y = 4596431.061994;
+    int zone = 19;
+    
+    double lat, lon;
+    hello_decco_manager.utmToLL(utm_x, utm_y, zone, lat, lon);
+    double new_utm_x, new_utm_y;
+    int new_zone;
+    hello_decco_manager.llToUtm(lat, lon, new_zone, new_utm_x, new_utm_y);
+
+    ASSERT_DOUBLE_EQ(utm_x, new_utm_x);
+    ASSERT_DOUBLE_EQ(utm_y, new_utm_y);
+    ASSERT_EQ(zone, new_zone);
+}
+
 TEST(ReceiveBurnUnit, receiveBurnUnit)
 {
     ros::NodeHandle node;
     hello_decco_manager::HelloDeccoManager hello_decco_manager(node);
     BurnUnitHelper burner;
 
-    hello_decco_manager.setUtmOffsets(burner.utm_x_offset, burner.utm_y_offset);
+    hello_decco_manager.setUtm(burner.utm_x_offset, burner.utm_y_offset, burner.utm_zone);
     hello_decco_manager.makeBurnUnitJson(burner.burn_unit, burner.utm_zone);
     int ind = hello_decco_manager.initBurnUnit(burner.map_polygon);
     // Confirm that map polygon was initialized
     ASSERT_TRUE(ind >= 0);
 
-    geometry_msgs::Polygon manual_poly = hello_decco_manager.polygonToMap(hello_decco_manager.polygonFromJson(burner.burn_unit_filled["trips"][0]["flights"][0]["subpolygon"]));
+    geometry_msgs::Polygon geo_poly = hello_decco_manager.polygonFromJson(burner.burn_unit_filled["trips"][0]["flights"][0]["subpolygon"]);
+    geometry_msgs::Polygon manual_poly = hello_decco_manager.polygonToMap(geo_poly);
     // Confirm that polygons match in size
     ASSERT_EQ(burner.map_polygon.points.size(), manual_poly.points.size());
 
     // Confirm that polygons match in data (comparing in map frame)
     for (int ii = 0; ii < burner.map_polygon.points.size(); ii++) {
-        EXPECT_EQ(burner.map_polygon.points.at(ii), manual_poly.points.at(ii));
+        ASSERT_EQ(burner.map_polygon.points.at(ii), manual_poly.points.at(ii));
     }
     
+    // Confirm that when reverting map polygon to GPS, matches points
+    for (int ii = 0; ii < burner.map_polygon.points.size(); ii++) {
+        double lat, lon;
+        hello_decco_manager.mapToLl(burner.map_polygon.points.at(ii).x, burner.map_polygon.points.at(ii).y, lat, lon);
+        geometry_msgs::Point32 ll_point;
+        ll_point.x = lat;
+        ll_point.y = lon;
+        EXPECT_EQ(ll_point, geo_poly.points.at(ii));
+    }
+
 }
 
 TEST(UpdateBurnUnit, updateBurnUnit)
@@ -161,7 +210,7 @@ TEST(UpdateBurnUnit, updateBurnUnit)
     MapverHelper mapver;
     ros::Rate r(10);
 
-    hello_decco_manager.setUtmOffsets(burner.utm_x_offset, burner.utm_y_offset);
+    hello_decco_manager.setUtm(burner.utm_x_offset, burner.utm_y_offset, burner.utm_zone);
     ros::Subscriber sub = node.subscribe("/mapversation/to_hello_decco", 10, &MapverHelper::cb, &mapver);
 
     while (!mapver.msg_received) {
