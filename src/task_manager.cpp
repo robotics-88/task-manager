@@ -288,7 +288,7 @@ void TaskManager::runTaskManager() {
             if (flight_controller_interface_.getAltitudeAGL() > (target_altitude_ - 1)) {
                 // If not in polygon, start navigation task
                 if (!isInside(current_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position)) {
-                    logEvent(EventType::STATE_MACHINE, Severity::LOW, "Transiting to polygon");
+                    logEvent(EventType::STATE_MACHINE, Severity::LOW, "Transiting to designated survey unit");
                     startTransit();
                 }
                 else {
@@ -750,14 +750,11 @@ void TaskManager::checkArmStatus() {
         is_armed_ = true;
     }
     if (is_armed_ && !bag_active_) {
-        logEvent(EventType::INFO, Severity::LOW, "Checking start bag record due to arming detected. Armed: " 
-                                                 + std::to_string(armed) + ", flight mode: " + mode + "\n");
-        // Handle recording during manual take off
+        logEvent(EventType::INFO, Severity::LOW, "Armed but bag not active"); 
         startBag();
     }
     if (is_armed_ && !armed) {
         logEvent(EventType::INFO, Severity::MEDIUM, "Disarm detected");
-        // Handle save bag during disarm (manual or auton)
         stopBag();
         pauseOperations();
         is_armed_ = false; // Reset so can restart if another arming
@@ -919,7 +916,10 @@ bool TaskManager::polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry
     target.pose.position = target_position;
 
     if (min_dist > std::pow(max_dist_to_polygon_, 2)) {
-        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Max dist exceeded (" + std::to_string(std::sqrt(min_dist)) + " m), will not execute flight");
+        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, 
+                    "Max dist to polygon exceeded, will not execute flight. Max distance is: " + 
+                    std::to_string(max_dist_to_polygon_) + "m, Closest point: " +
+                    std::to_string(std::sqrt(min_dist)) + "m");
         return false;
     }
     return true;
