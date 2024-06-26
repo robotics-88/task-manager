@@ -252,7 +252,7 @@ void TaskManager::runTaskManager() {
                 updateCurrentTask(Task::READY);
             } 
             else if (ros::Time::now() - last_preflight_check_log_stamp_ > ros::Duration(10.0)) {
-                logEvent(EventType::FLIGHT_CONTROL, Severity::LOW,
+                logEvent(EventType::FLIGHT_CONTROL, Severity::MEDIUM,
                          "Preflight check failed due to " + flight_controller_interface_.getPreflightCheckReasons());
                 last_preflight_check_log_stamp_ = ros::Time::now();
             }
