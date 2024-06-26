@@ -65,7 +65,7 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
         burn_string.data = s;
         polygonInitializer(poly, false);
         // Fill in subpolygon array
-        subpolygons_.clear();
+        local_subpolygons_.clear();
         geometry_msgs::Polygon ll_poly;
         for (auto subpoly_point: burn_unit_json_["trips"][0]["flights"][0]["subpolygon"]) {
             geometry_msgs::Point32 ll_point;
@@ -74,22 +74,19 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
             ll_poly.points.push_back(ll_point);
         }
         geometry_msgs::Polygon poly = polygonToMap(ll_poly);
-        subpolygons_.push_back(poly);
+        local_subpolygons_.push_back(poly);
     }
     else {
         // Need to fill in
         polygonInitializer(poly, true);
         json flightLegArray;
-        for (int ii = 0; ii < subpolygons_.size(); ii++) {
+        for (int ii = 0; ii < local_subpolygons_.size(); ii++) {
             json flight_leg;
             json ll_json;
-            for (int jj = 0; jj < subpolygons_.at(ii).points.size(); jj++) {
+            for (int jj = 0; jj < local_subpolygons_.at(ii).points.size(); jj++) {
                 json ll;
-                double xval = subpolygons_.at(ii).points.at(jj).x - utm_x_offset_;
-                double yval = subpolygons_.at(ii).points.at(jj).y - utm_y_offset_;
-                double lat, lon, gamma, k;
-                GeographicLib::UTMUPS::Reverse(utm_zone, true, xval, yval, lat, lon, gamma, k);
-                // GeographicLib::GeoCoords c(utm_zone, xval, yval, lat, lon, gamma, k);
+                double lat, lon;
+                mapToLl(local_subpolygons_.at(ii).points.at(jj).x, local_subpolygons_.at(ii).points.at(jj).y, lat, lon);
                 ll.push_back(lat);
                 ll.push_back(lon);
                 ll_json.push_back(ll);
@@ -100,7 +97,6 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
             flight_leg["endTime"] = 0;
             flight_leg["duration"] = 0;
             flightLegArray.push_back(flight_leg);
-            // GOnna end up with a blank first leg, fix it
         }
         burn_unit_json_["trips"][0]["flights"] = flightLegArray;
         packageToMapversation("burn_unit_receive", burn_unit_json_);
@@ -130,7 +126,7 @@ int HelloDeccoManager::initBurnUnit(geometry_msgs::Polygon &polygon) {
     bool found = false;
     for (auto& flight : burn_unit_json_["trips"][0]["flights"]) {
         if (flight["status"] == "NOT_STARTED") {
-            poly = subpolygons_.at(ind);
+            poly = local_subpolygons_.at(ind);
             ROS_INFO("will do polygon %d", ind);
             found = true;
             break;
@@ -202,10 +198,11 @@ geometry_msgs::Polygon HelloDeccoManager::polygonToMap(const geometry_msgs::Poly
     // Converts lat/lon polygon to local map polygon
     geometry_msgs::Polygon map_polygon;
     for (int ii = 0; ii < polygon.points.size(); ii++) {
-        GeographicLib::GeoCoords coord(polygon.points.at(ii).x, polygon.points.at(ii).y);
         geometry_msgs::Point32 poly_point;
-        poly_point.x = coord.Easting() + utm_x_offset_;
-        poly_point.y = coord.Northing() + utm_y_offset_;
+        double px, py;
+        llToMap(polygon.points.at(ii).x, polygon.points.at(ii).y, px, py);
+        poly_point.x = px;
+        poly_point.y = py;
         map_polygon.points.push_back(poly_point);
     }
     return map_polygon;
@@ -247,28 +244,26 @@ int HelloDeccoManager::polygonNumFlights(const geometry_msgs::Polygon &polygon) 
     // Alternatively: const Geodesic& geod = Geodesic::WGS84();
     GeographicLib::PolygonArea poly(geod);
     for (int ii = 0; ii<polygon.points.size(); ii++) {
-        // TODO fix on UI side: x,y currently are lat, long. should be long, lat to match Cartesian (also UTM) x/y understanding.
         poly.AddPoint(polygon.points.at(ii).x, polygon.points.at(ii).y);
     }
     double perimeter, area;
     poly.Compute(false, true, perimeter, area);
     int num_legs = 1;
-    subpolygons_.clear();
+    local_subpolygons_.clear();
     if (std::abs(area) > flightleg_area_m2_) {
-        // num_legs = concaveToMinimalConvexPolygons();
         centroid_splitter::CentroidSplitter splitter(map_region_, flightleg_area_m2_);
-        subpolygons_ = splitter.slicePolygon();
-        num_legs = subpolygons_.size();
+        local_subpolygons_ = splitter.slicePolygon();
+        num_legs = local_subpolygons_.size();
         visualizeLegs();
     }
     else {
-        subpolygons_.push_back(map_region_);
+        local_subpolygons_.push_back(map_region_);
     }
     return num_legs;
 }
 
 void HelloDeccoManager::visualizeLegs() {
-    for (int nn = 0; nn < subpolygons_.size(); nn++) {
+    for (int nn = 0; nn < local_subpolygons_.size(); nn++) {
         // Set up subpolygon viz
         visualization_msgs::Marker m;
         m.scale.x = 2.0;
@@ -283,7 +278,7 @@ void HelloDeccoManager::visualizeLegs() {
         m.id = nn + 1;
 
         // Compute subpolys
-        geometry_msgs::Polygon geom_polygon = subpolygons_.at(nn);
+        geometry_msgs::Polygon geom_polygon = local_subpolygons_.at(nn);
         for (int vv = 0; vv < geom_polygon.points.size(); vv++) {
             // Add marker
             geometry_msgs::Point p;
@@ -345,6 +340,26 @@ void HelloDeccoManager::visualizeLegs() {
 //     }
 //     return num_legs;
 // }
+
+void HelloDeccoManager::mapToLl(const double px, const double py, double &lat, double &lon) {
+    double xval = px - utm_x_offset_;
+    double yval = py - utm_y_offset_;
+    utmToLL(xval, yval, utm_zone_, lat, lon);
+}
+
+void HelloDeccoManager::llToMap(const double lat, const double lon, double &px, double &py) {
+    double utm_x, utm_y;
+    int zone;
+    llToUtm(lat, lon, zone, utm_x, utm_y);
+    px = utm_x + utm_x_offset_;
+    py = utm_y + utm_y_offset_;
+}
+
+void HelloDeccoManager::llToUtm(const double lat, const double lon, int &zone, double &utm_x, double &utm_y) {
+    double k, gamma;
+    bool north;
+    GeographicLib::UTMUPS::Forward(lat, lon, zone, north, utm_x, utm_y, gamma, k);
+}
 
 void HelloDeccoManager::utmToLL(const double utm_x, const double utm_y, const int zone, double &lat, double &lon) {
     double k, gamma;
