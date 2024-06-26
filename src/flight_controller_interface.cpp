@@ -20,6 +20,8 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>  
 #include <float.h>
+
+#include <mavconn/interface.h>
 namespace flight_controller_interface
 {
 FlightControllerInterface::FlightControllerInterface(ros::NodeHandle& node)
@@ -107,6 +109,7 @@ FlightControllerInterface::FlightControllerInterface(ros::NodeHandle& node)
     mavros_compass_subscriber_ = nh_.subscribe<std_msgs::Float64>("/mavros/global_position/compass_hdg", 10, &FlightControllerInterface::compassCallback, this);
     mavros_battery_subscriber_ = nh_.subscribe<sensor_msgs::BatteryState>("/mavros/battery", 10, &FlightControllerInterface::batteryCallback, this);
     mavros_sys_status_subscriber_ = nh_.subscribe<mavros_msgs::SysStatus>("/mavros/sys_status", 10, &FlightControllerInterface::sysStatusCallback, this);
+    mavros_status_text_subscriber_ = nh_.subscribe<mavros_msgs::StatusText>("/mavros/statustext/recv", 10, &FlightControllerInterface::statusTextCallback, this);
 
     // Slam pose subscriber
     slam_pose_subscriber_ = nh_.subscribe<geometry_msgs::PoseStamped>("/decco/pose", 10, &FlightControllerInterface::slamPoseCallback, this);
@@ -582,6 +585,161 @@ void FlightControllerInterface::altitudeCallback(const std_msgs::Float64::ConstP
 void FlightControllerInterface::sysStatusCallback(const mavros_msgs::SysStatus::ConstPtr &msg) {
     // Bitwise check of healthy sensors vs enabled sensors
     ready_to_arm_ = (msg->sensors_health & msg->sensors_enabled) == msg->sensors_enabled;
+
+    using STS = mavlink::common::MAV_SYS_STATUS_SENSOR;
+
+    std::string reasons = "";
+
+    // If not ready to arm, determine reasons
+    if (ready_to_arm_)
+        return;
+
+    if (msg->sensors_enabled & (uint32_t)STS::SENSOR_3D_GYRO &&
+        !(msg->sensors_health & (uint32_t)STS::SENSOR_3D_GYRO))
+        reasons += "gyro, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::SENSOR_3D_ACCEL &&
+        !(msg->sensors_health & (uint32_t)STS::SENSOR_3D_ACCEL))
+        reasons += "accelerometer, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::SENSOR_3D_MAG &&
+        !(msg->sensors_health & (uint32_t)STS::SENSOR_3D_MAG))
+        reasons += "magnetometer, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::ABSOLUTE_PRESSURE &&
+        !(msg->sensors_health & (uint32_t)STS::ABSOLUTE_PRESSURE))
+        reasons += "absolute pressure, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::DIFFERENTIAL_PRESSURE &&
+        !(msg->sensors_health & (uint32_t)STS::DIFFERENTIAL_PRESSURE))
+        reasons += "differential pressure, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::GPS &&
+        !(msg->sensors_health & (uint32_t)STS::GPS))
+        reasons += "GPS, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::OPTICAL_FLOW &&
+        !(msg->sensors_health & (uint32_t)STS::OPTICAL_FLOW))
+        reasons += "optical flow, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::VISION_POSITION &&
+        !(msg->sensors_health & (uint32_t)STS::VISION_POSITION))
+        reasons += "computer vision position, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::LASER_POSITION &&
+        !(msg->sensors_health & (uint32_t)STS::LASER_POSITION))
+        reasons += "laser based position, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::EXTERNAL_GROUND_TRUTH &&
+        !(msg->sensors_health & (uint32_t)STS::EXTERNAL_GROUND_TRUTH))
+        reasons += "external ground truth, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::ANGULAR_RATE_CONTROL &&
+        !(msg->sensors_health & (uint32_t)STS::ANGULAR_RATE_CONTROL))
+        reasons += "angular rate control, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::ATTITUDE_STABILIZATION &&
+        !(msg->sensors_health & (uint32_t)STS::ATTITUDE_STABILIZATION))
+        reasons += "attitude stabilization, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::YAW_POSITION &&
+        !(msg->sensors_health & (uint32_t)STS::YAW_POSITION))
+        reasons += "yaw position, ";
+
+	if (msg->sensors_enabled & (uint32_t)STS::Z_ALTITUDE_CONTROL &&
+        !(msg->sensors_health & (uint32_t)STS::Z_ALTITUDE_CONTROL))
+        reasons += "z altitude control, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::XY_POSITION_CONTROL &&
+        !(msg->sensors_health & (uint32_t)STS::XY_POSITION_CONTROL))
+        reasons += "x/y position control, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::MOTOR_OUTPUTS &&
+        !(msg->sensors_health & (uint32_t)STS::MOTOR_OUTPUTS))
+        reasons += "motor outputs, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::RC_RECEIVER &&
+        !(msg->sensors_health & (uint32_t)STS::RC_RECEIVER))
+        reasons += "rc receiver, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::SENSOR_3D_GYRO2 &&
+        !(msg->sensors_health & (uint32_t)STS::SENSOR_3D_GYRO2))
+        reasons += "gyro 2, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::SENSOR_3D_ACCEL2 &&
+        !(msg->sensors_health & (uint32_t)STS::SENSOR_3D_ACCEL2))
+        reasons += "accelerometer 2, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::SENSOR_3D_MAG2 &&
+        !(msg->sensors_health & (uint32_t)STS::SENSOR_3D_MAG2))
+        reasons += "magnetometer 2, ";
+
+	if (msg->sensors_enabled & (uint32_t)STS::GEOFENCE &&
+        !(msg->sensors_health & (uint32_t)STS::GEOFENCE))
+        reasons += "geofence, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::AHRS &&
+        !(msg->sensors_health & (uint32_t)STS::AHRS))
+        reasons += "AHRS, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::TERRAIN &&
+        !(msg->sensors_health & (uint32_t)STS::TERRAIN))
+        reasons += "terrain, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::REVERSE_MOTOR &&
+        !(msg->sensors_health & (uint32_t)STS::REVERSE_MOTOR))
+        reasons += "motors reversed, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::LOGGING &&
+        !(msg->sensors_health & (uint32_t)STS::LOGGING))
+        reasons += "logging, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::BATTERY &&
+        !(msg->sensors_health & (uint32_t)STS::BATTERY))
+        reasons += "battery, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::PROXIMITY &&
+        !(msg->sensors_health & (uint32_t)STS::PROXIMITY))
+        reasons += "proximity, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::SATCOM &&
+        !(msg->sensors_health & (uint32_t)STS::SATCOM))
+        reasons += "satellite communication, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::PREARM_CHECK &&
+        !(msg->sensors_health & (uint32_t)STS::PREARM_CHECK)) {
+        // Add prearm text from statustext message
+        reasons += "prearm checks: [";
+        reasons += prearm_text_ + "], ";
+    }
+
+    if (msg->sensors_enabled & (uint32_t)STS::OBSTACLE_AVOIDANCE &&
+        !(msg->sensors_health & (uint32_t)STS::OBSTACLE_AVOIDANCE))
+        reasons += "obstacle avoidance / collision prevention, ";
+
+    if (msg->sensors_enabled & (uint32_t)STS::PROPULSION &&
+        !(msg->sensors_health & (uint32_t)STS::PROPULSION))
+        reasons += "propulsion, ";
+
+    preflight_check_reasons_ = reasons;
+}
+
+void FlightControllerInterface::statusTextCallback(const mavros_msgs::StatusText::ConstPtr & msg) {
+    std::string text = msg->text;
+    std::string prefix = "PreArm: ";
+
+    // Prearm text gets updated every 30 seconds, so clear it out just before then for a reset
+    std::cout << "Diff: " << (ros::Time::now() - last_prearm_text_).toSec() << std::endl;
+    if ((ros::Time::now() - last_prearm_text_).toSec() > 29.0) {
+        prearm_text_ = "";
+    }
+
+    // Add to prearm text if statustext starts with "PreArm"
+    if (text.compare(0, prefix.size(), prefix) == 0) {
+        std::string reason = text.substr(prefix.size(), text.size());
+        prearm_text_ += reason + ", ";
+        last_prearm_text_ = ros::Time::now();
+    }
 }
 
 bool FlightControllerInterface::setMode(std::string mode) {

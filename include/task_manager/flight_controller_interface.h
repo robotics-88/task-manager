@@ -63,6 +63,7 @@ class FlightControllerInterface {
         float getBatteryVoltage() {return battery_voltage_;}
         bool getDroneReadyToArm() {return ready_to_arm_;}
         int getImuAveragingN() {return imu_averaging_n_;}
+        std::string getPreflightCheckReasons() {return preflight_check_reasons_;}
 
         bool getMapYaw(double &yaw);
         bool getAveragedOrientation(geometry_msgs::Quaternion &orientation);
@@ -77,6 +78,7 @@ class FlightControllerInterface {
         void batteryCallback(const sensor_msgs::BatteryState::ConstPtr &msg);
         void sysStatusCallback(const mavros_msgs::SysStatus::ConstPtr &msg);
         void statusCallback(const mavros_msgs::State::ConstPtr & msg);
+        void statusTextCallback(const mavros_msgs::StatusText::ConstPtr & msg);
 
         // Mavros state control
         bool setMode(std::string mode);
@@ -124,6 +126,7 @@ class FlightControllerInterface {
         ros::Subscriber mavros_battery_subscriber_;
         ros::Subscriber slam_pose_subscriber_;
         ros::Subscriber mavros_sys_status_subscriber_;
+        ros::Subscriber mavros_status_text_subscriber_;
 
         // Mavros service clients
         ros::ServiceClient arming_client_;
@@ -157,6 +160,9 @@ class FlightControllerInterface {
         ros::Duration service_wait_duration_;
         int detected_utm_zone_;
         bool utm_set_;
+        std::string preflight_check_reasons_;
+        std::string prearm_text_;
+        ros::Time last_prearm_text_;
 
         // Battery estimation stuff
         sensor_msgs::BatteryState current_battery_;

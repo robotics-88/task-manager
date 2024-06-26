@@ -247,9 +247,15 @@ void TaskManager::runTaskManager() {
             // TODO sim should pass arming checks too, they don't for some weird reasons.
             // Like loop rate 222 (which can be fixed by putting ClockSpeed: 0.8 in settings.json)
             // However, other things still fail. Eventually we should fix this and set ARMING_CHECK to 1 in ardupilot
-            if (flight_controller_interface_.getDroneReadyToArm() || simulate_)
+            if (flight_controller_interface_.getDroneReadyToArm() || simulate_) {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Preflight checks passed, ready to arm");
                 updateCurrentTask(Task::READY);
+            } 
+            else if (ros::Time::now() - last_preflight_check_log_stamp_ > ros::Duration(10.0)) {
+                logEvent(EventType::FLIGHT_CONTROL, Severity::MEDIUM,
+                         "Preflight check failed due to " + flight_controller_interface_.getPreflightCheckReasons());
+                last_preflight_check_log_stamp_ = ros::Time::now();
+            }
             break;
         }
         case Task::READY: {

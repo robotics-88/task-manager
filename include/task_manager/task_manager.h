@@ -166,6 +166,8 @@ class TaskManager {
         ros::Duration health_check_pub_duration_;
         ros::Time last_health_pub_stamp_;
 
+        ros::Time last_preflight_check_log_stamp_;
+
         // Flags to control various behavior
         bool simulate_;
         bool do_slam_;
