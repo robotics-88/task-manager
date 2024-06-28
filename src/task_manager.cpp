@@ -1363,7 +1363,7 @@ void TaskManager::logEvent(EventType type, Severity sev, std::string description
     json j;
     j["flightId"] = 0; // TODO
     j["level"] = getSeverityString(sev);
-    j["timestamp"] = (int)(ros::Time::now().toNSec() * 1E-6);
+    j["timestamp"] = ros::Time::now().toNSec() * 1E-6;
     j["type"] = getEventTypeString(type);
     j["description"] = description.substr(0, 256); // Limit string size to 256
 
