@@ -15,6 +15,9 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <geometry_msgs/PoseStamped.h>
 #include <livox_ros_driver/CustomMsg.h>
 #include <map_msgs/OccupancyGridUpdate.h>
+#include <pcl_ros/point_cloud.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
@@ -183,7 +186,11 @@ class TaskManager {
         bool offline_;
         ros::Publisher map_yaw_pub_;
         ros::Subscriber map_yaw_sub_;
+        
+        // UTM PCD saving
         bool save_pcd_;
+        pcl::PointCloud<pcl::PointXYZI>::Ptr pcl_save_;
+        bool utm_tf_init_;
 
         // Hello Decco comms
         hello_decco_manager::HelloDeccoManager hello_decco_manager_;
