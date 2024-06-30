@@ -729,7 +729,6 @@ void FlightControllerInterface::statusTextCallback(const mavros_msgs::StatusText
     std::string prefix = "PreArm: ";
 
     // Prearm text gets updated every 30 seconds, so clear it out just before then for a reset
-    std::cout << "Diff: " << (ros::Time::now() - last_prearm_text_).toSec() << std::endl;
     if ((ros::Time::now() - last_prearm_text_).toSec() > 29.0) {
         prearm_text_ = "";
     }
