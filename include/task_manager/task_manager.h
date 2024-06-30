@@ -183,6 +183,7 @@ class TaskManager {
         bool offline_;
         ros::Publisher map_yaw_pub_;
         ros::Subscriber map_yaw_sub_;
+        bool save_pcd_;
 
         // Hello Decco comms
         hello_decco_manager::HelloDeccoManager hello_decco_manager_;

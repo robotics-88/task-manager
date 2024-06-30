@@ -42,6 +42,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , task_manager_loop_duration_(1.0)
     , simulate_(false)
     , offline_(false)
+    , save_pcd_(false)
     , hello_decco_manager_(node)
     , enable_autonomy_(false)
     , use_failsafes_(false)
@@ -120,6 +121,7 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     private_nh_.param<std::string>("thermal_topic", thermal_topic_, thermal_topic_);
     private_nh_.param<std::string>("rosbag_topic", rosbag_topic_, rosbag_topic_);
     private_nh_.param<bool>("offline", offline_, offline_);
+    private_nh_.param<bool>("save_pcd", save_pcd_, save_pcd_);
     private_nh_.param<bool>("simulate", simulate_, simulate_);
     private_nh_.param<std::string>("data_directory", burn_dir_prefix_, burn_dir_prefix_);
     private_nh_.param<bool>("explicit_global", explicit_global_params_, explicit_global_params_);
