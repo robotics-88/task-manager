@@ -589,10 +589,6 @@ bool TaskManager::initialized() {
         yaw_msg.data = map_yaw_;
         map_yaw_pub_.publish(yaw_msg);
     }
-    else {
-        ROS_WARN("Waiting for heading from rosbag...");
-        ros::topic::waitForMessage<std_msgs::Float64>("map_yaw", nh_);
-    }
 
     // Get roll, pitch for map stabilization
     geometry_msgs::Quaternion init_orientation;
@@ -606,6 +602,7 @@ bool TaskManager::initialized() {
     double roll, pitch, yaw;
     m.getRPY(roll, pitch, yaw);
     ROS_INFO("Roll: %f, Pitch: %f, Yaw, %f", roll * 180 / M_PI, pitch * 180 / M_PI, yaw * 180 / M_PI);
+    map_yaw_ = yaw;
 
     // If using tilted lidar, add the lidar pitch to the map to slam tf, since
     // the lidar is used as the basis for the slam map frame
