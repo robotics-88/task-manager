@@ -42,6 +42,7 @@
     <arg name="do_record" default="true"/>
     <arg name="user" value="$(env USER)"/>
     <arg name="data_directory" default="/home/$(arg user)/src/bags/"/>
+    <arg name="save_pcd" default="false"/>
 
     <arg name="simulate" default="false"/>
     <arg name="offline" default="false"/>
@@ -75,6 +76,7 @@
         <param name="local_pos_rate" value="60"/>
         <param name="simulate" value="$(arg simulate)"/>
         <param name="offline" value="$(arg offline)"/>
+        <param name="save_pcd" value="$(arg save_pcd)"/>
         <param name="battery_size" value="5.2"/> <!-- Battery size in amp hours -->
         <param name="estimated_current" value="20"/> <!-- Starting estimate for current consumption -->
         <param name="estimated_drone_speed" value="2.0"/> <!-- m/s -->
