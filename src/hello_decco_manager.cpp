@@ -209,6 +209,12 @@ geometry_msgs::Polygon HelloDeccoManager::polygonToMap(const geometry_msgs::Poly
 }
 bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::Polygon &polygon) {
 
+    // Convert drone location to point32 instead of posestamped
+    geometry_msgs::Point32 drone_location;
+    drone_location.x = drone_location_.pose.position.x;
+    drone_location.y = drone_location_.pose.position.y;
+    drone_location.z = drone_location_.pose.position.z;
+
     mavros_msgs::WaypointPush srv;
 
     srv.request.start_index = 0;
@@ -229,17 +235,17 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::Polygon &polygon)
     double buffer_distance = 5;
 
     geometry_msgs::Point32 point;
-    point.x = drone_location_.pose.position.x + buffer_distance;
-    point.y = drone_location_.pose.position.y + buffer_distance;
+    point.x = drone_location.x + buffer_distance;
+    point.y = drone_location.y + buffer_distance;
     buffer.points.push_back(point);
-    point.x = drone_location_.pose.position.x - buffer_distance;
-    point.y = drone_location_.pose.position.y + buffer_distance;
+    point.x = drone_location.x - buffer_distance;
+    point.y = drone_location.y + buffer_distance;
     buffer.points.push_back(point);
-    point.x = drone_location_.pose.position.x - buffer_distance;
-    point.y = drone_location_.pose.position.y - buffer_distance;
+    point.x = drone_location.x - buffer_distance;
+    point.y = drone_location.y - buffer_distance;
     buffer.points.push_back(point);
-    point.x = drone_location_.pose.position.x + buffer_distance;
-    point.y = drone_location_.pose.position.y - buffer_distance;
+    point.x = drone_location.x + buffer_distance;
+    point.y = drone_location.y - buffer_distance;
     buffer.points.push_back(point);
 
     int n1 = polygon_map.points.size();
@@ -249,7 +255,7 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::Polygon &polygon)
 
     // Find closest point in polygon to drone
     for (int i = 0; i < n1; ++i) {
-        double d = distance(polygon_map.points[i], drone_location_.pose.position);
+        double d = distance(polygon_map.points[i], drone_location);
         if (d < minDist) {
             minDist = d;
             closest_point_ind = i;
@@ -274,21 +280,46 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::Polygon &polygon)
     point1 = polygon_map.points.at(ind1);
     point2 = polygon_map.points.at(ind2);
 
-    geometry_msgs::Polygon polygon_merged_map;
-    // Add vertices of the first polygon up to the closest vertex
-    for (int i = 0; i <= closest_i; ++i) {
-        polygon_merged_map.points.push_back(polygon_map.points[i]);
+    // Compute intersection -- first edge
+    bool intersection1 = false, intersection2 = false;
+    double dx1 = closest_point.x - point1.x;
+    double dy1 = closest_point.y - point1.y;
+    double m1 = dy1 / dx1;
+    // TODO add check for either = 0
+    double b1 = closest_point.y - m1 * closest_point.x;
+    double mstar1 = -1 / m1;
+    double bstar1 = drone_location.y + mstar1 * drone_location.x;
+    double xstar1 = (mstar1 * drone_location.x + bstar1 - b1) / m1;
+    double ystar1 = mstar1 * xstar1 + bstar1;
+    double dist1 = DBL_MAX;
+    if (xstar1 > std::min(closest_point.x, point1.x) && xstar1 < std::max(closest_point.x, point1.x) && ystar1 > std::min(closest_point.y, point1.y) && ystar1 < std::max(closest_point.y, point1.y)) {
+        // Point is inside the line segment
+        intersection1 = true;
+        dist1 = std::sqrt(std::pow(drone_location.x - xstar1, 2) + std::pow(drone_location.y - ystar1, 2));
     }
 
-    // Add vertices of the second polygon starting from the closest vertex
-    for (int j = 0; j < n2; ++j) {
-        polygon_merged_map.points.push_back(buffer.points[(closest_j + j) % n2]);
+    // Compute intersection -- second edge
+    double dx2 = closest_point.x - point2.x;
+    double dy2 = closest_point.y - point2.y;
+    double m2 = dy2 / dx2;
+    // TODO add check for either = 0
+    double b2 = closest_point.y - m2 * closest_point.x;
+    double mstar2 = -1 / m2;
+    double bstar2 = drone_location.y + mstar2 * drone_location.x;
+    double xstar2 = (mstar2 * drone_location.x + bstar2 - b2) / m2;
+    double ystar2 = mstar2 * xstar2 + bstar2;
+    double dist2 = DBL_MAX;
+    if (xstar2 > std::min(closest_point.x, point2.x) && xstar2 < std::max(closest_point.x, point2.x) && ystar2 > std::min(closest_point.y, point2.y) && ystar2 < std::max(closest_point.y, point2.y)) {
+        // Point is inside the line segment
+        intersection2 = true;
+        dist2 = std::sqrt(std::pow(drone_location.x - xstar2, 2) + std::pow(drone_location.y - ystar2, 2));
     }
 
-    // Add remaining vertices of the first polygon
-    for (int i = closest_i + 1; i < n1; ++i) {
-        polygon_merged_map.points.push_back(polygon_map.points[i]);
-    }
+
+
+
+
+
 
     // Now push all points to waypoint struct
     for (int i = 0; i < polygon_merged_map.points.size(); i++) {
