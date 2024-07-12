@@ -1006,6 +1006,8 @@ std::string TaskManager::getSeverityString(Severity sev) {
 
 void TaskManager::slamPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose) {
 
+    slam_pose_ = *slam_pose;
+
     // Transform decco pose (in slam_map frame) and publish it in mavros_map frame as /mavros/vision_pose/pose
     if (!map_tf_init_) {
         return;
@@ -1152,6 +1154,8 @@ void TaskManager::makeBurnUnitJson(json burn_unit) {
     }
     std::string name = burn_unit["name"];
     burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
+
+    hello_decco_manager_.setDroneLocationLocal(slam_pose_);
     hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
     current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
     if (current_index_ < 0) {

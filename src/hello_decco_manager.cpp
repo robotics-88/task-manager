@@ -207,24 +207,105 @@ geometry_msgs::Polygon HelloDeccoManager::polygonToMap(const geometry_msgs::Poly
     }
     return map_polygon;
 }
-
 bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::Polygon &polygon) {
 
     mavros_msgs::WaypointPush srv;
 
     srv.request.start_index = 0;
 
-    // Convert polygon point to geofence waypoint and push to list
-    for (int i = 0; i < polygon.points.size(); i++) {
-        mavros_msgs::Waypoint wp;
+    // Convert to map first so that we can calculate distances
+    geometry_msgs::Polygon polygon_map;
+    for (const auto &point : polygon.points) {
+        double px, py;
+        llToMap(point.x, point.y, px, py);
+        geometry_msgs::Point32 point_map;
+        point_map.x = px;
+        point_map.y = py;
+        polygon_map.points.push_back(point_map);
+    }
 
+    // If drone not inside polygon, then add points as buffer around drone to geofence
+    geometry_msgs::Polygon buffer;
+    double buffer_distance = 5;
+
+    geometry_msgs::Point32 point;
+    point.x = drone_location_.pose.position.x + buffer_distance;
+    point.y = drone_location_.pose.position.y + buffer_distance;
+    buffer.points.push_back(point);
+    point.x = drone_location_.pose.position.x - buffer_distance;
+    point.y = drone_location_.pose.position.y + buffer_distance;
+    buffer.points.push_back(point);
+    point.x = drone_location_.pose.position.x - buffer_distance;
+    point.y = drone_location_.pose.position.y - buffer_distance;
+    buffer.points.push_back(point);
+    point.x = drone_location_.pose.position.x + buffer_distance;
+    point.y = drone_location_.pose.position.y - buffer_distance;
+    buffer.points.push_back(point);
+
+    int n1 = polygon_map.points.size();
+    int n2 = buffer.points.size();
+    double minDist = std::numeric_limits<double>::max();
+    int closest_point_ind = -1;
+
+    // Find closest point in polygon to drone
+    for (int i = 0; i < n1; ++i) {
+        double d = distance(polygon_map.points[i], drone_location_.pose.position);
+        if (d < minDist) {
+            minDist = d;
+            closest_point_ind = i;
+        }
+    }
+
+    // Find line intersection with each segment connecting to closest point
+    geometry_msgs::Point32 point1, point2, closest_point = polygon_map.points.at(closest_point_ind);
+    int ind1, ind2;
+    if (closest_point_ind == 0) {
+        ind1 = polygon_map.points.size() - 1;
+    }
+    else {
+        ind1 = closest_point_ind - 1;
+    }
+    if (closest_point_ind == polygon_map.points.size() - 1) {
+        ind2 = 0;
+    }
+    else {
+        ind2 = closest_point_ind + 1;
+    }
+    point1 = polygon_map.points.at(ind1);
+    point2 = polygon_map.points.at(ind2);
+
+    geometry_msgs::Polygon polygon_merged_map;
+    // Add vertices of the first polygon up to the closest vertex
+    for (int i = 0; i <= closest_i; ++i) {
+        polygon_merged_map.points.push_back(polygon_map.points[i]);
+    }
+
+    // Add vertices of the second polygon starting from the closest vertex
+    for (int j = 0; j < n2; ++j) {
+        polygon_merged_map.points.push_back(buffer.points[(closest_j + j) % n2]);
+    }
+
+    // Add remaining vertices of the first polygon
+    for (int i = closest_i + 1; i < n1; ++i) {
+        polygon_merged_map.points.push_back(polygon_map.points[i]);
+    }
+
+    // Now push all points to waypoint struct
+    for (int i = 0; i < polygon_merged_map.points.size(); i++) {
+        mavros_msgs::Waypoint wp;
         wp.command = mavros_msgs::CommandCode::NAV_FENCE_POLYGON_VERTEX_INCLUSION;
 
         // Param1 is for number of fence points
-        wp.param1 = polygon.points.size();
+        wp.param1 = polygon_merged_map.points.size();
 
-        wp.x_lat = polygon.points[i].x;
-        wp.y_long = polygon.points[i].y;
+        // Convert map frame polygon to lat/lon
+        double lat, lon;
+        mapToLl(polygon_merged_map.points[i].x, polygon_merged_map.points[i].y, lat, lon);
+
+        std::cout << "X: " << polygon_merged_map.points[i].x << ", Y: " << polygon_merged_map.points[i].y << std::endl;
+
+        wp.x_lat = lat;
+        wp.y_long = lon;
 
         srv.request.waypoints.push_back(wp);
     }
@@ -394,6 +475,14 @@ json HelloDeccoManager::polygonToBurnUnit(const json &polygon) {
         })"_json;
     burn_unit["polygon"] = polygon;
     return burn_unit;
+}
+
+double HelloDeccoManager::distance(const geometry_msgs::Point32 point_a, const geometry_msgs::Point32 point_b) {
+    double dist_x = point_b.x - point_a.x;
+    double dist_y = point_b.y - point_a.y;
+    double dist_z = point_b.z - point_a.z;
+
+    return sqrt(dist_x * dist_x + dist_y * dist_y + dist_z * dist_z);
 }
 
 }

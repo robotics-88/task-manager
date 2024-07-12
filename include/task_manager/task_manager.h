@@ -247,6 +247,7 @@ class TaskManager {
         ros::Publisher stop_record_pub_;
 
         // Drone state params
+        geometry_msgs::PoseStamped slam_pose_;
         geometry_msgs::PoseStamped home_pos_;
         geometry_msgs::Polygon current_polygon_;
         geometry_msgs::PoseStamped initial_transit_point_;

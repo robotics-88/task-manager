@@ -14,12 +14,27 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <std_msgs/String.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf2_ros/transform_listener.h>
+#include <sensor_msgs/NavSatFix.h>
+
+
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/point.hpp>
+#include <boost/geometry/geometries/polygon.hpp>
+#include <boost/geometry/strategies/strategies.hpp>
+#include <boost/geometry/algorithms/within.hpp>
+#include <boost/geometry/algorithms/buffer.hpp>
+#include <boost/geometry/algorithms/union.hpp>
 
 #include <ConcavePolygon.h>
 #include <CentroidSplitter.h>
 
 #include <task_manager/json.hpp>
 using json = nlohmann::json;
+
+namespace bg = boost::geometry;
+
+typedef bg::model::d2::point_xy<double> Point;
+typedef bg::model::polygon<Point> Polygon;
 
 namespace hello_decco_manager {
 /**
@@ -49,6 +64,10 @@ class HelloDeccoManager {
         geometry_msgs::Polygon polygonToMap(const geometry_msgs::Polygon &polygon);
         void packageToMapversation(std::string topic, json gossip);
 
+        void setDroneLocationLocal(geometry_msgs::PoseStamped location) {
+            drone_location_ = location;
+        }
+
     private:
         enum FlightStatus {
             NOT_STARTED,
@@ -67,6 +86,7 @@ class HelloDeccoManager {
         double utm_x_offset_;
         double utm_y_offset_;
         int utm_zone_;
+        geometry_msgs::PoseStamped drone_location_;
 
         // Mapversation
         ros::Publisher mapver_pub_;
@@ -93,6 +113,8 @@ class HelloDeccoManager {
         int concaveToMinimalConvexPolygons();
         void visualizeLegs();
         void visualizePolygon();
+
+        double distance(const geometry_msgs::Point32 point_a, const geometry_msgs::Point32 point_b);
 };
 
 }
