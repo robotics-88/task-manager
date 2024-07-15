@@ -244,7 +244,7 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::Polygon &polygon)
 
         // Find closest point in polygon to drone
         for (int i = 0; i < n1; ++i) {
-            double d = distance(polygon_map.points[i], drone_location);
+            double d = decco_utilities::distance_xy(polygon_map.points[i], drone_location);
             if (d < minDist) {
                 minDist = d;
                 closest_point_ind = i;
@@ -552,13 +552,4 @@ json HelloDeccoManager::polygonToBurnUnit(const json &polygon) {
     burn_unit["polygon"] = polygon;
     return burn_unit;
 }
-
-double HelloDeccoManager::distance(const geometry_msgs::Point32 point_a, const geometry_msgs::Point32 point_b) {
-    double dist_x = point_b.x - point_a.x;
-    double dist_y = point_b.y - point_a.y;
-    double dist_z = point_b.z - point_a.z;
-
-    return sqrt(dist_x * dist_x + dist_y * dist_y + dist_z * dist_z);
-}
-
 }

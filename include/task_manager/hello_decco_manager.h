@@ -99,8 +99,6 @@ class HelloDeccoManager {
         int concaveToMinimalConvexPolygons();
         void visualizeLegs();
         void visualizePolygon();
-
-        double distance(const geometry_msgs::Point32 point_a, const geometry_msgs::Point32 point_b);
 };
 
 }
