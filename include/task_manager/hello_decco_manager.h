@@ -16,25 +16,11 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <tf2_ros/transform_listener.h>
 #include <sensor_msgs/NavSatFix.h>
 
-
-#include <boost/geometry.hpp>
-#include <boost/geometry/geometries/point.hpp>
-#include <boost/geometry/geometries/polygon.hpp>
-#include <boost/geometry/strategies/strategies.hpp>
-#include <boost/geometry/algorithms/within.hpp>
-#include <boost/geometry/algorithms/buffer.hpp>
-#include <boost/geometry/algorithms/union.hpp>
-
 #include <ConcavePolygon.h>
 #include <CentroidSplitter.h>
 
 #include <task_manager/json.hpp>
 using json = nlohmann::json;
-
-namespace bg = boost::geometry;
-
-typedef bg::model::d2::point_xy<double> Point;
-typedef bg::model::polygon<Point> Polygon;
 
 namespace hello_decco_manager {
 /**

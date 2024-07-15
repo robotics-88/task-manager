@@ -132,5 +132,14 @@ if(CATKIN_ENABLE_TESTING)
     ${GeographicLib_LIBRARIES}
   )
 
+  add_rostest_gtest(tests_decco_utilities
+    launch/test/tests_decco_utilities.launch 
+    test/decco_utilities_test.cpp
+  )
+  target_link_libraries(tests_decco_utilities 
+    ${catkin_LIBRARIES}
+    ${GeographicLib_LIBRARIES}
+  )
+
   
 endif()
