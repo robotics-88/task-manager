@@ -327,7 +327,6 @@ class TaskManager {
         bool pauseOperations();
         void startBag();
         void stopBag();
-        bool isInside(const geometry_msgs::Polygon& polygon, const geometry_msgs::Point& point);
         bool polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region);
         void padNavTarget(geometry_msgs::PoseStamped &target);
         std::string getTaskString(Task task);

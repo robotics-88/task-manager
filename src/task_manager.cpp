@@ -293,8 +293,15 @@ void TaskManager::runTaskManager() {
                     takeoff_attempts_ = 0;
                 }
                 else {
-                    logEvent(EventType::STATE_MACHINE, Severity::LOW, "Starting takeoff");
-                    startTakeoff();
+                    if (!enable_autonomy_) {
+                        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Not taking off, autonomy not enabled");
+                        needs_takeoff_ = false;
+                    }
+                    else {
+                        logEvent(EventType::STATE_MACHINE, Severity::LOW, "Starting takeoff");
+                        startTakeoff();
+                    }
+                    
                 }
             }
             else if (flight_controller_interface_.getIsArmed()) {
@@ -318,7 +325,7 @@ void TaskManager::runTaskManager() {
             // Once we reach takeoff altitude, transition to next flight state
             if (flight_controller_interface_.getAltitudeAGL() > (target_altitude_ - 1)) {
                 // If not in polygon, start navigation task
-                if (!isInside(current_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position)) {
+                if (!decco_utilities::isInside(current_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position)) {
                     logEvent(EventType::STATE_MACHINE, Severity::LOW, "Transiting to designated survey unit");
                     startTransit();
                 }
@@ -330,7 +337,7 @@ void TaskManager::runTaskManager() {
             break;
         }
         case Task::IN_TRANSIT: {
-            if (isInside(current_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position)) {
+            if (decco_utilities::isInside(current_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position)) {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Starting exploration");
                 startExploration();
             }
@@ -824,31 +831,9 @@ void TaskManager::stopBag() {
     bag_active_ = false;
 }
 
-bool TaskManager::isInside(const geometry_msgs::Polygon& polygon, const geometry_msgs::Point& point)
-{
-  // Determine if the given point is inside the polygon using the number of crossings method
-  // https://wrf.ecse.rpi.edu//Research/Short_Notes/pnpoly.html
-  int n = polygon.points.size();
-  int cross = 0;
-  // Loop from i = [0 ... n - 1] and j = [n - 1, 0 ... n - 2]
-  // Ensures first point connects to last point
-  for (int i = 0, j = n - 1; i < n; j = i++)
-  {
-    // Check if the line to x,y crosses this edge
-    if ( ((polygon.points[i].y > point.y) != (polygon.points[j].y > point.y))
-           && (point.x < (polygon.points[j].x - polygon.points[i].x) * (point.y - polygon.points[i].y) /
-            (polygon.points[j].y - polygon.points[i].y) + polygon.points[i].x) )
-    {
-      cross++;
-    }
-  }
-  // Return true if the number of crossings is odd
-  return cross % 2 > 0;
-}
-
 bool TaskManager::polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region) {
 
-    if (isInside(current_polygon_, flight_controller_interface_.getCurrentSlamPosition().pose.position))
+    if (decco_utilities::isInside(current_polygon_, flight_controller_interface_.getCurrentSlamPosition().pose.position))
         return true;
 
     // Medium check, computes distance to nearest point on 2 most likely polygon edges

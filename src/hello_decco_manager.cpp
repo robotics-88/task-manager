@@ -279,24 +279,23 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::Polygon &polygon)
 
         // Determine where to put the geofence
         double buffer_dist = 5.0;
+
+        // If both lines have intersection, choose to act on the closer one by setting the other 'intersection' flag to false
         if (intersection1 && intersection2) {
 
             // Add point 'behind' drone
-            double length = decco_utilities::distance_xy(closest_point, drone_location);
+            double length_1 = decco_utilities::distance_xy(intersection_point_1, drone_location);
+            double length_2 = decco_utilities::distance_xy(intersection_point_2, drone_location);
 
-            geometry_msgs::Vector3 unit_v;
-
-            unit_v.x = (closest_point.x - drone_location.x) / length;
-            unit_v.y = (closest_point.y - drone_location.y) / length;
-
-            geometry_msgs::Point32 buffer_point;
-            buffer_point.x = drone_location.x - buffer_dist * unit_v.x;
-            buffer_point.y = drone_location.y - buffer_dist * unit_v.y;
-
-            // Replace closest point in fence with drone buffer point
-            geofence_polygon_map.points[closest_point_ind] = buffer_point;
+            if (length_1 <= length_2) {
+                intersection2 = false;
+            }
+            else {
+                intersection1 = false;
+            }
         }
-        else if (intersection1) {
+        
+        if (intersection1) {
             // Put geofence to point 1
 
             // Add point 'behind' drone
