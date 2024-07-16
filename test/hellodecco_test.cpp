@@ -1,4 +1,5 @@
 #include "task_manager/hello_decco_manager.h"
+#include "decco_utilities.h"
 
 #include <gtest/gtest.h>
 #include <ros/connection_manager.h>
@@ -130,44 +131,6 @@ TEST(MapversationPackage, mapversationPackage)
     }
 }
 
-TEST(CoordConversions, latLong)
-{
-    ros::NodeHandle node;
-    hello_decco_manager::HelloDeccoManager hello_decco_manager(node);
-    
-    double lat = 41.496334075927905;
-    double lon = -71.30898284911267;
-
-    double utm_x, utm_y;
-    int zone;
-    hello_decco_manager.llToUtm(lat, lon, zone, utm_x, utm_y);
-    double new_lat, new_lon;
-    hello_decco_manager.utmToLL(utm_x, utm_y, zone, new_lat, new_lon);
-
-    ASSERT_DOUBLE_EQ(lat, new_lat);
-    ASSERT_DOUBLE_EQ(lon, new_lon);
-}
-
-TEST(CoordConversions, utm)
-{
-    ros::NodeHandle node;
-    hello_decco_manager::HelloDeccoManager hello_decco_manager(node);
-
-    double utm_x = 307268.564434;
-    double utm_y = 4596431.061994;
-    int zone = 19;
-    
-    double lat, lon;
-    hello_decco_manager.utmToLL(utm_x, utm_y, zone, lat, lon);
-    double new_utm_x, new_utm_y;
-    int new_zone;
-    hello_decco_manager.llToUtm(lat, lon, new_zone, new_utm_x, new_utm_y);
-
-    ASSERT_DOUBLE_EQ(utm_x, new_utm_x);
-    ASSERT_DOUBLE_EQ(utm_y, new_utm_y);
-    ASSERT_EQ(zone, new_zone);
-}
-
 TEST(ReceiveBurnUnit, receiveBurnUnit)
 {
     ros::NodeHandle node;
@@ -193,7 +156,8 @@ TEST(ReceiveBurnUnit, receiveBurnUnit)
     // Confirm that when reverting map polygon to GPS, matches points
     for (int ii = 0; ii < burner.map_polygon.points.size(); ii++) {
         double lat, lon;
-        hello_decco_manager.mapToLl(burner.map_polygon.points.at(ii).x, burner.map_polygon.points.at(ii).y, lat, lon);
+        decco_utilities::mapToLl(burner.map_polygon.points.at(ii).x, burner.map_polygon.points.at(ii).y, lat, lon,
+                                 burner.utm_x_offset, burner.utm_y_offset, burner.utm_zone);
         geometry_msgs::Point32 ll_point;
         ll_point.x = lat;
         ll_point.y = lon;

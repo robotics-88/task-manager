@@ -1,6 +1,6 @@
 /* 
 © 2024 Robotics 88
-Author: Erin Linebarger <erin@robotics88.com> , Gus Meyer <gus@robotics88.com>
+Author: Gus Meyer <gus@robotics88.com>
 */
 
 #ifndef DECCO_UTILITIES_H_
@@ -9,10 +9,7 @@ Author: Erin Linebarger <erin@robotics88.com> , Gus Meyer <gus@robotics88.com>
 #include <ros/ros.h>
 #include <geometry_msgs/Polygon.h>
 
-// #include <GeographicLib/Constants.hpp>
 #include <GeographicLib/GeoCoords.hpp>
-/* #include <GeographicLib/Geodesic.hpp>
-#include <GeographicLib/PolygonArea.hpp> */
 
 namespace decco_utilities
 {

@@ -88,7 +88,8 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
             for (int jj = 0; jj < local_subpolygons_.at(ii).points.size(); jj++) {
                 json ll;
                 double lat, lon;
-                mapToLl(local_subpolygons_.at(ii).points.at(jj).x, local_subpolygons_.at(ii).points.at(jj).y, lat, lon);
+                decco_utilities::mapToLl(local_subpolygons_.at(ii).points.at(jj).x, local_subpolygons_.at(ii).points.at(jj).y, lat, lon,
+                                         utm_x_offset_, utm_y_offset_, utm_zone_);
                 ll.push_back(lat);
                 ll.push_back(lon);
                 ll_json.push_back(ll);
@@ -202,13 +203,14 @@ geometry_msgs::Polygon HelloDeccoManager::polygonToMap(const geometry_msgs::Poly
     for (int ii = 0; ii < polygon.points.size(); ii++) {
         geometry_msgs::Point32 poly_point;
         double px, py;
-        llToMap(polygon.points.at(ii).x, polygon.points.at(ii).y, px, py);
+        decco_utilities::llToMap(polygon.points.at(ii).x, polygon.points.at(ii).y, px, py, utm_x_offset_, utm_y_offset_);
         poly_point.x = px;
         poly_point.y = py;
         map_polygon.points.push_back(poly_point);
     }
     return map_polygon;
 }
+
 bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::Polygon &polygon) {
     mavros_msgs::WaypointPush srv;
     srv.request.start_index = 0;
@@ -229,7 +231,7 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::Polygon &polygon)
         geometry_msgs::Polygon polygon_map;
         for (const auto &point : polygon.points) {
             double px, py;
-            llToMap(point.x, point.y, px, py);
+            decco_utilities::llToMap(point.x, point.y, px, py, utm_x_offset_, utm_y_offset_);
             geometry_msgs::Point32 point_map;
             point_map.x = px;
             point_map.y = py;
@@ -277,7 +279,7 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::Polygon &polygon)
         geometry_msgs::Point32 intersection_point_2;
         bool intersection2 = decco_utilities::intersectsOrthogonal(closest_point, point2, drone_location, intersection_point_2);
 
-        // Determine where to put the geofence
+        // Determine where to put the geofence, in meters away from the drone
         double buffer_dist = 5.0;
 
         // If both lines have intersection, choose to act on the closer one by setting the other 'intersection' flag to false
@@ -361,7 +363,8 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::Polygon &polygon)
         for (int i = 0; i < geofence_polygon_map.points.size(); i++) {
             // Convert map frame polygon to lat/lon
             double lat, lon;
-            mapToLl(geofence_polygon_map.points[i].x, geofence_polygon_map.points[i].y, lat, lon);
+            decco_utilities::mapToLl(geofence_polygon_map.points[i].x, geofence_polygon_map.points[i].y, lat, lon,
+                                     utm_x_offset_, utm_y_offset_, utm_zone_);
 
             geometry_msgs::Point32 geofence_point;
             geofence_point.x = lat;
@@ -496,31 +499,6 @@ void HelloDeccoManager::visualizeLegs() {
 //     }
 //     return num_legs;
 // }
-
-void HelloDeccoManager::mapToLl(const double px, const double py, double &lat, double &lon) {
-    double xval = px - utm_x_offset_;
-    double yval = py - utm_y_offset_;
-    utmToLL(xval, yval, utm_zone_, lat, lon);
-}
-
-void HelloDeccoManager::llToMap(const double lat, const double lon, double &px, double &py) {
-    double utm_x, utm_y;
-    int zone;
-    llToUtm(lat, lon, zone, utm_x, utm_y);
-    px = utm_x + utm_x_offset_;
-    py = utm_y + utm_y_offset_;
-}
-
-void HelloDeccoManager::llToUtm(const double lat, const double lon, int &zone, double &utm_x, double &utm_y) {
-    double k, gamma;
-    bool north;
-    GeographicLib::UTMUPS::Forward(lat, lon, zone, north, utm_x, utm_y, gamma, k);
-}
-
-void HelloDeccoManager::utmToLL(const double utm_x, const double utm_y, const int zone, double &lat, double &lon) {
-    double k, gamma;
-    GeographicLib::UTMUPS::Reverse(zone, true, utm_x, utm_y, lat, lon, gamma, k);
-}
 
 json HelloDeccoManager::polygonToBurnUnit(const json &polygon) {
     json burn_unit = R"({

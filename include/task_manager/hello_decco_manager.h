@@ -37,10 +37,6 @@ class HelloDeccoManager {
         json polygonToBurnUnit(const json &polygon);
         int initBurnUnit(geometry_msgs::Polygon &polygon);
         void updateBurnUnit(int index, std::string flight_status);
-        void mapToLl(const double px, const double py, double &lat, double &lon);
-        void llToMap(const double lat, const double lon, double &px, double &py);
-        void llToUtm(const double lat, const double lon, int &zone, double &utm_x, double &utm_y);
-        void utmToLL(const double utm_x, const double utm_y, const int zone, double &lat, double &lon);
         void setUtm(double utm_x, double utm_y, int zone) {
             utm_x_offset_ = -utm_x;
             utm_y_offset_ = -utm_y;

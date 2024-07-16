@@ -1010,7 +1010,7 @@ void TaskManager::slamPoseCallback(const geometry_msgs::PoseStampedConstPtr &sla
         point_in.point.z = 0;
         tf2::doTransform(point_in, point_out, utm2map_tf_);
         double lat, lon;
-        hello_decco_manager_.utmToLL(point_out.point.x, point_out.point.y, home_utm_zone_, lat, lon);
+        decco_utilities::utmToLL(point_out.point.x, point_out.point.y, home_utm_zone_, lat, lon);
         sensor_msgs::NavSatFix nav_msg;
         nav_msg.header.frame_id = mavros_base_frame_;
         nav_msg.header.stamp = slam_pose->header.stamp;

@@ -55,6 +55,7 @@ include_directories(
 )
 
 add_executable(task_manager
+  src/decco_utilities.cpp
   src/flight_controller_interface.cpp
   src/hello_decco_manager.cpp
   src/task_manager.cpp
@@ -102,6 +103,7 @@ if(CATKIN_ENABLE_TESTING)
 
   add_rostest_gtest(tests_task_manager
     launch/test/tests_task_manager.launch 
+    src/decco_utilities.cpp
     src/task_manager.cpp
     src/hello_decco_manager.cpp
     src/flight_controller_interface.cpp
@@ -113,7 +115,7 @@ if(CATKIN_ENABLE_TESTING)
   )
 
   add_rostest_gtest(tests_flight_controller_interface
-    launch/test/tests_flight_controller_interface.launch 
+    launch/test/tests_flight_controller_interface.launch
     src/flight_controller_interface.cpp 
     test/flight_controller_interface_test.cpp
   )
@@ -123,7 +125,8 @@ if(CATKIN_ENABLE_TESTING)
   )
 
   add_rostest_gtest(tests_hellodecco
-    launch/test/tests_hellodecco.launch 
+    launch/test/tests_hellodecco.launch
+    src/decco_utilities.cpp
     src/hello_decco_manager.cpp 
     test/hellodecco_test.cpp
   )
@@ -133,7 +136,8 @@ if(CATKIN_ENABLE_TESTING)
   )
 
   add_rostest_gtest(tests_decco_utilities
-    launch/test/tests_decco_utilities.launch 
+    launch/test/tests_decco_utilities.launch
+    src/decco_utilities.cpp
     test/decco_utilities_test.cpp
   )
   target_link_libraries(tests_decco_utilities 

@@ -84,23 +84,47 @@ TEST(Methods, isInside)
     ASSERT_FALSE(decco_utilities::isInside(polygon, test_point));
 }
 
-// TODO
 TEST(Methods, llToUtm) 
-{
-    ASSERT_TRUE(true);
+{   
+    double lat = 41.496334075927905;
+    double lon = -71.30898284911267;
+
+    double utm_x, utm_y;
+    int zone;
+    decco_utilities::llToUtm(lat, lon, zone, utm_x, utm_y);
+    double new_lat, new_lon;
+    decco_utilities::utmToLL(utm_x, utm_y, zone, new_lat, new_lon);
+
+    ASSERT_DOUBLE_EQ(lat, new_lat);
+    ASSERT_DOUBLE_EQ(lon, new_lon);
 }
 
-TEST(Methods, utmToLL) 
+
+
+TEST(Methods, llToUtm2) 
 {
-    ASSERT_TRUE(true);
+    double utm_x = 307268.564434;
+    double utm_y = 4596431.061994;
+    int zone = 19;
+    
+    double lat, lon;
+    decco_utilities::utmToLL(utm_x, utm_y, zone, lat, lon);
+    double new_utm_x, new_utm_y;
+    int new_zone;
+    decco_utilities::llToUtm(lat, lon, new_zone, new_utm_x, new_utm_y);
+
+    ASSERT_DOUBLE_EQ(utm_x, new_utm_x);
+    ASSERT_DOUBLE_EQ(utm_y, new_utm_y);
+    ASSERT_EQ(zone, new_zone);
 }
 
-TEST(Methods, mapToLl) 
-{
-    ASSERT_TRUE(true);
-}
-
+// TODO
 TEST(Methods, llToMap) 
+{
+    ASSERT_TRUE(true);
+}
+
+TEST(Methods, mapToLL) 
 {
     ASSERT_TRUE(true);
 }
