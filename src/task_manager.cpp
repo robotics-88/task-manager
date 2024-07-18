@@ -1124,7 +1124,13 @@ void TaskManager::makeBurnUnitJson(json burn_unit) {
     burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
 
     hello_decco_manager_.setDroneLocationLocal(slam_pose_);
-    hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
+    bool geofence_ok;
+    hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_, geofence_ok);
+
+    if (!geofence_ok) {
+        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Geofence invalid, not setting geofence");
+    }
+
     current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
     if (current_index_ < 0) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "No burn polygon was found, all are already complete, not exploring");

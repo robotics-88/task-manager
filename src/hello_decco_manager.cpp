@@ -60,7 +60,7 @@ void HelloDeccoManager::packageToMapversation(std::string topic, json gossip) {
     mapver_pub_.publish(msg_string); // Mapversation to Hello Decco
 }
 
-void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
+void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone, bool &geofence_ok) {
     // TODO check trip type to decide what data is recording? Or do that on the HD side?
     // Parse data
     burn_unit_json_ = msgJson;
@@ -69,11 +69,12 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
     geometry_msgs::Polygon poly = polygonFromJson(burn_unit_json_["polygon"]);
     // Check if already filled in
     int num_flights = burn_unit_json_["trips"][0]["flights"].size();
+
     if (num_flights >= 1 && burn_unit_json_["trips"][0]["flights"][0]["subpolygon"].size() >= 3) {
         // Already filled in, pass directly to TM
         std::string s = burn_unit_json_.dump();
         burn_string.data = s;
-        polygonInitializer(poly, false);
+        polygonInitializer(poly, false, geofence_ok);
         // Fill in subpolygon array
         local_subpolygons_.clear();
         geometry_msgs::Polygon ll_poly;
@@ -88,7 +89,7 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
     }
     else {
         // Need to fill in
-        polygonInitializer(poly, true);
+        polygonInitializer(poly, true, geofence_ok);
         json flightLegArray;
         for (int ii = 0; ii < local_subpolygons_.size(); ii++) {
             json flight_leg;
@@ -114,13 +115,17 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone) {
     }
 }
 
-void HelloDeccoManager::polygonInitializer(const geometry_msgs::Polygon &msg, bool make_legs) {
+void HelloDeccoManager::polygonInitializer(const geometry_msgs::Polygon &msg, bool make_legs, bool &geofence_ok) {
     // Convert polygon to map coordinates and visualize
     map_region_ = polygonToMap(msg);
     visualizePolygon();
 
     if (!polygonToGeofence(msg)) {
         ROS_WARN("Failed to convert polygon to geofence");
+        geofence_ok = false;
+    }
+    else {
+        geofence_ok = true;
     }
 
     if (make_legs) {
