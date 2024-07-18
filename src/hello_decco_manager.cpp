@@ -16,6 +16,14 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <GeographicLib/Geodesic.hpp>
 #include <GeographicLib/PolygonArea.hpp>
 
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/point.hpp>
+#include <boost/geometry/geometries/polygon.hpp>
+
+namespace bg = boost::geometry;
+typedef bg::model::d2::point_xy<double> BgPoint;
+typedef bg::model::polygon<BgPoint> BgPolygon;
+
 namespace hello_decco_manager
 {
 HelloDeccoManager::HelloDeccoManager(ros::NodeHandle& node)
@@ -372,6 +380,16 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::Polygon &polygon)
             geofence_polygon.points.push_back(geofence_point);
 
         }
+    }
+
+    // Check if polygon is valid using boost library
+    BgPolygon bg_poly;
+    for (const auto &point : geofence_polygon.points) {
+        bg::append(bg_poly, BgPoint(point.x, point.y));
+    }
+    if (!bg::is_valid(bg_poly)) {
+        ROS_ERROR("Geofence polgyon invalid (self-intersecting), not setting geofence");
+        return false;
     }
 
     // Now push all points to waypoint struct
