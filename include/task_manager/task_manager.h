@@ -247,6 +247,7 @@ class TaskManager {
         ros::Publisher stop_record_pub_;
 
         // Drone state params
+        geometry_msgs::PoseStamped slam_pose_;
         geometry_msgs::PoseStamped home_pos_;
         geometry_msgs::Polygon current_polygon_;
         geometry_msgs::PoseStamped initial_transit_point_;
@@ -326,7 +327,6 @@ class TaskManager {
         bool pauseOperations();
         void startBag();
         void stopBag();
-        bool isInside(const geometry_msgs::Polygon& polygon, const geometry_msgs::Point& point);
         bool polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region);
         void padNavTarget(geometry_msgs::PoseStamped &target);
         std::string getTaskString(Task task);
