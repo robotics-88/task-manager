@@ -76,7 +76,6 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , mapir_topic_("/mapir_rgn/image_rect_color")
     , mapir_rgb_topic_("/mapir_rgn/image_rect_color")
     , rosbag_topic_("/record/heartbeat")
-    , bond_pp_("bond_pp_topic", "taskmgr_pp_id")
     , is_armed_(false)
     , in_autonomous_flight_(false)
     , explicit_global_params_(false)
@@ -149,9 +148,10 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     // Health pubs/subs
     health_pub_ = nh_.advertise<std_msgs::String>("/mapversation/health_report", 10);
     if (do_slam_) {
+        bond_pp_.reset(new bond::Bond("bond_pp_topic", "taskmgr_pp_id"));
         // Start bond
-        bond_pp_.start();
-        if (!bond_pp_.waitUntilFormed(ros::Duration(5.0)))
+        bond_pp_->start();
+        if (!bond_pp_->waitUntilFormed(ros::Duration(1.0)))
         {
             logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Path planner failed to bond");
         }
@@ -514,7 +514,7 @@ void TaskManager::checkHealth() {
     health_checks_.thermal_ok = now - last_thermal_stamp_ < thermal_timeout_;
     health_checks_.rosbag_ok = now - last_rosbag_stamp_ < rosbag_timeout_;
     // Path planner bond
-    health_checks_.path_ok = !(bond_pp_.isBroken());
+    health_checks_.path_ok = !(bond_pp_->isBroken());
 
     if (now - last_health_pub_stamp_ > health_check_pub_duration_) {
         publishHealth();

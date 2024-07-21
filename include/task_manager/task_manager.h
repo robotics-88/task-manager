@@ -167,7 +167,7 @@ class TaskManager {
         ros::Time last_attollo_stamp_;
         ros::Time last_rosbag_stamp_;
 
-        bond::Bond bond_pp_;
+        boost::shared_ptr<bond::Bond> bond_pp_;
 
         ros::Timer health_pub_timer_;
         ros::Duration health_check_pub_duration_;
