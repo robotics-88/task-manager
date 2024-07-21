@@ -38,6 +38,8 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "task_manager/flight_controller_interface.h"
 #include "task_manager/hello_decco_manager.h"
 
+#include <bondcpp/bond.h>
+
 #include <task_manager/json.hpp>
 using json = nlohmann::json;
 
@@ -164,6 +166,8 @@ class TaskManager {
         ros::Time last_thermal_stamp_;
         ros::Time last_attollo_stamp_;
         ros::Time last_rosbag_stamp_;
+
+        bond::Bond bond_pp_;
 
         ros::Timer health_pub_timer_;
         ros::Duration health_check_pub_duration_;
