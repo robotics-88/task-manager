@@ -392,7 +392,7 @@ void TaskManager::runTaskManager() {
     hello_decco_manager_.packageToMapversation("task_status", task_json);
 
     json log_json;
-    log_json["timestamp"] = ros::Time::now().toSec();
+    log_json["timestamp"] = flight_controller_interface_.getCurrentGlobalPosition().header.stamp.toSec();
     log_json["latitude"] = flight_controller_interface_.getCurrentGlobalPosition().latitude;
     log_json["longitude"] = flight_controller_interface_.getCurrentGlobalPosition().longitude;
     hello_decco_manager_.packageToMapversation("path", log_json);
