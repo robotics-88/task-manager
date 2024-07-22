@@ -15,6 +15,8 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <geometry_msgs/Twist.h>
 #include <ros/package.h>
 
+#include <decco_utilities.h>
+
 #include <mavros_msgs/BasicID.h>
 #include <mavros_msgs/OperatorID.h>
 #include <mavros_msgs/SelfID.h>
@@ -291,8 +293,15 @@ void TaskManager::runTaskManager() {
                     takeoff_attempts_ = 0;
                 }
                 else {
-                    logEvent(EventType::STATE_MACHINE, Severity::LOW, "Starting takeoff");
-                    startTakeoff();
+                    if (!enable_autonomy_) {
+                        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Not taking off, autonomy not enabled");
+                        needs_takeoff_ = false;
+                    }
+                    else {
+                        logEvent(EventType::STATE_MACHINE, Severity::LOW, "Starting takeoff");
+                        startTakeoff();
+                    }
+                    
                 }
             }
             else if (flight_controller_interface_.getIsArmed()) {
@@ -316,7 +325,7 @@ void TaskManager::runTaskManager() {
             // Once we reach takeoff altitude, transition to next flight state
             if (flight_controller_interface_.getAltitudeAGL() > (target_altitude_ - 1)) {
                 // If not in polygon, start navigation task
-                if (!isInside(current_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position)) {
+                if (!decco_utilities::isInside(current_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position)) {
                     logEvent(EventType::STATE_MACHINE, Severity::LOW, "Transiting to designated survey unit");
                     startTransit();
                 }
@@ -328,7 +337,7 @@ void TaskManager::runTaskManager() {
             break;
         }
         case Task::IN_TRANSIT: {
-            if (isInside(current_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position)) {
+            if (decco_utilities::isInside(current_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position)) {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Starting exploration");
                 startExploration();
             }
@@ -827,31 +836,9 @@ void TaskManager::stopBag() {
     bag_active_ = false;
 }
 
-bool TaskManager::isInside(const geometry_msgs::Polygon& polygon, const geometry_msgs::Point& point)
-{
-  // Determine if the given point is inside the polygon using the number of crossings method
-  // https://wrf.ecse.rpi.edu//Research/Short_Notes/pnpoly.html
-  int n = polygon.points.size();
-  int cross = 0;
-  // Loop from i = [0 ... n - 1] and j = [n - 1, 0 ... n - 2]
-  // Ensures first point connects to last point
-  for (int i = 0, j = n - 1; i < n; j = i++)
-  {
-    // Check if the line to x,y crosses this edge
-    if ( ((polygon.points[i].y > point.y) != (polygon.points[j].y > point.y))
-           && (point.x < (polygon.points[j].x - polygon.points[i].x) * (point.y - polygon.points[i].y) /
-            (polygon.points[j].y - polygon.points[i].y) + polygon.points[i].x) )
-    {
-      cross++;
-    }
-  }
-  // Return true if the number of crossings is odd
-  return cross % 2 > 0;
-}
-
 bool TaskManager::polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region) {
 
-    if (isInside(current_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position))
+    if (decco_utilities::isInside(current_polygon_, flight_controller_interface_.getCurrentSlamPosition().pose.position))
         return true;
 
     // Medium check, computes distance to nearest point on 2 most likely polygon edges
@@ -883,63 +870,44 @@ bool TaskManager::polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry
     point1 = map_region.points.at(ind1);
     point2 = map_region.points.at(ind2);
 
-    // Compute intersection
-    bool intersection1 = false, intersection2 = false;
-    geometry_msgs::Point my_position = flight_controller_interface_.getCurrentLocalPosition().pose.position;
-    // Compute first edge
-    double dx1 = closest_point.x - point1.x;
-    double dy1 = closest_point.y - point1.y;
-    double m1 = dy1 / dx1;
-    // TODO add check for either = 0
-    double b1 = closest_point.y - m1 * closest_point.x;
-    double mstar1 = -1 / m1;
-    double bstar1 = my_position.y + mstar1 * my_position.x;
-    double xstar1 = (mstar1 * my_position.x + bstar1 - b1) / m1;
-    double ystar1 = mstar1 * xstar1 + bstar1;
-    double dist1 = DBL_MAX;
-    if (xstar1 > std::min(closest_point.x, point1.x) && xstar1 < std::max(closest_point.x, point1.x) && ystar1 > std::min(closest_point.y, point1.y) && ystar1 < std::max(closest_point.y, point1.y)) {
-        // Point is inside the line segment
-        intersection1 = true;
-        dist1 = std::sqrt(std::pow(my_position.x - xstar1, 2) + std::pow(my_position.y - ystar1, 2));
-    }
-    // Compute second edge
-    double dx2 = closest_point.x - point2.x;
-    double dy2 = closest_point.y - point2.y;
-    double m2 = dy2 / dx2;
-    // TODO add check for either = 0
-    double b2 = closest_point.y - m2 * closest_point.x;
-    double mstar2 = -1 / m2;
-    double bstar2 = my_position.y + mstar2 * my_position.x;
-    double xstar2 = (mstar2 * my_position.x + bstar2 - b2) / m2;
-    double ystar2 = mstar2 * xstar2 + bstar2;
-    double dist2 = DBL_MAX;
-    if (xstar2 > std::min(closest_point.x, point2.x) && xstar2 < std::max(closest_point.x, point2.x) && ystar2 > std::min(closest_point.y, point2.y) && ystar2 < std::max(closest_point.y, point2.y)) {
-        // Point is inside the line segment
-        intersection2 = true;
-        dist2 = std::sqrt(std::pow(my_position.x - xstar2, 2) + std::pow(my_position.y - ystar2, 2));
-    }
+    // Compute intersections
+
+    geometry_msgs::Point drone_location_64 = flight_controller_interface_.getCurrentSlamPosition().pose.position;
+    geometry_msgs::Point32 drone_location;
+    drone_location.x = drone_location_64.x;
+    drone_location.y = drone_location_64.y;
+    
+    geometry_msgs::Point32 intersection_point_1;
+    bool intersection1 = decco_utilities::intersectsOrthogonal(closest_point, point1, drone_location, intersection_point_1);
+    double dist1 = decco_utilities::distance_xy(drone_location, intersection_point_1);
+
+    geometry_msgs::Point32 intersection_point_2;
+    bool intersection2 = decco_utilities::intersectsOrthogonal(closest_point, point2, drone_location, intersection_point_2);
+    double dist2 = decco_utilities::distance_xy(drone_location, intersection_point_2);
+
     geometry_msgs::Point target_position;
     if (intersection1 && intersection2) {
+
         if (dist1 < dist2) {
             min_dist = dist1;
-            target_position.x = xstar1;
-            target_position.y = ystar1;
+            target_position.x = intersection_point_1.x;
+            target_position.y = intersection_point_1.y;
         }
         else {
             min_dist = dist2;
-            target_position.x = xstar2;
-            target_position.y = ystar2;
+            target_position.x = intersection_point_2.x;
+            target_position.y = intersection_point_2.y;
         }
     }
     else if (intersection1) {
         min_dist = dist1;
-        target_position.x = xstar1;
-        target_position.y = ystar1;
+        target_position.x = intersection_point_1.x;
+        target_position.y = intersection_point_1.y;
     }
     else if (intersection2) {
         min_dist = dist2;
-        target_position.x = xstar2;
-        target_position.y = ystar2;
+        target_position.x = intersection_point_2.x;
+        target_position.y = intersection_point_2.y;
     }
     else {
         target_position.x = closest_point.x;
@@ -1011,6 +979,8 @@ std::string TaskManager::getSeverityString(Severity sev) {
 
 void TaskManager::slamPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose) {
 
+    slam_pose_ = *slam_pose;
+
     // Transform decco pose (in slam_map frame) and publish it in mavros_map frame as /mavros/vision_pose/pose
     if (!map_tf_init_) {
         return;
@@ -1045,7 +1015,7 @@ void TaskManager::slamPoseCallback(const geometry_msgs::PoseStampedConstPtr &sla
         point_in.point.z = 0;
         tf2::doTransform(point_in, point_out, utm2map_tf_);
         double lat, lon;
-        hello_decco_manager_.utmToLL(point_out.point.x, point_out.point.y, home_utm_zone_, lat, lon);
+        decco_utilities::utmToLL(point_out.point.x, point_out.point.y, home_utm_zone_, lat, lon);
         sensor_msgs::NavSatFix nav_msg;
         nav_msg.header.frame_id = mavros_base_frame_;
         nav_msg.header.stamp = slam_pose->header.stamp;
@@ -1157,7 +1127,15 @@ void TaskManager::makeBurnUnitJson(json burn_unit) {
     }
     std::string name = burn_unit["name"];
     burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
-    hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_);
+
+    hello_decco_manager_.setDroneLocationLocal(slam_pose_);
+    bool geofence_ok;
+    hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_, geofence_ok);
+
+    if (!geofence_ok) {
+        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Geofence invalid, not setting geofence");
+    }
+
     current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
     if (current_index_ < 0) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "No burn polygon was found, all are already complete, not exploring");
