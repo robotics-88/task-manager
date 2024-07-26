@@ -711,6 +711,10 @@ bool TaskManager::convert2Geo(messages_88::Geopoint::Request& req, messages_88::
     tf_buffer_.transform(in, out, "utm");
     resp.utm_position.x = out.point.x;
     resp.utm_position.y = out.point.y;
+    double lat, lon;
+    decco_utilities::utmToLL(out.point.x, out.point.y, home_utm_zone_, lat, lon);
+    resp.latitude = lat;
+    resp.longitude = lon;
     return true;
 }
 
