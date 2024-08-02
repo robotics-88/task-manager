@@ -344,6 +344,7 @@ class TaskManager {
         void remoteIDResponse(json &json);
         void publishHealth();
         json makeTaskJson();
+        void acceptFlight(json flight);
         void makeBurnUnitJson(json burn_unit);
         void packageFromMapversation(const std_msgs::String::ConstPtr &msg);
 

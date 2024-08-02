@@ -33,10 +33,11 @@ class HelloDeccoManager {
         HelloDeccoManager(ros::NodeHandle& node);
         ~HelloDeccoManager();
 
+        void acceptFlight(json msgJson, int utm_zone, bool &geofence_ok);
         void makeBurnUnitJson(json msgJson, int utm_zone, bool &geofence_ok);
         json polygonToBurnUnit(const json &polygon);
-        int initBurnUnit(geometry_msgs::Polygon &polygon);
-        void updateBurnUnit(int index, std::string flight_status);
+        int initFlightArea(geometry_msgs::Polygon &polygon);
+        void updateFlightStatus(int index, std::string flight_status);
         void setUtm(double utm_x, double utm_y, int zone) {
             utm_x_offset_ = -utm_x;
             utm_y_offset_ = -utm_y;
@@ -73,7 +74,7 @@ class HelloDeccoManager {
         // Mapversation
         ros::Publisher mapver_pub_;
 
-        json burn_unit_json_;
+        json flight_json_;
         ros::Publisher map_region_pub_;
         int start_time_;
         int end_time_;
@@ -87,6 +88,7 @@ class HelloDeccoManager {
         std::vector<geometry_msgs::Polygon> local_subpolygons_; // Flight units
         double flightleg_area_m2_;
 
+        void flightReceipt();
         void polygonInitializer(const geometry_msgs::Polygon &msg, bool make_legs, bool &geofence_ok);
 
         // Polygon mgmt

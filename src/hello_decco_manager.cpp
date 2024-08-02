@@ -60,25 +60,45 @@ void HelloDeccoManager::packageToMapversation(std::string topic, json gossip) {
     mapver_pub_.publish(msg_string); // Mapversation to Hello Decco
 }
 
+void HelloDeccoManager::flightReceipt() {
+    json msg;
+    msg["data"] = "received";
+    std::cout << msg.dump(4) << std::endl;
+    packageToMapversation("flight_confirm", msg);
+}
+
+void HelloDeccoManager::acceptFlight(json msgJson, int utm_zone, bool &geofence_ok) {
+    flightReceipt();
+    // Parse data
+    flight_json_ = msgJson;
+    ROS_INFO("Flight received");
+    geometry_msgs::Polygon poly = polygonFromJson(flight_json_["subpolygon"]);
+    polygonInitializer(poly, false, geofence_ok);
+
+    packageToMapversation("burn_unit_receive", flight_json_);
+
+}
+
 void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone, bool &geofence_ok) {
     // TODO check trip type to decide what data is recording? Or do that on the HD side?
+    flightReceipt();
     // Parse data
-    burn_unit_json_ = msgJson;
+    flight_json_ = msgJson;
     ROS_INFO("Burn unit received");
     std_msgs::String burn_string;
-    geometry_msgs::Polygon poly = polygonFromJson(burn_unit_json_["polygon"]);
+    geometry_msgs::Polygon poly = polygonFromJson(flight_json_["polygon"]);
     // Check if already filled in
-    int num_flights = burn_unit_json_["trips"][0]["flights"].size();
+    int num_flights = flight_json_["trips"][0]["flights"].size();
 
-    if (num_flights >= 1 && burn_unit_json_["trips"][0]["flights"][0]["subpolygon"].size() >= 3) {
+    if (num_flights >= 1 && flight_json_["trips"][0]["flights"][0]["subpolygon"].size() >= 3) {
         // Already filled in, pass directly to TM
-        std::string s = burn_unit_json_.dump();
+        std::string s = flight_json_.dump();
         burn_string.data = s;
         polygonInitializer(poly, false, geofence_ok);
         // Fill in subpolygon array
         local_subpolygons_.clear();
         geometry_msgs::Polygon ll_poly;
-        for (auto subpoly_point: burn_unit_json_["trips"][0]["flights"][0]["subpolygon"]) {
+        for (auto subpoly_point: flight_json_["trips"][0]["flights"][0]["subpolygon"]) {
             geometry_msgs::Point32 ll_point;
             ll_point.x = subpoly_point[0];
             ll_point.y = subpoly_point[1];
@@ -110,8 +130,8 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone, bool &geofe
             flight_leg["duration"] = 0;
             flightLegArray.push_back(flight_leg);
         }
-        burn_unit_json_["trips"][0]["flights"] = flightLegArray;
-        packageToMapversation("burn_unit_receive", burn_unit_json_);
+        flight_json_["trips"][0]["flights"] = flightLegArray;
+        packageToMapversation("burn_unit_receive", flight_json_);
     }
 }
 
@@ -134,13 +154,13 @@ void HelloDeccoManager::polygonInitializer(const geometry_msgs::Polygon &msg, bo
     }
 }
 
-int HelloDeccoManager::initBurnUnit(geometry_msgs::Polygon &polygon) {
+int HelloDeccoManager::initFlightArea(geometry_msgs::Polygon &polygon) {
     // Iterate through subpolygons to get first not done
     // TODO not needed anymore? HD only sends the next flight?
     int ind = 0;
     geometry_msgs::Polygon poly;
     bool found = false;
-    for (auto& flight : burn_unit_json_["trips"][0]["flights"]) {
+    for (auto& flight : flight_json_["trips"][0]["flights"]) {
         if (flight["status"] == "NOT_STARTED") {
             poly = local_subpolygons_.at(ind);
             ROS_INFO("will do polygon %d", ind);
@@ -158,18 +178,18 @@ int HelloDeccoManager::initBurnUnit(geometry_msgs::Polygon &polygon) {
     return ind;
 }
 
-void HelloDeccoManager::updateBurnUnit(int index, std::string flight_status) {
-    burn_unit_json_["trips"][0]["flights"][index]["status"] = flight_status;
+void HelloDeccoManager::updateFlightStatus(int index, std::string flight_status) {
+    flight_json_["status"] = flight_status;
     if (flight_status == "ACTIVE") {
         start_time_ = static_cast<int>(ros::Time::now().toSec());
-        burn_unit_json_["trips"][0]["flights"][index]["startTime"] = std::to_string(start_time_);
+        flight_json_["startTime"] = std::to_string(start_time_);
     }
     else if (flight_status == "COMPLETED") {
         end_time_ = static_cast<int>(ros::Time::now().toSec());
-        burn_unit_json_["trips"][0]["flights"][index]["endTime"] = std::to_string(end_time_);
-        burn_unit_json_["trips"][0]["flights"][index]["duration"] = std::to_string(end_time_ - start_time_);
+        flight_json_["endTime"] = std::to_string(end_time_);
+        flight_json_["duration"] = std::to_string(end_time_ - start_time_);
     }
-    packageToMapversation("burn_unit_receive", burn_unit_json_);
+    packageToMapversation("flight_receive", flight_json_);
     ROS_INFO("Burn json filled in");
 }
 

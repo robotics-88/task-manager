@@ -352,7 +352,7 @@ void TaskManager::runTaskManager() {
                 ) {
 
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Initiating RTL_88 due to exploration " + goal_state.toString());
-                hello_decco_manager_.updateBurnUnit(current_index_, "COMPLETED");
+                hello_decco_manager_.updateFlightStatus(current_index_, "COMPLETED");
                 startRtl88();
             }
 
@@ -459,7 +459,7 @@ void TaskManager::startExploration() {
     explore_action_client_.sendGoal(current_explore_goal_);
 
     logEvent(EventType::STATE_MACHINE, Severity::LOW, "Sent explore goal");
-    hello_decco_manager_.updateBurnUnit(current_index_, "ACTIVE");
+    hello_decco_manager_.updateFlightStatus(current_index_, "ACTIVE");
 
     updateCurrentTask(Task::EXPLORING);
 }
@@ -1105,6 +1105,9 @@ void TaskManager::packageFromMapversation(const std_msgs::String::ConstPtr &msg)
     if (topic == "burn_unit_send") {
         makeBurnUnitJson(gossip_json);
     }
+    else if (topic == "flight_send") {
+        acceptFlight(gossip_json);
+    }
     else if (topic == "target_polygon") {
         json burn_unit = hello_decco_manager_.polygonToBurnUnit(gossip_json);
         makeBurnUnitJson(burn_unit);
@@ -1124,6 +1127,32 @@ void TaskManager::packageFromMapversation(const std_msgs::String::ConstPtr &msg)
     }
 }
 
+void TaskManager::acceptFlight(json flight) {
+
+    if (!map_tf_init_) {
+        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Not ready for flight, try again after initialized");
+        return;
+    }
+    std::string name = flight["name"];
+    burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
+
+    hello_decco_manager_.setDroneLocationLocal(slam_pose_);
+    bool geofence_ok;
+    hello_decco_manager_.acceptFlight(flight, home_utm_zone_, geofence_ok);
+
+    if (!geofence_ok) {
+        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Geofence invalid, not setting geofence");
+    }
+    
+    if (!polygonDistanceOk(initial_transit_point_, current_polygon_)) {
+        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Polygon rejected, exceeds maximum starting distance threshold");
+        return;
+    }
+
+    needs_takeoff_ = true;
+
+}
+
 void TaskManager::makeBurnUnitJson(json burn_unit) {
 
     if (!map_tf_init_) {
@@ -1141,7 +1170,7 @@ void TaskManager::makeBurnUnitJson(json burn_unit) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Geofence invalid, not setting geofence");
     }
 
-    current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
+    current_index_ = hello_decco_manager_.initFlightArea(current_polygon_);
     if (current_index_ < 0) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "No burn polygon was found, all are already complete, not exploring");
         return;
