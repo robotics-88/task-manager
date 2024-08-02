@@ -228,30 +228,27 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::Polygon &polygon)
     mavros_msgs::WaypointPush srv;
     srv.request.start_index = 0;
 
-    geometry_msgs::Polygon geofence_polygon;
-
     // Convert drone location to point32 instead of posestamped
     geometry_msgs::Point32 drone_location;
     drone_location.x = drone_location_.pose.position.x;
     drone_location.y = drone_location_.pose.position.y;
     drone_location.z = drone_location_.pose.position.z;
 
-    if (decco_utilities::isInside(polygon, drone_location)) {
-        geofence_polygon = polygon;
+    // Convert to map first so that we can calculate distances
+    geometry_msgs::Polygon polygon_map;
+    for (const auto &point : polygon.points) {
+        double px, py;
+        decco_utilities::llToMap(point.x, point.y, px, py, utm_x_offset_, utm_y_offset_);
+        geometry_msgs::Point32 point_map;
+        point_map.x = px;
+        point_map.y = py;
+        polygon_map.points.push_back(point_map);
     }
-    else {
-        // Convert to map first so that we can calculate distances
-        geometry_msgs::Polygon polygon_map;
-        for (const auto &point : polygon.points) {
-            double px, py;
-            decco_utilities::llToMap(point.x, point.y, px, py, utm_x_offset_, utm_y_offset_);
-            geometry_msgs::Point32 point_map;
-            point_map.x = px;
-            point_map.y = py;
-            polygon_map.points.push_back(point_map);
-        }
 
-        geometry_msgs::Polygon geofence_polygon_map = polygon_map;
+    // If decco is not inside polygon, adjust polygon to include drone location
+    if (!decco_utilities::isInside(polygon_map, drone_location)) {
+
+        ROS_INFO("Drone not inside polygon, adjusting polygon geofence");
 
         int n1 = polygon_map.points.size();
         double minDist = std::numeric_limits<double>::max();
@@ -330,7 +327,7 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::Polygon &polygon)
             buffer_point.y = drone_location.y - buffer_dist * unit_v.y;
 
             // Insert into geofence polygon
-            geofence_polygon_map.points.insert(geofence_polygon_map.points.begin() + closest_point_ind, buffer_point);
+            polygon_map.points.insert(polygon_map.points.begin() + closest_point_ind, buffer_point);
         }
         else if (intersection2) {
             // Put geo fence to point 2
@@ -352,7 +349,7 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::Polygon &polygon)
             buffer_point.y = drone_location.y - buffer_dist * unit_v.y;
 
             // Insert into geofence polygon
-            geofence_polygon_map.points.insert(geofence_polygon_map.points.begin() + ind2, buffer_point);
+            polygon_map.points.insert(polygon_map.points.begin() + ind2, buffer_point);
         }
         else {
             // Add point 'behind' drone
@@ -369,32 +366,41 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::Polygon &polygon)
             buffer_point.y = drone_location.y - buffer_dist * unit_v.y;
 
             // Replace closest point in fence with drone buffer point
-            geofence_polygon_map.points[closest_point_ind] = buffer_point;
-        }
-
-        // Now convert geofence polygon
-        for (int i = 0; i < geofence_polygon_map.points.size(); i++) {
-            // Convert map frame polygon to lat/lon
-            double lat, lon;
-            decco_utilities::mapToLl(geofence_polygon_map.points[i].x, geofence_polygon_map.points[i].y, lat, lon,
-                                     utm_x_offset_, utm_y_offset_, utm_zone_);
-
-            geometry_msgs::Point32 geofence_point;
-            geofence_point.x = lat;
-            geofence_point.y = lon;
-            geofence_polygon.points.push_back(geofence_point);
-
+            polygon_map.points[closest_point_ind] = buffer_point;
         }
     }
 
     // Check if polygon is valid using boost library
     BgPolygon bg_poly;
-    for (const auto &point : geofence_polygon.points) {
-        bg::append(bg_poly, BgPoint(point.x, point.y));
+    for (const auto &point : polygon_map.points) {
+        BgPoint bgpoint(point.x, point.y);
+        bg_poly.outer().push_back(bgpoint);
     }
-    if (!bg::is_valid(bg_poly)) {
-        ROS_ERROR("Geofence polgyon invalid (self-intersecting), not setting geofence");
+
+    // Push back first point to close the polygon for validity checking
+    bg_poly.outer().push_back(bg_poly.outer().front());
+    bg::correct(bg_poly);
+
+    std::string reason;
+    if (!bg::is_valid(bg_poly, reason)) {
+        ROS_ERROR("Geofence polgyon invalid due to %s, not setting geofence", reason.c_str());
         return false;
+    }
+
+    // Now convert polygon to LL to use as geofence
+    geometry_msgs::Polygon geofence_polygon;
+    for (int i = 0; i < polygon_map.points.size(); i++) {
+            
+        // Convert map frame polygon to lat/lon
+        double lat, lon;
+        decco_utilities::mapToLl(polygon_map.points[i].x, polygon_map.points[i].y, lat, lon,
+                                    utm_x_offset_, utm_y_offset_, utm_zone_);
+
+        geometry_msgs::Point32 geofence_point;
+        geofence_point.x = lat;
+        geofence_point.y = lon;
+        geofence_polygon.points.push_back(geofence_point);
+
     }
 
     // Now push all points to waypoint struct
