@@ -820,9 +820,9 @@ void TaskManager::startBag() {
     if (bag_active_) {
         return;
     }
-    logEvent(EventType::INFO, Severity::LOW, "Bag starting, prefix: " + burn_dir_prefix_);
+    logEvent(EventType::INFO, Severity::LOW, "Bag starting, dir: " + burn_dir_);
     bag_recorder::Rosbag start_bag_msg;
-    start_bag_msg.data_dir = burn_dir_prefix_;
+    start_bag_msg.data_dir = burn_dir_;
     start_bag_msg.bag_name = "decco";
     start_bag_msg.config = record_config_name_;
     start_bag_msg.header.stamp = ros::Time::now();
@@ -1131,7 +1131,7 @@ void TaskManager::makeBurnUnitJson(json burn_unit) {
         return;
     }
     std::string name = burn_unit["name"];
-    burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
+    burn_dir_ = burn_dir_prefix_ + name + "/";
 
     hello_decco_manager_.setDroneLocationLocal(slam_pose_);
     bool geofence_ok;
