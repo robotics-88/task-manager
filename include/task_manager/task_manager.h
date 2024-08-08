@@ -307,6 +307,7 @@ class TaskManager {
         ros::Subscriber burn_unit_sub_;
         int current_index_;
         std::string burn_dir_prefix_;
+        std::string burn_dir_;
 
         // Task methods
         void updateCurrentTask(Task task);
