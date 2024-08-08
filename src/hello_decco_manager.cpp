@@ -65,9 +65,7 @@ void HelloDeccoManager::packageToTymbalPuddle(std::string topic, json gossip) {
     json msg_json;
     msg_json["endpoint"] = topic;
     msg_json["method"] = "POST";
-    json stamped_gossip = gossip;
-    stamped_gossip["stamp"] = ros::Time::now().toSec();
-    msg_json["body"] = stamped_gossip;
+    msg_json["body"] = gossip;
     std::string s = msg_json.dump();
     std_msgs::String msg_string;
     msg_string.data = s;
@@ -77,7 +75,6 @@ void HelloDeccoManager::packageToTymbalPuddle(std::string topic, json gossip) {
 void HelloDeccoManager::flightReceipt() {
     json msg;
     msg["data"] = "received";
-    std::cout << msg.dump(4) << std::endl;
     packageToTymbalHD("flight_confirm", msg);
 }
 
@@ -195,11 +192,11 @@ int HelloDeccoManager::initFlightArea(geometry_msgs::Polygon &polygon) {
 void HelloDeccoManager::updateFlightStatus(int index, std::string flight_status) {
     flight_json_["status"] = flight_status;
     if (flight_status == "ACTIVE") {
-        start_time_ = static_cast<int>(ros::Time::now().toSec());
+        rosTimeToHD(ros::Time::now(), start_time_);
         flight_json_["startTime"] = std::to_string(start_time_);
     }
     else if (flight_status == "COMPLETED") {
-        end_time_ = static_cast<int>(ros::Time::now().toSec());
+        rosTimeToHD(ros::Time::now(), end_time_);
         flight_json_["endTime"] = std::to_string(end_time_);
         flight_json_["duration"] = std::to_string(end_time_ - start_time_);
     }
@@ -592,4 +589,9 @@ json HelloDeccoManager::polygonToBurnUnit(const json &polygon) {
     burn_unit["polygon"] = polygon;
     return burn_unit;
 }
+
+void HelloDeccoManager::rosTimeToHD(const ros::Time ros_time, double &hd_time) {
+    hd_time = ros_time.toNSec() * 1E-6;
+}
+
 }

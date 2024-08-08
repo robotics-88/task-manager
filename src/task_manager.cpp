@@ -325,7 +325,7 @@ void TaskManager::runTaskManager() {
             // Once we reach takeoff altitude, transition to next flight state
             if (flight_controller_interface_.getAltitudeAGL() > (target_altitude_ - 1)) {
                 // If not in polygon, start navigation task
-                if (!decco_utilities::isInside(current_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position)) {
+                if (!decco_utilities::isInside(map_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position)) {
                     logEvent(EventType::STATE_MACHINE, Severity::LOW, "Transiting to designated survey unit");
                     startTransit();
                 }
@@ -337,7 +337,7 @@ void TaskManager::runTaskManager() {
             break;
         }
         case Task::IN_TRANSIT: {
-            if (decco_utilities::isInside(current_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position)) {
+            if (decco_utilities::isInside(map_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position)) {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Starting exploration");
                 startExploration();
             }
@@ -395,7 +395,7 @@ void TaskManager::runTaskManager() {
     path_json["timestamp"] = flight_controller_interface_.getCurrentGlobalPosition().header.stamp.toSec();
     path_json["latitude"] = flight_controller_interface_.getCurrentGlobalPosition().latitude;
     path_json["longitude"] = flight_controller_interface_.getCurrentGlobalPosition().longitude;
-    hello_decco_manager_.packageToTymbalPuddle("/flight", path_json);
+    // hello_decco_manager_.packageToTymbalPuddle("/flight", path_json);
 }
 
 void TaskManager::startTakeoff() {
@@ -442,7 +442,7 @@ void TaskManager::startTransit() {
 
 void TaskManager::startExploration() {
 
-    current_explore_goal_.polygon = current_polygon_;
+    current_explore_goal_.polygon = map_polygon_;
     current_explore_goal_.altitude = target_altitude_;
     current_explore_goal_.min_altitude = min_altitude_;
     current_explore_goal_.max_altitude = max_altitude_;
@@ -843,7 +843,7 @@ void TaskManager::stopBag() {
 
 bool TaskManager::polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region) {
 
-    if (decco_utilities::isInside(current_polygon_, flight_controller_interface_.getCurrentSlamPosition().pose.position))
+    if (decco_utilities::isInside(map_polygon_, flight_controller_interface_.getCurrentSlamPosition().pose.position))
         return true;
 
     // Medium check, computes distance to nearest point on 2 most likely polygon edges
@@ -1133,7 +1133,7 @@ void TaskManager::acceptFlight(json flight) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Not ready for flight, try again after initialized");
         return;
     }
-    std::string name = flight["name"];
+    std::string name = flight["burnUnitName"];
     burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
 
     hello_decco_manager_.setDroneLocationLocal(slam_pose_);
@@ -1144,7 +1144,8 @@ void TaskManager::acceptFlight(json flight) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Geofence invalid, not setting geofence");
     }
     
-    if (!polygonDistanceOk(initial_transit_point_, current_polygon_)) {
+    map_polygon_ = hello_decco_manager_.getMapPolygon();
+    if (!polygonDistanceOk(initial_transit_point_, map_polygon_)) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Polygon rejected, exceeds maximum starting distance threshold");
         return;
     }
@@ -1170,13 +1171,13 @@ void TaskManager::makeBurnUnitJson(json burn_unit) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Geofence invalid, not setting geofence");
     }
 
-    current_index_ = hello_decco_manager_.initFlightArea(current_polygon_);
+    current_index_ = hello_decco_manager_.initFlightArea(map_polygon_);
     if (current_index_ < 0) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "No burn polygon was found, all are already complete, not exploring");
         return;
     }
     
-    if (!polygonDistanceOk(initial_transit_point_, current_polygon_)) {
+    if (!polygonDistanceOk(initial_transit_point_, map_polygon_)) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Polygon rejected, exceeds maximum starting distance threshold");
         return;
     }
@@ -1412,7 +1413,9 @@ void TaskManager::logEvent(EventType type, Severity sev, std::string description
     j["flightId"] = 0; // TODO
     j["level"] = getSeverityString(sev);
     j["droneId"] = 1;
-    j["timestamp"] = ros::Time::now().toNSec() * 1E-6;
+    double t;
+    hello_decco_manager_.rosTimeToHD(ros::Time::now(), t);
+    j["timestamp"] = t;
     j["type"] = getEventTypeString(type);
     j["description"] = description.substr(0, 256); // Limit string size to 256
 
