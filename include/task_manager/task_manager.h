@@ -194,7 +194,7 @@ class TaskManager {
 
         // Hello Decco comms
         hello_decco_manager::HelloDeccoManager hello_decco_manager_;
-        ros::Subscriber mapver_sub_;
+        ros::Subscriber tymbal_sub_;
 
         // Control defaults
         float target_altitude_;
@@ -347,7 +347,7 @@ class TaskManager {
         json makeTaskJson();
         void acceptFlight(json flight);
         void makeBurnUnitJson(json burn_unit);
-        void packageFromMapversation(const std_msgs::String::ConstPtr &msg);
+        void packageFromTymbal(const std_msgs::String::ConstPtr &msg);
 
 };
 

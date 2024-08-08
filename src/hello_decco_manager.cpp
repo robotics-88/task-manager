@@ -40,7 +40,8 @@ HelloDeccoManager::HelloDeccoManager(ros::NodeHandle& node)
     private_nh_.param<std::string>("mavros_map_frame", mavros_map_frame_, mavros_map_frame_);
     private_nh_.param<std::string>("slam_map_frame", slam_map_frame_, slam_map_frame_);
 
-    mapver_pub_ = nh_.advertise<std_msgs::String>("/mapversation/to_hello_decco", 10);
+    tymbal_hd_pub_ = nh_.advertise<std_msgs::String>("/tymbal/to_hello_decco", 10);
+    tymbal_puddle_pub_ = nh_.advertise<std_msgs::String>("/tymbal/to_puddle", 10);
     mavros_geofence_client_ = nh_.serviceClient<mavros_msgs::WaypointPush>("/mavros/geofence/push");
     map_region_pub_ = nh_.advertise<visualization_msgs::Marker>("/map_region", 10, true);
 }
@@ -48,7 +49,7 @@ HelloDeccoManager::HelloDeccoManager(ros::NodeHandle& node)
 HelloDeccoManager::~HelloDeccoManager() {
 }
 
-void HelloDeccoManager::packageToMapversation(std::string topic, json gossip) {
+void HelloDeccoManager::packageToTymbalHD(std::string topic, json gossip) {
     json msg_json;
     msg_json["topic"] = topic;
     json stamped_gossip = gossip;
@@ -57,14 +58,27 @@ void HelloDeccoManager::packageToMapversation(std::string topic, json gossip) {
     std::string s = msg_json.dump();
     std_msgs::String msg_string;
     msg_string.data = s;
-    mapver_pub_.publish(msg_string); // Mapversation to Hello Decco
+    tymbal_hd_pub_.publish(msg_string); // tymbal to Hello Decco
+}
+
+void HelloDeccoManager::packageToTymbalPuddle(std::string topic, json gossip) {
+    json msg_json;
+    msg_json["endpoint"] = topic;
+    msg_json["method"] = "POST";
+    json stamped_gossip = gossip;
+    stamped_gossip["stamp"] = ros::Time::now().toSec();
+    msg_json["body"] = stamped_gossip;
+    std::string s = msg_json.dump();
+    std_msgs::String msg_string;
+    msg_string.data = s;
+    tymbal_puddle_pub_.publish(msg_string); // tymbal to Hello Decco
 }
 
 void HelloDeccoManager::flightReceipt() {
     json msg;
     msg["data"] = "received";
     std::cout << msg.dump(4) << std::endl;
-    packageToMapversation("flight_confirm", msg);
+    packageToTymbalHD("flight_confirm", msg);
 }
 
 void HelloDeccoManager::acceptFlight(json msgJson, int utm_zone, bool &geofence_ok) {
@@ -75,7 +89,7 @@ void HelloDeccoManager::acceptFlight(json msgJson, int utm_zone, bool &geofence_
     geometry_msgs::Polygon poly = polygonFromJson(flight_json_["subpolygon"]);
     polygonInitializer(poly, false, geofence_ok);
 
-    packageToMapversation("burn_unit_receive", flight_json_);
+    packageToTymbalHD("burn_unit_receive", flight_json_);
 
 }
 
@@ -131,7 +145,7 @@ void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone, bool &geofe
             flightLegArray.push_back(flight_leg);
         }
         flight_json_["trips"][0]["flights"] = flightLegArray;
-        packageToMapversation("burn_unit_receive", flight_json_);
+        packageToTymbalHD("burn_unit_receive", flight_json_);
     }
 }
 
@@ -189,7 +203,7 @@ void HelloDeccoManager::updateFlightStatus(int index, std::string flight_status)
         flight_json_["endTime"] = std::to_string(end_time_);
         flight_json_["duration"] = std::to_string(end_time_ - start_time_);
     }
-    packageToMapversation("flight_receive", flight_json_);
+    packageToTymbalHD("flight_receive", flight_json_);
     ROS_INFO("Burn json filled in");
 }
 

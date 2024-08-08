@@ -213,8 +213,8 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     task_msg_.enable_autonomy = false;
     task_msg_.enable_exploration = false;
 
-    // Mapversation subscriber
-    mapver_sub_ = nh_.subscribe<std_msgs::String>("/mapversation/to_decco", 10, &TaskManager::packageFromMapversation, this);
+    // tymbal subscriber
+    tymbal_sub_ = nh_.subscribe<std_msgs::String>("/tymbal/to_decco", 10, &TaskManager::packageFromTymbal, this);
 
     initFlightControllerInterface();
 
@@ -389,13 +389,13 @@ void TaskManager::runTaskManager() {
     task_msg_.current_status.data = getTaskString(current_task_);
     task_pub_.publish(task_msg_);
     json task_json = makeTaskJson();
-    hello_decco_manager_.packageToMapversation("task_status", task_json);
+    hello_decco_manager_.packageToTymbalHD("task_status", task_json);
 
-    json log_json;
-    log_json["timestamp"] = flight_controller_interface_.getCurrentGlobalPosition().header.stamp.toSec();
-    log_json["latitude"] = flight_controller_interface_.getCurrentGlobalPosition().latitude;
-    log_json["longitude"] = flight_controller_interface_.getCurrentGlobalPosition().longitude;
-    hello_decco_manager_.packageToMapversation("path", log_json);
+    json path_json;
+    path_json["timestamp"] = flight_controller_interface_.getCurrentGlobalPosition().header.stamp.toSec();
+    path_json["latitude"] = flight_controller_interface_.getCurrentGlobalPosition().latitude;
+    path_json["longitude"] = flight_controller_interface_.getCurrentGlobalPosition().longitude;
+    hello_decco_manager_.packageToTymbalPuddle("/flight", path_json);
 }
 
 void TaskManager::startTakeoff() {
@@ -734,7 +734,7 @@ void TaskManager::heartbeatTimerCallback(const ros::TimerEvent&) {
             {"stamp", hb.header.stamp.toSec()}
         }}
     };
-    hello_decco_manager_.packageToMapversation("decco_heartbeat", j);
+    hello_decco_manager_.packageToTymbalHD("decco_heartbeat", j);
 
     ros::Time now_time = ros::Time::now();
     float interval = (now_time - last_ui_heartbeat_stamp_).toSec();
@@ -1098,7 +1098,7 @@ void TaskManager::mapYawCallback(const std_msgs::Float64::ConstPtr &msg) {
     ROS_INFO("Got map yaw: %f", map_yaw_ * 180 / M_PI);
 }
 
-void TaskManager::packageFromMapversation(const std_msgs::String::ConstPtr &msg) {
+void TaskManager::packageFromTymbal(const std_msgs::String::ConstPtr &msg) {
     json mapver_json = json::parse(msg->data);
     std::string topic = mapver_json["topic"];
     json gossip_json = mapver_json["gossip"];
@@ -1384,7 +1384,7 @@ void TaskManager::publishHealth() {
     }
 
     jsonObjects["healthIndicators"] = healthObjects;
-    hello_decco_manager_.packageToMapversation("health_report", jsonObjects);
+    hello_decco_manager_.packageToTymbalHD("health_report", jsonObjects);
 }
 
 void TaskManager::logEvent(EventType type, Severity sev, std::string description) {
@@ -1411,11 +1411,20 @@ void TaskManager::logEvent(EventType type, Severity sev, std::string description
     json j;
     j["flightId"] = 0; // TODO
     j["level"] = getSeverityString(sev);
+    j["droneId"] = 1;
     j["timestamp"] = ros::Time::now().toNSec() * 1E-6;
     j["type"] = getEventTypeString(type);
     j["description"] = description.substr(0, 256); // Limit string size to 256
 
-    hello_decco_manager_.packageToMapversation("event", j);
+    hello_decco_manager_.packageToTymbalHD("event", j);
+
+    sensor_msgs::NavSatFix hb = flight_controller_interface_.getCurrentGlobalPosition();
+    json ll_json = {
+        {"latitude", hb.latitude},
+        {"longitude", hb.longitude}
+    };
+    j["location"] = ll_json;
+    hello_decco_manager_.packageToTymbalPuddle("/flight-event", j);
 }
 
 json TaskManager::makeTaskJson() {

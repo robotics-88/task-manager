@@ -45,7 +45,8 @@ class HelloDeccoManager {
         }
         geometry_msgs::Polygon polygonFromJson(json jsonPolygon);
         geometry_msgs::Polygon polygonToMap(const geometry_msgs::Polygon &polygon);
-        void packageToMapversation(std::string topic, json gossip);
+        void packageToTymbalHD(std::string topic, json gossip);
+        void packageToTymbalPuddle(std::string topic, json gossip);
 
         void setDroneLocationLocal(geometry_msgs::PoseStamped location) {
             drone_location_ = location;
@@ -71,8 +72,9 @@ class HelloDeccoManager {
         int utm_zone_;
         geometry_msgs::PoseStamped drone_location_;
 
-        // Mapversation
-        ros::Publisher mapver_pub_;
+        // tymbal
+        ros::Publisher tymbal_hd_pub_;
+        ros::Publisher tymbal_puddle_pub_;
 
         json flight_json_;
         ros::Publisher map_region_pub_;
