@@ -54,7 +54,9 @@ void HelloDeccoManager::packageToTymbalHD(std::string topic, json gossip) {
     json msg_json;
     msg_json["topic"] = topic;
     json stamped_gossip = gossip;
-    stamped_gossip["stamp"] = ros::Time::now().toSec();
+    unsigned long now_time;
+    rosTimeToHD(ros::Time::now(), now_time);
+    stamped_gossip["stamp"] = now_time;
     msg_json["gossip"] = stamped_gossip;
     std::string s = msg_json.dump();
     std_msgs::String msg_string;
@@ -481,8 +483,8 @@ void HelloDeccoManager::visualizeLegs() {
 //     return num_legs;
 // }
 
-void HelloDeccoManager::rosTimeToHD(const ros::Time ros_time, double &hd_time) {
-    hd_time = ros_time.toNSec() * 1E-6;
+void HelloDeccoManager::rosTimeToHD(const ros::Time ros_time, unsigned long &hd_time) {
+    hd_time = std::round(ros_time.toNSec() * 1E-6);
 }
 
 std::string HelloDeccoManager::dateTimeString(const double ms_time) {

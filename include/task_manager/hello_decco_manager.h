@@ -45,7 +45,7 @@ class HelloDeccoManager {
         void packageToTymbalHD(std::string topic, json gossip);
         void packageToTymbalPuddle(std::string topic, json gossip);
 
-        void rosTimeToHD(const ros::Time ros_time, double &hd_time);
+        void rosTimeToHD(const ros::Time ros_time, unsigned long &hd_time);
         std::string dateTimeString(const double ms_time);
 
         void setDroneLocationLocal(geometry_msgs::PoseStamped location) {
@@ -88,8 +88,8 @@ class HelloDeccoManager {
 
         json flight_json_;
         ros::Publisher map_region_pub_;
-        double start_time_;
-        double end_time_;
+        unsigned long start_time_;
+        unsigned long end_time_;
 
         // MAVROS geofence publisher
         ros::ServiceClient mavros_geofence_client_;

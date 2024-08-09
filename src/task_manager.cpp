@@ -1375,7 +1375,7 @@ void TaskManager::logEvent(EventType type, Severity sev, std::string description
     j["flightId"] = 0; // TODO
     j["level"] = getSeverityString(sev);
     j["droneId"] = 1;
-    double t;
+    unsigned long t;
     hello_decco_manager_.rosTimeToHD(ros::Time::now(), t);
     j["timestamp"] = t;
     j["type"] = getEventTypeString(type);
@@ -1383,13 +1383,15 @@ void TaskManager::logEvent(EventType type, Severity sev, std::string description
 
     hello_decco_manager_.packageToTymbalHD("event", j);
 
-    sensor_msgs::NavSatFix hb = flight_controller_interface_.getCurrentGlobalPosition();
-    json ll_json = {
-        {"latitude", hb.latitude},
-        {"longitude", hb.longitude}
-    };
-    j["location"] = ll_json;
-    hello_decco_manager_.packageToTymbalPuddle("/flight-event", j);
+    if (in_autonomous_flight_) {
+        sensor_msgs::NavSatFix hb = flight_controller_interface_.getCurrentGlobalPosition();
+        json ll_json = {
+            {"latitude", hb.latitude},
+            {"longitude", hb.longitude}
+        };
+        j["location"] = ll_json;
+        hello_decco_manager_.packageToTymbalPuddle("/flight-event", j);
+    }
 }
 
 json TaskManager::makeTaskJson() {
