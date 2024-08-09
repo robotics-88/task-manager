@@ -1103,7 +1103,6 @@ void TaskManager::packageFromTymbal(const std_msgs::String::ConstPtr &msg) {
     std::string topic = mapver_json["topic"];
     json gossip_json = mapver_json["gossip"];
     if (topic == "flight_send") {
-        std::cout << "flight rcv: " << mapver_json.dump(4) << std::endl;
         acceptFlight(gossip_json);
     }
     else if (topic == "target_setpoint") {
@@ -1139,9 +1138,6 @@ void TaskManager::acceptFlight(json flight) {
     }
     
     map_polygon_ = hello_decco_manager_.getMapPolygon();
-    for (auto pt: map_polygon_.points) {
-        std::cout << "pt " << pt.x << ", " << pt.y << std::endl;
-    }
     if (!polygonDistanceOk(initial_transit_point_, map_polygon_)) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Polygon rejected, exceeds maximum starting distance threshold");
         return;

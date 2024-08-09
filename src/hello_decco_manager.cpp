@@ -121,7 +121,6 @@ void HelloDeccoManager::updateFlightStatus(int index, std::string flight_status)
         flight_json_["endTime"] = std::to_string(end_time_);
         flight_json_["duration"] = std::to_string(end_time_ - start_time_);
     }
-    std::cout << "sending updated: " << flight_json_.dump(4) << std::endl;
     packageToTymbalHD("flight_receive", flight_json_);
     ROS_INFO("Burn json filled in");
 }
