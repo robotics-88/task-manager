@@ -34,9 +34,6 @@ class HelloDeccoManager {
         ~HelloDeccoManager();
 
         void acceptFlight(json msgJson, int utm_zone, bool &geofence_ok);
-        void makeBurnUnitJson(json msgJson, int utm_zone, bool &geofence_ok);
-        json polygonToBurnUnit(const json &polygon);
-        int initFlightArea(geometry_msgs::Polygon &polygon);
         void updateFlightStatus(int index, std::string flight_status);
         void setUtm(double utm_x, double utm_y, int zone) {
             utm_x_offset_ = -utm_x;
@@ -49,6 +46,7 @@ class HelloDeccoManager {
         void packageToTymbalPuddle(std::string topic, json gossip);
 
         void rosTimeToHD(const ros::Time ros_time, double &hd_time);
+        std::string dateTimeString(const double ms_time);
 
         void setDroneLocationLocal(geometry_msgs::PoseStamped location) {
             drone_location_ = location;

@@ -1102,15 +1102,9 @@ void TaskManager::packageFromTymbal(const std_msgs::String::ConstPtr &msg) {
     json mapver_json = json::parse(msg->data);
     std::string topic = mapver_json["topic"];
     json gossip_json = mapver_json["gossip"];
-    if (topic == "burn_unit_send") {
-        makeBurnUnitJson(gossip_json);
-    }
-    else if (topic == "flight_send") {
+    if (topic == "flight_send") {
+        std::cout << "flight rcv: " << mapver_json.dump(4) << std::endl;
         acceptFlight(gossip_json);
-    }
-    else if (topic == "target_polygon") {
-        json burn_unit = hello_decco_manager_.polygonToBurnUnit(gossip_json);
-        makeBurnUnitJson(burn_unit);
     }
     else if (topic == "target_setpoint") {
         setpointResponse(gossip_json);
@@ -1145,6 +1139,9 @@ void TaskManager::acceptFlight(json flight) {
     }
     
     map_polygon_ = hello_decco_manager_.getMapPolygon();
+    for (auto pt: map_polygon_.points) {
+        std::cout << "pt " << pt.x << ", " << pt.y << std::endl;
+    }
     if (!polygonDistanceOk(initial_transit_point_, map_polygon_)) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Polygon rejected, exceeds maximum starting distance threshold");
         return;
@@ -1152,37 +1149,6 @@ void TaskManager::acceptFlight(json flight) {
 
     needs_takeoff_ = true;
 
-}
-
-void TaskManager::makeBurnUnitJson(json burn_unit) {
-
-    if (!map_tf_init_) {
-        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Not ready for flight, try again after initialized");
-        return;
-    }
-    std::string name = burn_unit["name"];
-    burn_dir_ = burn_dir_prefix_ + name + "/";
-
-    hello_decco_manager_.setDroneLocationLocal(slam_pose_);
-    bool geofence_ok;
-    hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_, geofence_ok);
-
-    if (!geofence_ok) {
-        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Geofence invalid, not setting geofence");
-    }
-
-    current_index_ = hello_decco_manager_.initFlightArea(map_polygon_);
-    if (current_index_ < 0) {
-        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "No burn polygon was found, all are already complete, not exploring");
-        return;
-    }
-    
-    if (!polygonDistanceOk(initial_transit_point_, map_polygon_)) {
-        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Polygon rejected, exceeds maximum starting distance threshold");
-        return;
-    }
-
-    needs_takeoff_ = true;
 }
 
 void TaskManager::setpointResponse(json &json_msg) {

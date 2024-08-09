@@ -346,7 +346,6 @@ class TaskManager {
         void publishHealth();
         json makeTaskJson();
         void acceptFlight(json flight);
-        void makeBurnUnitJson(json burn_unit);
         void packageFromTymbal(const std_msgs::String::ConstPtr &msg);
 
 };
