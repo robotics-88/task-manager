@@ -1372,7 +1372,7 @@ void TaskManager::logEvent(EventType type, Severity sev, std::string description
     cmd_history_.append(description + "\n");
 
     json j;
-    j["flightId"] = 0; // TODO
+    j["flightId"] = 1; // TODO
     j["level"] = getSeverityString(sev);
     j["droneId"] = 1;
     unsigned long t;
