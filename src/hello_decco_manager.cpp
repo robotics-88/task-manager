@@ -16,7 +16,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <GeographicLib/Geodesic.hpp>
 #include <GeographicLib/PolygonArea.hpp>
 
-#include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
@@ -55,8 +54,7 @@ void HelloDeccoManager::packageToTymbalHD(std::string topic, json gossip) {
     msg_json["topic"] = topic;
     json stamped_gossip = gossip;
     unsigned long now_time;
-    rosTimeToHD(ros::Time::now(), now_time);
-    stamped_gossip["stamp"] = now_time;
+    stamped_gossip["stamp"] = decco_utilities::rosTimeToHDMilliseconds(ros::Time::now());
     msg_json["gossip"] = stamped_gossip;
     std::string s = msg_json.dump();
     std_msgs::String msg_string;
@@ -115,11 +113,11 @@ void HelloDeccoManager::polygonInitializer(const geometry_msgs::Polygon &msg, bo
 void HelloDeccoManager::updateFlightStatus(int index, std::string flight_status) {
     flight_json_["status"] = flight_status;
     if (flight_status == "ACTIVE") {
-        rosTimeToHD(ros::Time::now(), start_time_);
+        start_time_ = decco_utilities::rosTimeToHDMilliseconds(ros::Time::now());
         flight_json_["startTime"] = std::to_string(start_time_);
     }
     else if (flight_status == "COMPLETED") {
-        rosTimeToHD(ros::Time::now(), end_time_);
+        end_time_ = decco_utilities::rosTimeToHDMilliseconds(ros::Time::now());
         flight_json_["endTime"] = std::to_string(end_time_);
         flight_json_["duration"] = std::to_string(end_time_ - start_time_);
     }
@@ -482,16 +480,5 @@ void HelloDeccoManager::visualizeLegs() {
 //     }
 //     return num_legs;
 // }
-
-void HelloDeccoManager::rosTimeToHD(const ros::Time ros_time, unsigned long &hd_time) {
-    hd_time = std::round(ros_time.toNSec() * 1E-6);
-}
-
-std::string HelloDeccoManager::dateTimeString(const double ms_time) {
-    boost::posix_time::ptime pt = boost::posix_time::from_time_t(ms_time);
-    std::string date_time = boost::posix_time::to_iso_extended_string(pt);
-    std::cout << "time string: " << date_time << std::endl;
-    return date_time;
-}
 
 }

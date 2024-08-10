@@ -99,6 +99,8 @@ namespace decco_utilities
         // Return true if the number of crossings is odd
         return cross % 2 > 0;
     }
+
+    unsigned long rosTimeToHDMilliseconds(const ros::Time ros_time);
     
     void llToUtm(const double lat, const double lon, int &zone, double &utm_x, double &utm_y);
     void utmToLL(const double utm_x, const double utm_y, const int zone, double &lat, double &lon);

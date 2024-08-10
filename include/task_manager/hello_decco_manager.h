@@ -45,9 +45,6 @@ class HelloDeccoManager {
         void packageToTymbalHD(std::string topic, json gossip);
         void packageToTymbalPuddle(std::string topic, json gossip);
 
-        void rosTimeToHD(const ros::Time ros_time, unsigned long &hd_time);
-        std::string dateTimeString(const double ms_time);
-
         void setDroneLocationLocal(geometry_msgs::PoseStamped location) {
             drone_location_ = location;
         }

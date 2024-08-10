@@ -1375,9 +1375,7 @@ void TaskManager::logEvent(EventType type, Severity sev, std::string description
     j["flightId"] = 1; // TODO
     j["level"] = getSeverityString(sev);
     j["droneId"] = 1;
-    unsigned long t;
-    hello_decco_manager_.rosTimeToHD(ros::Time::now(), t);
-    j["timestamp"] = t;
+    j["timestamp"] = decco_utilities::rosTimeToHDMilliseconds(ros::Time::now());
     j["type"] = getEventTypeString(type);
     j["description"] = description.substr(0, 256); // Limit string size to 256
 
