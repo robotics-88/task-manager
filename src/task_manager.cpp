@@ -1127,7 +1127,7 @@ void TaskManager::acceptFlight(json flight) {
         return;
     }
     std::string name = flight["burnUnitName"];
-    burn_dir_prefix_ = burn_dir_prefix_ + name + "/";
+    burn_dir_ = burn_dir_prefix_ + name + "/";
 
     hello_decco_manager_.setDroneLocationLocal(slam_pose_);
     bool geofence_ok;
