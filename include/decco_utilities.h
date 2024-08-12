@@ -100,7 +100,7 @@ namespace decco_utilities
         return cross % 2 > 0;
     }
 
-    unsigned long rosTimeToHDMilliseconds(const ros::Time ros_time);
+    unsigned long rosTimeToMilliseconds(const ros::Time ros_time);
     
     void llToUtm(const double lat, const double lon, int &zone, double &utm_x, double &utm_y);
     void utmToLL(const double utm_x, const double utm_y, const int zone, double &lat, double &lon);

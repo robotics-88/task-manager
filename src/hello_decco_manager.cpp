@@ -54,7 +54,7 @@ void HelloDeccoManager::packageToTymbalHD(std::string topic, json gossip) {
     msg_json["topic"] = topic;
     json stamped_gossip = gossip;
     unsigned long now_time;
-    stamped_gossip["stamp"] = decco_utilities::rosTimeToHDMilliseconds(ros::Time::now());
+    stamped_gossip["stamp"] = decco_utilities::rosTimeToMilliseconds(ros::Time::now());
     msg_json["gossip"] = stamped_gossip;
     std::string s = msg_json.dump();
     std_msgs::String msg_string;
@@ -113,11 +113,11 @@ void HelloDeccoManager::polygonInitializer(const geometry_msgs::Polygon &msg, bo
 void HelloDeccoManager::updateFlightStatus(int index, std::string flight_status) {
     flight_json_["status"] = flight_status;
     if (flight_status == "ACTIVE") {
-        start_time_ = decco_utilities::rosTimeToHDMilliseconds(ros::Time::now());
+        start_time_ = decco_utilities::rosTimeToMilliseconds(ros::Time::now());
         flight_json_["startTime"] = std::to_string(start_time_);
     }
     else if (flight_status == "COMPLETED") {
-        end_time_ = decco_utilities::rosTimeToHDMilliseconds(ros::Time::now());
+        end_time_ = decco_utilities::rosTimeToMilliseconds(ros::Time::now());
         flight_json_["endTime"] = std::to_string(end_time_);
         flight_json_["duration"] = std::to_string(end_time_ - start_time_);
     }
