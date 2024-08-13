@@ -213,8 +213,8 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     task_msg_.enable_autonomy = false;
     task_msg_.enable_exploration = false;
 
-    // Mapversation subscriber
-    mapver_sub_ = nh_.subscribe<std_msgs::String>("/mapversation/to_decco", 10, &TaskManager::packageFromMapversation, this);
+    // tymbal subscriber
+    tymbal_sub_ = nh_.subscribe<std_msgs::String>("/tymbal/to_decco", 10, &TaskManager::packageFromTymbal, this);
 
     initFlightControllerInterface();
 
@@ -325,7 +325,7 @@ void TaskManager::runTaskManager() {
             // Once we reach takeoff altitude, transition to next flight state
             if (flight_controller_interface_.getAltitudeAGL() > (target_altitude_ - 1)) {
                 // If not in polygon, start navigation task
-                if (!decco_utilities::isInside(current_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position)) {
+                if (!decco_utilities::isInside(map_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position)) {
                     logEvent(EventType::STATE_MACHINE, Severity::LOW, "Transiting to designated survey unit");
                     startTransit();
                 }
@@ -337,7 +337,7 @@ void TaskManager::runTaskManager() {
             break;
         }
         case Task::IN_TRANSIT: {
-            if (decco_utilities::isInside(current_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position)) {
+            if (decco_utilities::isInside(map_polygon_, flight_controller_interface_.getCurrentLocalPosition().pose.position)) {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Starting exploration");
                 startExploration();
             }
@@ -352,7 +352,7 @@ void TaskManager::runTaskManager() {
                 ) {
 
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Initiating RTL_88 due to exploration " + goal_state.toString());
-                hello_decco_manager_.updateBurnUnit(current_index_, "COMPLETED");
+                hello_decco_manager_.updateFlightStatus(current_index_, "COMPLETED");
                 startRtl88();
             }
 
@@ -389,13 +389,13 @@ void TaskManager::runTaskManager() {
     task_msg_.current_status.data = getTaskString(current_task_);
     task_pub_.publish(task_msg_);
     json task_json = makeTaskJson();
-    hello_decco_manager_.packageToMapversation("task_status", task_json);
+    hello_decco_manager_.packageToTymbalHD("task_status", task_json);
 
-    json log_json;
-    log_json["timestamp"] = flight_controller_interface_.getCurrentGlobalPosition().header.stamp.toSec();
-    log_json["latitude"] = flight_controller_interface_.getCurrentGlobalPosition().latitude;
-    log_json["longitude"] = flight_controller_interface_.getCurrentGlobalPosition().longitude;
-    hello_decco_manager_.packageToMapversation("path", log_json);
+    json path_json;
+    path_json["timestamp"] = flight_controller_interface_.getCurrentGlobalPosition().header.stamp.toSec();
+    path_json["latitude"] = flight_controller_interface_.getCurrentGlobalPosition().latitude;
+    path_json["longitude"] = flight_controller_interface_.getCurrentGlobalPosition().longitude;
+    // hello_decco_manager_.packageToTymbalPuddle("/flight", path_json);
 }
 
 void TaskManager::startTakeoff() {
@@ -442,7 +442,7 @@ void TaskManager::startTransit() {
 
 void TaskManager::startExploration() {
 
-    current_explore_goal_.polygon = current_polygon_;
+    current_explore_goal_.polygon = map_polygon_;
     current_explore_goal_.altitude = target_altitude_;
     current_explore_goal_.min_altitude = min_altitude_;
     current_explore_goal_.max_altitude = max_altitude_;
@@ -459,7 +459,7 @@ void TaskManager::startExploration() {
     explore_action_client_.sendGoal(current_explore_goal_);
 
     logEvent(EventType::STATE_MACHINE, Severity::LOW, "Sent explore goal");
-    hello_decco_manager_.updateBurnUnit(current_index_, "ACTIVE");
+    hello_decco_manager_.updateFlightStatus(current_index_, "ACTIVE");
 
     updateCurrentTask(Task::EXPLORING);
 }
@@ -734,7 +734,7 @@ void TaskManager::heartbeatTimerCallback(const ros::TimerEvent&) {
             {"stamp", hb.header.stamp.toSec()}
         }}
     };
-    hello_decco_manager_.packageToMapversation("decco_heartbeat", j);
+    hello_decco_manager_.packageToTymbalHD("decco_heartbeat", j);
 
     ros::Time now_time = ros::Time::now();
     float interval = (now_time - last_ui_heartbeat_stamp_).toSec();
@@ -843,7 +843,7 @@ void TaskManager::stopBag() {
 
 bool TaskManager::polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region) {
 
-    if (decco_utilities::isInside(current_polygon_, flight_controller_interface_.getCurrentSlamPosition().pose.position))
+    if (decco_utilities::isInside(map_polygon_, flight_controller_interface_.getCurrentSlamPosition().pose.position))
         return true;
 
     // Medium check, computes distance to nearest point on 2 most likely polygon edges
@@ -1098,16 +1098,12 @@ void TaskManager::mapYawCallback(const std_msgs::Float64::ConstPtr &msg) {
     ROS_INFO("Got map yaw: %f", map_yaw_ * 180 / M_PI);
 }
 
-void TaskManager::packageFromMapversation(const std_msgs::String::ConstPtr &msg) {
+void TaskManager::packageFromTymbal(const std_msgs::String::ConstPtr &msg) {
     json mapver_json = json::parse(msg->data);
     std::string topic = mapver_json["topic"];
     json gossip_json = mapver_json["gossip"];
-    if (topic == "burn_unit_send") {
-        makeBurnUnitJson(gossip_json);
-    }
-    else if (topic == "target_polygon") {
-        json burn_unit = hello_decco_manager_.polygonToBurnUnit(gossip_json);
-        makeBurnUnitJson(burn_unit);
+    if (topic == "flight_send") {
+        acceptFlight(gossip_json);
     }
     else if (topic == "target_setpoint") {
         setpointResponse(gossip_json);
@@ -1124,35 +1120,31 @@ void TaskManager::packageFromMapversation(const std_msgs::String::ConstPtr &msg)
     }
 }
 
-void TaskManager::makeBurnUnitJson(json burn_unit) {
+void TaskManager::acceptFlight(json flight) {
 
     if (!map_tf_init_) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Not ready for flight, try again after initialized");
         return;
     }
-    std::string name = burn_unit["name"];
+    std::string name = flight["burnUnitName"];
     burn_dir_ = burn_dir_prefix_ + name + "/";
 
     hello_decco_manager_.setDroneLocationLocal(slam_pose_);
     bool geofence_ok;
-    hello_decco_manager_.makeBurnUnitJson(burn_unit, home_utm_zone_, geofence_ok);
+    hello_decco_manager_.acceptFlight(flight, home_utm_zone_, geofence_ok);
 
     if (!geofence_ok) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Geofence invalid, not setting geofence");
     }
-
-    current_index_ = hello_decco_manager_.initBurnUnit(current_polygon_);
-    if (current_index_ < 0) {
-        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "No burn polygon was found, all are already complete, not exploring");
-        return;
-    }
     
-    if (!polygonDistanceOk(initial_transit_point_, current_polygon_)) {
+    map_polygon_ = hello_decco_manager_.getMapPolygon();
+    if (!polygonDistanceOk(initial_transit_point_, map_polygon_)) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Polygon rejected, exceeds maximum starting distance threshold");
         return;
     }
 
     needs_takeoff_ = true;
+
 }
 
 void TaskManager::setpointResponse(json &json_msg) {
@@ -1355,7 +1347,7 @@ void TaskManager::publishHealth() {
     }
 
     jsonObjects["healthIndicators"] = healthObjects;
-    hello_decco_manager_.packageToMapversation("health_report", jsonObjects);
+    hello_decco_manager_.packageToTymbalHD("health_report", jsonObjects);
 }
 
 void TaskManager::logEvent(EventType type, Severity sev, std::string description) {
@@ -1380,13 +1372,24 @@ void TaskManager::logEvent(EventType type, Severity sev, std::string description
     cmd_history_.append(description + "\n");
 
     json j;
-    j["flightId"] = 0; // TODO
+    j["flightId"] = 1; // TODO
     j["level"] = getSeverityString(sev);
-    j["timestamp"] = ros::Time::now().toNSec() * 1E-6;
+    j["droneId"] = 1;
+    j["timestamp"] = decco_utilities::rosTimeToMilliseconds(ros::Time::now());
     j["type"] = getEventTypeString(type);
     j["description"] = description.substr(0, 256); // Limit string size to 256
 
-    hello_decco_manager_.packageToMapversation("event", j);
+    hello_decco_manager_.packageToTymbalHD("event", j);
+
+    if (in_autonomous_flight_) {
+        sensor_msgs::NavSatFix hb = flight_controller_interface_.getCurrentGlobalPosition();
+        json ll_json = {
+            {"latitude", hb.latitude},
+            {"longitude", hb.longitude}
+        };
+        j["location"] = ll_json;
+        hello_decco_manager_.packageToTymbalPuddle("/flight-event", j);
+    }
 }
 
 json TaskManager::makeTaskJson() {

@@ -40,7 +40,8 @@ HelloDeccoManager::HelloDeccoManager(ros::NodeHandle& node)
     private_nh_.param<std::string>("mavros_map_frame", mavros_map_frame_, mavros_map_frame_);
     private_nh_.param<std::string>("slam_map_frame", slam_map_frame_, slam_map_frame_);
 
-    mapver_pub_ = nh_.advertise<std_msgs::String>("/mapversation/to_hello_decco", 10);
+    tymbal_hd_pub_ = nh_.advertise<std_msgs::String>("/tymbal/to_hello_decco", 10);
+    tymbal_puddle_pub_ = nh_.advertise<std_msgs::String>("/tymbal/to_puddle", 10);
     mavros_geofence_client_ = nh_.serviceClient<mavros_msgs::WaypointPush>("/mavros/geofence/push");
     map_region_pub_ = nh_.advertise<visualization_msgs::Marker>("/map_region", 10, true);
 }
@@ -48,71 +49,46 @@ HelloDeccoManager::HelloDeccoManager(ros::NodeHandle& node)
 HelloDeccoManager::~HelloDeccoManager() {
 }
 
-void HelloDeccoManager::packageToMapversation(std::string topic, json gossip) {
+void HelloDeccoManager::packageToTymbalHD(std::string topic, json gossip) {
     json msg_json;
     msg_json["topic"] = topic;
     json stamped_gossip = gossip;
-    stamped_gossip["stamp"] = ros::Time::now().toSec();
+    unsigned long now_time;
+    stamped_gossip["stamp"] = decco_utilities::rosTimeToMilliseconds(ros::Time::now());
     msg_json["gossip"] = stamped_gossip;
     std::string s = msg_json.dump();
     std_msgs::String msg_string;
     msg_string.data = s;
-    mapver_pub_.publish(msg_string); // Mapversation to Hello Decco
+    tymbal_hd_pub_.publish(msg_string); // tymbal to Hello Decco
 }
 
-void HelloDeccoManager::makeBurnUnitJson(json msgJson, int utm_zone, bool &geofence_ok) {
-    // TODO check trip type to decide what data is recording? Or do that on the HD side?
-    // Parse data
-    burn_unit_json_ = msgJson;
-    ROS_INFO("Burn unit received");
-    std_msgs::String burn_string;
-    geometry_msgs::Polygon poly = polygonFromJson(burn_unit_json_["polygon"]);
-    // Check if already filled in
-    int num_flights = burn_unit_json_["trips"][0]["flights"].size();
+void HelloDeccoManager::packageToTymbalPuddle(std::string topic, json gossip) {
+    json msg_json;
+    msg_json["endpoint"] = topic;
+    msg_json["method"] = "POST";
+    msg_json["body"] = gossip;
+    std::string s = msg_json.dump();
+    std_msgs::String msg_string;
+    msg_string.data = s;
+    tymbal_puddle_pub_.publish(msg_string); // tymbal to Hello Decco
+}
 
-    if (num_flights >= 1 && burn_unit_json_["trips"][0]["flights"][0]["subpolygon"].size() >= 3) {
-        // Already filled in, pass directly to TM
-        std::string s = burn_unit_json_.dump();
-        burn_string.data = s;
-        polygonInitializer(poly, false, geofence_ok);
-        // Fill in subpolygon array
-        local_subpolygons_.clear();
-        geometry_msgs::Polygon ll_poly;
-        for (auto subpoly_point: burn_unit_json_["trips"][0]["flights"][0]["subpolygon"]) {
-            geometry_msgs::Point32 ll_point;
-            ll_point.x = subpoly_point[0];
-            ll_point.y = subpoly_point[1];
-            ll_poly.points.push_back(ll_point);
-        }
-        geometry_msgs::Polygon poly = polygonToMap(ll_poly);
-        local_subpolygons_.push_back(poly);
-    }
-    else {
-        // Need to fill in
-        polygonInitializer(poly, true, geofence_ok);
-        json flightLegArray;
-        for (int ii = 0; ii < local_subpolygons_.size(); ii++) {
-            json flight_leg;
-            json ll_json;
-            for (int jj = 0; jj < local_subpolygons_.at(ii).points.size(); jj++) {
-                json ll;
-                double lat, lon;
-                decco_utilities::mapToLl(local_subpolygons_.at(ii).points.at(jj).x, local_subpolygons_.at(ii).points.at(jj).y, lat, lon,
-                                         utm_x_offset_, utm_y_offset_, utm_zone_);
-                ll.push_back(lat);
-                ll.push_back(lon);
-                ll_json.push_back(ll);
-            }
-            flight_leg["subpolygon"] = ll_json;
-            flight_leg["status"] = "NOT_STARTED";
-            flight_leg["startTime"] = 0;
-            flight_leg["endTime"] = 0;
-            flight_leg["duration"] = 0;
-            flightLegArray.push_back(flight_leg);
-        }
-        burn_unit_json_["trips"][0]["flights"] = flightLegArray;
-        packageToMapversation("burn_unit_receive", burn_unit_json_);
-    }
+void HelloDeccoManager::flightReceipt() {
+    json msg;
+    msg["data"] = "received";
+    packageToTymbalHD("flight_confirm", msg);
+}
+
+void HelloDeccoManager::acceptFlight(json msgJson, int utm_zone, bool &geofence_ok) {
+    flightReceipt();
+    // Parse data
+    flight_json_ = msgJson;
+    ROS_INFO("Flight received");
+    geometry_msgs::Polygon poly = polygonFromJson(flight_json_["subpolygon"]);
+    polygonInitializer(poly, false, geofence_ok);
+
+    packageToTymbalHD("burn_unit_receive", flight_json_);
+
 }
 
 void HelloDeccoManager::polygonInitializer(const geometry_msgs::Polygon &msg, bool make_legs, bool &geofence_ok) {
@@ -134,42 +110,18 @@ void HelloDeccoManager::polygonInitializer(const geometry_msgs::Polygon &msg, bo
     }
 }
 
-int HelloDeccoManager::initBurnUnit(geometry_msgs::Polygon &polygon) {
-    // Iterate through subpolygons to get first not done
-    // TODO not needed anymore? HD only sends the next flight?
-    int ind = 0;
-    geometry_msgs::Polygon poly;
-    bool found = false;
-    for (auto& flight : burn_unit_json_["trips"][0]["flights"]) {
-        if (flight["status"] == "NOT_STARTED") {
-            poly = local_subpolygons_.at(ind);
-            ROS_INFO("will do polygon %d", ind);
-            found = true;
-            break;
-        }
-        ind++;
-    }
-    if (found) {
-        polygon = poly;
-    }
-    else {
-        ind = -1;
-    }
-    return ind;
-}
-
-void HelloDeccoManager::updateBurnUnit(int index, std::string flight_status) {
-    burn_unit_json_["trips"][0]["flights"][index]["status"] = flight_status;
+void HelloDeccoManager::updateFlightStatus(int index, std::string flight_status) {
+    flight_json_["status"] = flight_status;
     if (flight_status == "ACTIVE") {
-        start_time_ = static_cast<int>(ros::Time::now().toSec());
-        burn_unit_json_["trips"][0]["flights"][index]["startTime"] = std::to_string(start_time_);
+        start_time_ = decco_utilities::rosTimeToMilliseconds(ros::Time::now());
+        flight_json_["startTime"] = std::to_string(start_time_);
     }
     else if (flight_status == "COMPLETED") {
-        end_time_ = static_cast<int>(ros::Time::now().toSec());
-        burn_unit_json_["trips"][0]["flights"][index]["endTime"] = std::to_string(end_time_);
-        burn_unit_json_["trips"][0]["flights"][index]["duration"] = std::to_string(end_time_ - start_time_);
+        end_time_ = decco_utilities::rosTimeToMilliseconds(ros::Time::now());
+        flight_json_["endTime"] = std::to_string(end_time_);
+        flight_json_["duration"] = std::to_string(end_time_ - start_time_);
     }
-    packageToMapversation("burn_unit_receive", burn_unit_json_);
+    packageToTymbalHD("flight_receive", flight_json_);
     ROS_INFO("Burn json filled in");
 }
 
@@ -529,33 +481,4 @@ void HelloDeccoManager::visualizeLegs() {
 //     return num_legs;
 // }
 
-json HelloDeccoManager::polygonToBurnUnit(const json &polygon) {
-    json burn_unit = R"({
-        "id" : 1,
-        "orgId" : 1,
-        "createdBy" : 1,
-        "name" : "Super Great Burn Unit",
-        "polygon" : [],
-        "trips": [
-            {
-            "id" : 1,
-            "type" : "PRE",
-            "startTime" : 0,
-            "endTime" : 0, 
-            "flights" : [ 
-                {
-                    "startTime" : 0,
-                    "endTime" : 0, 
-                    "duration" : 0,
-                    "subpolygon" : [],
-                    "flightLogUrl" : "hellodecco.com/my-url",
-                    "status" : "NOT_STARTED"
-                }
-            ]
-            }
-        ]
-        })"_json;
-    burn_unit["polygon"] = polygon;
-    return burn_unit;
-}
 }

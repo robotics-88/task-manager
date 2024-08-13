@@ -194,7 +194,7 @@ class TaskManager {
 
         // Hello Decco comms
         hello_decco_manager::HelloDeccoManager hello_decco_manager_;
-        ros::Subscriber mapver_sub_;
+        ros::Subscriber tymbal_sub_;
 
         // Control defaults
         float target_altitude_;
@@ -249,7 +249,7 @@ class TaskManager {
         // Drone state params
         geometry_msgs::PoseStamped slam_pose_;
         geometry_msgs::PoseStamped home_pos_;
-        geometry_msgs::Polygon current_polygon_;
+        geometry_msgs::Polygon map_polygon_;
         geometry_msgs::PoseStamped initial_transit_point_;
         ros::Timer mode_monitor_timer_;
         std::string cmd_history_;
@@ -345,8 +345,8 @@ class TaskManager {
         void remoteIDResponse(json &json);
         void publishHealth();
         json makeTaskJson();
-        void makeBurnUnitJson(json burn_unit);
-        void packageFromMapversation(const std_msgs::String::ConstPtr &msg);
+        void acceptFlight(json flight);
+        void packageFromTymbal(const std_msgs::String::ConstPtr &msg);
 
 };
 

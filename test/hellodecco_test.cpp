@@ -139,7 +139,7 @@ TEST(ReceiveBurnUnit, receiveBurnUnit)
 
     hello_decco_manager.setUtm(burner.utm_x_offset, burner.utm_y_offset, burner.utm_zone);
     hello_decco_manager.makeBurnUnitJson(burner.burn_unit, burner.utm_zone);
-    int ind = hello_decco_manager.initBurnUnit(burner.map_polygon);
+    int ind = hello_decco_manager.initFlightArea(burner.map_polygon);
     // Confirm that map polygon was initialized
     ASSERT_TRUE(ind >= 0);
 
@@ -189,7 +189,7 @@ TEST(UpdateBurnUnit, updateBurnUnit)
     mapver.count = 0;
     // Not sure why but it needs to run twice for the mock subscriber to catch
     while (counter < 2) {
-        hello_decco_manager.updateBurnUnit(0, "ACTIVE");
+        hello_decco_manager.updateFlightStatus(0, "ACTIVE");
         ros::spinOnce();
         counter++;
         r.sleep();

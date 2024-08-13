@@ -33,10 +33,8 @@ class HelloDeccoManager {
         HelloDeccoManager(ros::NodeHandle& node);
         ~HelloDeccoManager();
 
-        void makeBurnUnitJson(json msgJson, int utm_zone, bool &geofence_ok);
-        json polygonToBurnUnit(const json &polygon);
-        int initBurnUnit(geometry_msgs::Polygon &polygon);
-        void updateBurnUnit(int index, std::string flight_status);
+        void acceptFlight(json msgJson, int utm_zone, bool &geofence_ok);
+        void updateFlightStatus(int index, std::string flight_status);
         void setUtm(double utm_x, double utm_y, int zone) {
             utm_x_offset_ = -utm_x;
             utm_y_offset_ = -utm_y;
@@ -44,10 +42,15 @@ class HelloDeccoManager {
         }
         geometry_msgs::Polygon polygonFromJson(json jsonPolygon);
         geometry_msgs::Polygon polygonToMap(const geometry_msgs::Polygon &polygon);
-        void packageToMapversation(std::string topic, json gossip);
+        void packageToTymbalHD(std::string topic, json gossip);
+        void packageToTymbalPuddle(std::string topic, json gossip);
 
         void setDroneLocationLocal(geometry_msgs::PoseStamped location) {
             drone_location_ = location;
+        }
+
+        geometry_msgs::Polygon getMapPolygon() { 
+            return map_region_;
         }
 
     private:
@@ -55,6 +58,12 @@ class HelloDeccoManager {
             NOT_STARTED,
             ACTIVE,
             COMPLETED
+        };
+
+        enum HttpMethod {
+            GET,
+            POST,
+            PUT
         };
 
         ros::NodeHandle private_nh_;
@@ -70,13 +79,14 @@ class HelloDeccoManager {
         int utm_zone_;
         geometry_msgs::PoseStamped drone_location_;
 
-        // Mapversation
-        ros::Publisher mapver_pub_;
+        // tymbal
+        ros::Publisher tymbal_hd_pub_;
+        ros::Publisher tymbal_puddle_pub_;
 
-        json burn_unit_json_;
+        json flight_json_;
         ros::Publisher map_region_pub_;
-        int start_time_;
-        int end_time_;
+        unsigned long start_time_;
+        unsigned long end_time_;
 
         // MAVROS geofence publisher
         ros::ServiceClient mavros_geofence_client_;
@@ -87,6 +97,7 @@ class HelloDeccoManager {
         std::vector<geometry_msgs::Polygon> local_subpolygons_; // Flight units
         double flightleg_area_m2_;
 
+        void flightReceipt();
         void polygonInitializer(const geometry_msgs::Polygon &msg, bool make_legs, bool &geofence_ok);
 
         // Polygon mgmt
