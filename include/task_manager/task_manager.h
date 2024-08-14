@@ -6,39 +6,39 @@ Author: Erin Linebarger <erin@robotics88.com>
 #ifndef TASK_MANAGER_H_
 #define TASK_MANAGER_H_
 
-#include <ros/ros.h>
+#include "rclcpp/rclcpp.hpp"
+#include "rclcpp_action/rclcpp_action.hpp"
 
-#include <actionlib/client/simple_action_client.h>
-#include <actionlib/client/terminal_state.h>
-#include <costmap_2d/costmap_2d.h>
-#include <geometry_msgs/Polygon.h>
-#include <geometry_msgs/PoseStamped.h>
-#include <livox_ros_driver/CustomMsg.h>
-#include <map_msgs/OccupancyGridUpdate.h>
-#include <pcl_ros/point_cloud.h>
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
-#include <sensor_msgs/Image.h>
-#include <sensor_msgs/PointCloud2.h>
+#include "nav2_costmap_2d/costmap_2d.hpp"
+#include "geometry_msgs/msg/polygon.h"
+#include "geometry_msgs/msg/pose_stamped.hpp"
+//#include <livox_ros_driver/CustomMsg.h>
+#include "map_msgs/msg/occupancy_grid_update.hpp"
+// #include "pcl_ros/point_cloud.hpp"
+// #include <pcl/point_cloud.h>
+// #include <pcl/point_types.h>
+#include "sensor_msgs/msg/image.hpp"
+#include "sensor_msgs/msg/point_cloud2.hpp"
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf2_ros/static_transform_broadcaster.h>
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/transform_listener.h>
 
-#include "messages_88/Emergency.h"
-#include "messages_88/ExploreAction.h"
-#include "messages_88/InitDroneState.h"
-#include "messages_88/Geopoint.h"
-#include "messages_88/GetPosition.h"
-#include "messages_88/PrepareDrone.h"
-#include "messages_88/PrepareExplore.h"
-#include "messages_88/NavToPointAction.h"
-#include "messages_88/Save.h"
-#include "messages_88/TaskStatus.h"
-#include "task_manager/flight_controller_interface.h"
-#include "task_manager/hello_decco_manager.h"
 
-#include <task_manager/json.hpp>
+#include "messages_88/action/explore.hpp"
+#include "messages_88/action/nav_to_point.hpp"
+#include "messages_88/msg/task_status.h"
+#include "messages_88/srv/emergency.hpp"
+#include "messages_88/srv/init_drone_state.hpp"
+#include "messages_88/srv/geopoint.hpp"
+#include "messages_88/srv/get_position.hpp"
+#include "messages_88/srv/prepare_drone.hpp"
+#include "messages_88/srv/prepare_explore.hpp"
+#include "messages_88/srv/save.hpp"
+#include "flight_controller_interface.h"
+#include "hello_decco_manager.h"
+
+#include "json.hpp"
 using json = nlohmann::json;
 
 namespace task_manager {

@@ -1,54 +1,41 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.5)
 project(task_manager)
 
-## Find catkin macros and libraries
-find_package(catkin REQUIRED COMPONENTS
-  actionlib
-  actionlib_msgs
-  bag_recorder
-  geometry_msgs
-  livox_ros_driver
-  mavros
-  mavros_msgs
-  messages_88
-  pcl_ros
-  roscpp
-  roslib
-  sensor_msgs
-  std_msgs
-  tf2
-  tf2_geometry_msgs
-  tf2_ros
-)
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+
+find_package(rclcpp_action)
+# find_package(actionlib_msgs)
+#find_package(bag_recorder)
+find_package(geometry_msgs)
+#find_package(livox_ros_driver)
+find_package(mavros)
+find_package(mavros_msgs)
+find_package(messages_88)
+find_package(pcl_ros)
+find_package(sensor_msgs)
+find_package(std_msgs)
+find_package(tf2)
+find_package(tf2_geometry_msgs)
+find_package(tf2_ros)
 
 find_package(GeographicLib REQUIRED)
 find_package(PCL REQUIRED)
 
-###################################
-## catkin specific configuration ##
-###################################
-catkin_package(
-  CATKIN_DEPENDS
-    geometry_msgs
-    sensor_msgs
-    std_msgs
+include_directories(
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
 )
-
-###########
-## Build ##
-###########
-# c++11 support required
-include(CheckCXXCompilerFlag)
-check_cxx_compiler_flag("-std=c++14" COMPILER_SUPPORTS_CXX14)
-if(COMPILER_SUPPORTS_CXX14)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
-else()
-  message(FATAL_ERROR "The compiler ${CMAKE_CXX_COMPILER} has no C++114support. Please use a different C++ compiler.")
-endif()
 
 ## Specify additional locations of header files
 include_directories(
-  ${catkin_INCLUDE_DIRS}
   ${GeographicLib_INCLUDE_DIRS}
 	${PCL_INCLUDE_DIRS}
   include
@@ -61,89 +48,74 @@ add_executable(task_manager
   src/task_manager.cpp
   src/task_manager_node.cpp
 )
-#add_dependencies(monarch ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
-#add_dependencies(monarch)
+ament_target_dependencies(task_manager
+  rclcpp
+  messages_88
+  std_msgs)
+
+install(TARGETS
+  task_manager
+  DESTINATION lib/${PROJECT_NAME})
 
 target_link_libraries(task_manager 
-  ${catkin_LIBRARIES}
   ${GeographicLib_LIBRARIES}
 	${PCL_LIBRARY_DIRS}
 )
 
 #############
-## Install ##
-#############
-
-# install nodes
-install(TARGETS task_manager
-  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-)
-
-# install roslaunch files
-install(DIRECTORY launch/
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
-)
-
-#############
 ## Testing ##
 #############
-if(CATKIN_ENABLE_TESTING)
-  find_package(roslaunch REQUIRED)
-
-  add_executable(test_services test/test_services.cpp)
-  target_link_libraries(test_services ${catkin_LIBRARIES})
-
-  # test all launch files
-  roslaunch_add_file_check(launch)
-
-  find_package(rostest REQUIRED)
-
-  add_rostest_gtest(tests_task_manager
-    launch/test/tests_task_manager.launch 
-    src/decco_utilities.cpp
-    src/task_manager.cpp
-    src/hello_decco_manager.cpp
-    src/flight_controller_interface.cpp
-    test/task_manager_test.cpp
-  )
-  target_link_libraries(tests_task_manager 
-    ${catkin_LIBRARIES}
-    ${GeographicLib_LIBRARIES}
-  )
-
-  add_rostest_gtest(tests_flight_controller_interface
-    launch/test/tests_flight_controller_interface.launch
-    src/flight_controller_interface.cpp 
-    test/flight_controller_interface_test.cpp
-  )
-  target_link_libraries(tests_flight_controller_interface 
-    ${catkin_LIBRARIES}
-    ${GeographicLib_LIBRARIES}
-  )
-
-  add_rostest_gtest(tests_hellodecco
-    launch/test/tests_hellodecco.launch
-    src/decco_utilities.cpp
-    src/hello_decco_manager.cpp 
-    test/hellodecco_test.cpp
-  )
-  target_link_libraries(tests_hellodecco 
-    ${catkin_LIBRARIES}
-    ${GeographicLib_LIBRARIES}
-  )
-
-  add_rostest_gtest(tests_decco_utilities
-    launch/test/tests_decco_utilities.launch
-    src/decco_utilities.cpp
-    test/decco_utilities_test.cpp
-  )
-  target_link_libraries(tests_decco_utilities 
-    ${catkin_LIBRARIES}
-    ${GeographicLib_LIBRARIES}
-  )
-
+if(BUILD_TESTING)
   
+  find_package(ament_cmake_gtest REQUIRED)
+
+  # ament_add_gtest(${PROJECT_NAME}_test_services test/test_services.cpp)
+  # target_include_directories(${PROJECT_NAME}_test_services PUBLIC
+  #   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  #   $<INSTALL_INTERFACE:include>
+  # )
+  
+
+  # ament_add_gtest(tests_task_manager
+  #   launch/test/tests_task_manager.launch 
+  #   src/decco_utilities.cpp
+  #   src/task_manager.cpp
+  #   src/hello_decco_manager.cpp
+  #   src/flight_controller_interface.cpp
+  #   test/task_manager_test.cpp
+  # )
+  # target_link_libraries(tests_task_manager task_manager)
+
+
+  # add_rostest_gtest(tests_task_manager
+  #   launch/test/tests_task_manager.launch 
+  #   src/decco_utilities.cpp
+  #   src/task_manager.cpp
+  #   src/hello_decco_manager.cpp
+  #   src/flight_controller_interface.cpp
+  #   test/task_manager_test.cpp
+  # )
+
+  # add_rostest_gtest(tests_flight_controller_interface
+  #   launch/test/tests_flight_controller_interface.launch
+  #   src/flight_controller_interface.cpp 
+  #   test/flight_controller_interface_test.cpp
+  # )
+
+  # add_rostest_gtest(tests_hellodecco
+  #   launch/test/tests_hellodecco.launch
+  #   src/decco_utilities.cpp
+  #   src/hello_decco_manager.cpp 
+  #   test/hellodecco_test.cpp
+  # )
+
+  # add_rostest_gtest(tests_decco_utilities
+  #   launch/test/tests_decco_utilities.launch
+  #   src/decco_utilities.cpp
+  #   test/decco_utilities_test.cpp
+  # )
+
 endif()
+  
+ament_package()

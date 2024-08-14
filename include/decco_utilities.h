@@ -6,8 +6,8 @@ Author: Gus Meyer <gus@robotics88.com>
 #ifndef DECCO_UTILITIES_H_
 #define DECCO_UTILITIES_H_
 
-#include <ros/ros.h>
-#include <geometry_msgs/Polygon.h>
+#include "rclcpp/rclcpp.hpp"
+#include "geometry_msgs/msg/polygon.hpp"
 
 #include <GeographicLib/GeoCoords.hpp>
 

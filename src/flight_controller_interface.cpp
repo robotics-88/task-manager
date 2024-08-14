@@ -4,24 +4,24 @@ Author: Erin Linebarger <erin@robotics88.com>
 */
 
 #include "task_manager/flight_controller_interface.h"
-#include "messages_88/ExploreAction.h"
-#include "messages_88/Battery.h"
+#include "messages_88/action/explore.hpp"
+#include "messages_88/msg/battery.hpp"
 
-#include <mavros_msgs/MessageInterval.h>
-#include <mavros_msgs/ParamSet.h>
-#include <mavros_msgs/StreamRate.h>
-#include <mavros_msgs/WaypointClear.h>
+//#include <mavros_msgs/MessageInterval.h>
+#include "mavros_msgs/srv/param_set.hpp"
+#include "mavros_msgs/srv/stream_rate.hpp"
+#include "mavros_msgs/srv/waypoint_clear.hpp"
 
-#include <geometry_msgs/PolygonStamped.h>
-#include <geometry_msgs/PoseStamped.h>
-#include <visualization_msgs/Marker.h>
+#include "geometry_msgs/msg/polygon_stamped.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
+#include "visualization_msgs/msg/marker.hpp"
 
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>  
-#include <float.h>
 
-#include <mavconn/interface.h>
+//#include "mavros/libmavconn/include/mavconn/interface.hpp"
+
 namespace flight_controller_interface
 {
 FlightControllerInterface::FlightControllerInterface(ros::NodeHandle& node)

@@ -6,15 +6,15 @@ Author: Erin Linebarger <erin@robotics88.com>
 #ifndef HELLO_DECCO_MANAGER_H_
 #define HELLO_DECCO_MANAGER_H_
 
-#include <ros/ros.h>
+#include "rclcpp/rclcpp.hpp"
 
-#include <geometry_msgs/Point.h>
-#include <geometry_msgs/PointStamped.h>
-#include <geometry_msgs/Polygon.h>
-#include <std_msgs/String.h>
+#include <geometry_msgs/msg/point.hpp>
+#include <geometry_msgs/msg/point_stamped.hpp>
+#include <geometry_msgs/msg/polygon.hpp>
+#include <sensor_msgs/msg/nav_sat_fix.hpp>
+#include <std_msgs/msg/string.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf2_ros/transform_listener.h>
-#include <sensor_msgs/NavSatFix.h>
 
 #include <ConcavePolygon.h>
 #include <CentroidSplitter.h>

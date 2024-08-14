@@ -6,7 +6,7 @@
 #include <map>
 #include <iostream>
 
-#include <geometry_msgs/Polygon.h>
+#include <geometry_msgs/msg/polygon.hpp>
 
 namespace centroid_splitter
 {

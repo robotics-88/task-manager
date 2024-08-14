@@ -6,33 +6,31 @@ Author: Erin Linebarger <erin@robotics88.com>
 #ifndef FLIGHT_CONTROLLER_INTERFACE_H_
 #define FLIGHT_CONTROLLER_INTERFACE_H_
 
-#include <ros/ros.h>
+#include "rclcpp/rclcpp.hpp"
+#include "rclcpp_action/rclcpp_action.hpp"
 
 #include <map>
 #include <deque>
 
-#include <actionlib/client/terminal_state.h>
-#include <geometry_msgs/Polygon.h>
-#include <geometry_msgs/PoseStamped.h>
-#include <mavros_msgs/CommandBool.h>
-#include <mavros_msgs/CommandTOL.h>
-#include <mavros_msgs/HomePosition.h>
-#include <mavros_msgs/SetMode.h>
-#include <mavros_msgs/State.h>
-#include <mavros_msgs/StatusText.h>
-#include <mavros_msgs/SysStatus.h>
-#include <sensor_msgs/BatteryState.h>
-#include <sensor_msgs/Imu.h>
-#include <sensor_msgs/NavSatFix.h>
-#include <std_msgs/Float64.h>
-#include <std_msgs/String.h>
+#include "geometry_msgs/msg/polygon.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
+#include "mavros_msgs/srv/command_bool.hpp"
+#include "mavros_msgs/srv/command_tol.hpp"
+#include "mavros_msgs/msg/home_position.hpp"
+#include "mavros_msgs/srv/set_mode.hpp"
+#include "mavros_msgs/msg/state.hpp"
+#include "mavros_msgs/msg/status_text.hpp"
+#include "messages_88/action/explore.hpp"
+#include "messages_88/action/nav_to_point.hpp"
+#include "sensor_msgs/msg/battery_state.hpp"
+#include "sensor_msgs/msg/imu.hpp"
+#include "sensor_msgs/msg/nav_sat_fix.hpp"
+#include "std_msgs/msg/float64.hpp"
+#include "std_msgs/msg/string.hpp"
 
 #include <GeographicLib/GeoCoords.hpp>
 #include <GeographicLib/Geodesic.hpp>
 #include <GeographicLib/UTMUPS.hpp>
-
-#include "messages_88/ExploreAction.h"
-#include "messages_88/NavToPointAction.h"
 
 namespace flight_controller_interface {
 /**

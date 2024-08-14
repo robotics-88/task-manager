@@ -9,20 +9,27 @@
   <author email="erin@robotics88.com">Erin Linebarger</author>
   <maintainer email="erin@robotics88.com">Erin Linebarger</maintainer>
 
-  <buildtool_depend>catkin</buildtool_depend>
+  <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <depend>actionlib</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>nav2_costmap_2d</depend>
   <depend>geometry_msgs</depend>
   <depend>mavros</depend>
   <depend>messages_88</depend>
   <depend>pcl_ros</depend>
-  <depend>roscpp</depend>
-  <depend>roslib</depend>
   <depend>std_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>tf2</depend>
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
 
-  <test_depend>roslaunch</test_depend>
+  <exec_depend>ros2launch</exec_depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+
 </package>

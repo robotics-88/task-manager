@@ -4,7 +4,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 */
 
 #include "task_manager/task_manager.h"
-#include "bag_recorder/Rosbag.h"
+//#include "bag_recorder/Rosbag.h"
 
 #include <boost/date_time/local_time/local_time.hpp>
 #include <boost/filesystem.hpp>
@@ -12,19 +12,20 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>  
 #include <float.h>
-#include <geometry_msgs/Twist.h>
-#include <ros/package.h>
 
-#include <decco_utilities.h>
 
-#include <mavros_msgs/BasicID.h>
+#include "geometry_msgs/msg/twist.hpp"
+
+#include "decco_utilities.h"
+
+/* #include <mavros_msgs/BasicID.h>
 #include <mavros_msgs/OperatorID.h>
 #include <mavros_msgs/SelfID.h>
 #include <mavros_msgs/System.h>
-#include <mavros_msgs/SystemUpdate.h>
+#include <mavros_msgs/SystemUpdate.h> */
 
-#include <pcl_ros/point_cloud.h>
-#include <pcl_ros/transforms.h>
+// #include <pcl_ros/point_cloud.h>
+// #include <pcl_ros/transforms.h>
 
 inline static bool operator==(const geometry_msgs::Point& one,
                               const geometry_msgs::Point& two)

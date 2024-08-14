@@ -5,11 +5,11 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 #include "task_manager/hello_decco_manager.h"
 
-#include <mavros_msgs/CommandCode.h>
-#include <mavros_msgs/WaypointPush.h>
-#include <visualization_msgs/Marker.h>
+#include "mavros_msgs/msg/command_code.hpp"
+#include "mavros_msgs/srv/waypoint_push.hpp"
+#include "visualization_msgs/msg/marker.hpp"
 
-#include <decco_utilities.h>
+#include "decco_utilities.h"
 
 #include <GeographicLib/Constants.hpp>
 #include <GeographicLib/GeoCoords.hpp>
