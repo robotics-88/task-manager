@@ -50,9 +50,12 @@ add_executable(task_manager
 )
 
 ament_target_dependencies(task_manager
-  rclcpp
   messages_88
-  std_msgs)
+  pcl_ros
+  rclcpp
+  std_msgs
+  
+)
 
 install(TARGETS
   task_manager
@@ -60,7 +63,7 @@ install(TARGETS
 
 target_link_libraries(task_manager 
   ${GeographicLib_LIBRARIES}
-	${PCL_LIBRARY_DIRS}
+	${PCL_LIBRARIES}
 )
 
 #############

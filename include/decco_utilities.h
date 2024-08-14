@@ -21,7 +21,7 @@ namespace decco_utilities
         double dist_z = point_b.z - point_a.z;
 
         return sqrt(dist_x * dist_x + dist_y * dist_y + dist_z * dist_z);
-    };
+    }
 
     template<typename T>
     double distance_xy(const T point_a, const T point_b) {
@@ -29,7 +29,7 @@ namespace decco_utilities
         double dist_y = point_b.y - point_a.y;
 
         return sqrt(dist_x * dist_x + dist_y * dist_y);
-    };
+    }
 
     // Determines if line segment between point_a and point_b has an orthogonal line segment that intersects the "origin" point
     template<typename T>
@@ -78,7 +78,7 @@ namespace decco_utilities
     }
 
     template<typename T>
-    bool isInside(const geometry_msgs::Polygon polygon, const T point)
+    bool isInside(const geometry_msgs::msg::Polygon polygon, const T point)
     {
         // Determine if the given point is inside the polygon using the number of crossings method
         // https://wrf.ecse.rpi.edu//Research/Short_Notes/pnpoly.html
@@ -100,7 +100,7 @@ namespace decco_utilities
         return cross % 2 > 0;
     }
 
-    unsigned long rosTimeToMilliseconds(const ros::Time ros_time);
+    unsigned long rosTimeToMilliseconds(const rclcpp::Time ros_time);
     
     void llToUtm(const double lat, const double lon, int &zone, double &utm_x, double &utm_y);
     void utmToLL(const double utm_x, const double utm_y, const int zone, double &lat, double &lon);

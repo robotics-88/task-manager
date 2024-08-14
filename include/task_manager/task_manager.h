@@ -14,9 +14,9 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "geometry_msgs/msg/pose_stamped.hpp"
 //#include <livox_ros_driver/CustomMsg.h>
 #include "map_msgs/msg/occupancy_grid_update.hpp"
-// #include "pcl_ros/point_cloud.hpp"
-// #include <pcl/point_cloud.h>
-// #include <pcl/point_types.h>
+//#include "pcl_ros/point_cloud.hpp"
+#include "pcl/point_cloud.h"
+#include "pcl/point_types.h"
 #include "sensor_msgs/msg/image.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>

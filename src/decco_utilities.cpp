@@ -7,8 +7,8 @@ Author: Erin Linebarger <erin@robotics88.com> , Gus Meyer <gus@robotics88.com>
 
 namespace decco_utilities {
 
-unsigned long rosTimeToMilliseconds(const ros::Time ros_time) {
-    return std::round(ros_time.toNSec() * 1E-6);
+unsigned long rosTimeToMilliseconds(const rclcpp::Time ros_time) {
+    return std::round(ros_time.nanoseconds() * 1E-6);
 }
 
 void llToUtm(const double lat, const double lon, int &zone, double &utm_x, double &utm_y) {
