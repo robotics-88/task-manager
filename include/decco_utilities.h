@@ -55,7 +55,7 @@ namespace decco_utilities
         // Solving for t, we find equation
         double numerator = x1 * x1 - x1*x2 + y1 * y1 - y1*y2;
         double denomenator = (x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2);
-        if (abs(denomenator) <= DBL_EPSILON) {
+        if (abs(denomenator) <= __DBL_EPSILON__) {
             return false;
         }
 

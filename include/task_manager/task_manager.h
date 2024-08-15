@@ -12,7 +12,8 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "nav2_costmap_2d/costmap_2d.hpp"
 #include "geometry_msgs/msg/polygon.h"
 #include "geometry_msgs/msg/pose_stamped.hpp"
-//#include <livox_ros_driver/CustomMsg.h>
+#include "livox_ros_driver2/msg/custom_msg.hpp"
+
 #include "map_msgs/msg/occupancy_grid_update.hpp"
 //#include "pcl_ros/point_cloud.hpp"
 #include "pcl/point_cloud.h"
@@ -46,9 +47,12 @@ namespace task_manager {
  * @class TaskManager
  * @brief The TaskManager manages the task queue (e.g., navigate to polygon, explore, handle emergency). Handles comms to/from UI, including task assignment, starting capabilities, and safety features based on drone status.
  */
-class TaskManager {
-
+class TaskManager : public rclcpp::Node
+{
     public:
+
+        explicit TaskManager(const rclcpp::NodeOptions & options_ = rclcpp::NodeOptions());
+        ~TaskManager() = default;
 
         enum Task
         {
@@ -80,40 +84,34 @@ class TaskManager {
             HIGH
         };
 
-        TaskManager(ros::NodeHandle& node);
-        ~TaskManager();
-
         void runTaskManager();
 
         Task getCurrentTask();
 
         // Timer callbacks
         void uiHeartbeatCallback(const json &msg);
-        void heartbeatTimerCallback(const ros::TimerEvent&);
-        void odidTimerCallback(const ros::TimerEvent &);
+        void heartbeatTimerCallback();
+        void odidTimerCallback();
 
         // Subscriber callbacks
-        void slamPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose);
-        void registeredPclCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
-        void pathPlannerCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
-        void costmapCallback(const map_msgs::OccupancyGridUpdate::ConstPtr &msg);
-        void pointcloudCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
-        void livoxCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg);
-        void mapirCallback(const sensor_msgs::ImageConstPtr &msg);
-        void attolloCallback(const sensor_msgs::ImageConstPtr &msg);
-        void thermalCallback(const sensor_msgs::ImageConstPtr &msg);
-        void rosbagCallback(const std_msgs::StringConstPtr &msg);
-        void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
-        void mapYawCallback(const std_msgs::Float64::ConstPtr &msg);
+        void slamPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr slam_pose) const;
+        void registeredPclCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) const;
+        void pathPlannerCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) const;
+        void costmapCallback(const map_msgs::msg::OccupancyGridUpdate::SharedPtr msg) const;
+        void pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) const;
+        void livoxCallback(const livox_ros_driver::msg::CustomMsg::::SharedPtr msg) const;
+        void mapirCallback(const sensor_msgs::msg::Image::SharedPtr msg) const;
+        void attolloCallback(const sensor_msgs::msg::Image::SharedPtr msg) const;
+        void thermalCallback(const sensor_msgs::msg::Image::SharedPtr msg) const;
+        void rosbagCallback(const std_msgs::msg::String::SharedPtr msg) const;
+        void goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg) const;
+        void mapYawCallback(const std_msgs::msg::Float64::SharedPtr msg) const;
 
     private:
-        ros::NodeHandle private_nh_;
-        ros::NodeHandle nh_;
+        rclcpp::TimerBase::SharedPtr task_manager_timer_;
+        rclcpp::TimerBase::SharedPtr health_check_timer_;
 
-        ros::Timer task_manager_timer_;
-        ros::Timer health_check_timer_;
-
-        ros::Duration task_manager_loop_duration_;
+        rclcpp::Duration task_manager_loop_duration_;
 
         struct HealthChecks
         {
@@ -130,14 +128,14 @@ class TaskManager {
         } health_checks_;
 
         // Timeouts and subscribers for health checks
-        ros::Subscriber path_planner_sub_;
-        ros::Subscriber costmap_sub_;
-        ros::Subscriber lidar_sub_;
-        ros::Subscriber mapir_sub_;
-        ros::Subscriber attollo_sub_;
-        ros::Subscriber rosbag_sub_;
-        ros::Subscriber thermal_sub_;
-        ros::Publisher health_pub_;
+        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr path_planner_sub_;
+        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr costmap_sub_;
+        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr lidar_sub_;
+        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapir_sub_;
+        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr attollo_sub_;
+        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr rosbag_sub_;
+        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr thermal_sub_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr health_pub_;
         std::string path_planner_topic_;
         std::string costmap_topic_;
         std::string lidar_topic_;
@@ -147,29 +145,29 @@ class TaskManager {
         std::string thermal_topic_;
         std::string rosbag_topic_;
 
-        ros::Duration lidar_timeout_;
-        ros::Duration slam_timeout_;
-        ros::Duration path_timeout_;
-        ros::Duration costmap_timeout_;
-        ros::Duration explore_timeout_;
-        ros::Duration mapir_timeout_;
-        ros::Duration attollo_timeout_;
-        ros::Duration thermal_timeout_;
-        ros::Duration rosbag_timeout_;
-        ros::Time last_lidar_stamp_;
-        ros::Time last_slam_pos_stamp_;
-        ros::Time last_path_planner_stamp_;
-        ros::Time last_costmap_stamp_;
-        ros::Time last_mapir_stamp_;
-        ros::Time last_thermal_stamp_;
-        ros::Time last_attollo_stamp_;
-        ros::Time last_rosbag_stamp_;
+        rclcpp::Duration lidar_timeout_;
+        rclcpp::Duration slam_timeout_;
+        rclcpp::Duration path_timeout_;
+        rclcpp::Duration costmap_timeout_;
+        rclcpp::Duration explore_timeout_;
+        rclcpp::Duration mapir_timeout_;
+        rclcpp::Duration attollo_timeout_;
+        rclcpp::Duration thermal_timeout_;
+        rclcpp::Duration rosbag_timeout_;
+        rclcpp::Time last_lidar_stamp_;
+        rclcpp::Time last_slam_pos_stamp_;
+        rclcpp::Time last_path_planner_stamp_;
+        rclcpp::Time last_costmap_stamp_;
+        rclcpp::Time last_mapir_stamp_;
+        rclcpp::Time last_thermal_stamp_;
+        rclcpp::Time last_attollo_stamp_;
+        rclcpp::Time last_rosbag_stamp_;
 
-        ros::Timer health_pub_timer_;
-        ros::Duration health_check_pub_duration_;
-        ros::Time last_health_pub_stamp_;
+        rclcpp::TimerBase::SharedPtr health_pub_timer_;
+        rclcpp::Duration health_check_pub_duration_;
+        rclcpp::Time last_health_pub_stamp_;
 
-        ros::Time last_preflight_check_log_stamp_;
+        rclcpp::Time last_preflight_check_log_stamp_;
 
         // Flags to control various behavior
         bool simulate_;
@@ -184,8 +182,8 @@ class TaskManager {
 
         // Offline handling
         bool offline_;
-        ros::Publisher map_yaw_pub_;
-        ros::Subscriber map_yaw_sub_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr map_yaw_pub_;
+        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr map_yaw_sub_;
         
         // UTM PCD saving
         bool save_pcd_;
@@ -194,7 +192,7 @@ class TaskManager {
 
         // Hello Decco comms
         hello_decco_manager::HelloDeccoManager hello_decco_manager_;
-        ros::Subscriber tymbal_sub_;
+        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr tymbal_sub_;
 
         // Control defaults
         float target_altitude_;
@@ -215,77 +213,77 @@ class TaskManager {
         std::string mavros_map_frame_;
         std::string mavros_base_frame_;
         std::string slam_map_frame_;
-        geometry_msgs::TransformStamped map_to_slam_tf_;
-        ros::Subscriber slam_pose_sub_;
-        ros::Publisher vision_pose_publisher_;
+        geometry_msgs::msg::TransformStamped map_to_slam_tf_;
+        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr slam_pose_sub_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr vision_pose_publisher_;
 
-        ros::Timer map_tf_timer_;
+        rclcpp::TimerBase::SharedPtr map_tf_timer_;
         std::string slam_pose_topic_;
         double lidar_pitch_;
         double lidar_x_;
         double lidar_z_;
 
         // PCL republisher
-        ros::Subscriber registered_cloud_sub_;
-        ros::Publisher pointcloud_repub_;
-        geometry_msgs::TransformStamped slam_to_map_tf_;
+        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr registered_cloud_sub_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pointcloud_repub_;
+        geometry_msgs::msg::TransformStamped slam_to_map_tf_;
 
         // Drone state and services
         flight_controller_interface::FlightControllerInterface flight_controller_interface_;
-        ros::ServiceServer geopoint_service_;
+        rclcpp::Service<messages_88::srv::Geopoint>::SharedPtr geopoint_service_;
 
         // Heartbeat
-        ros::Time last_ui_heartbeat_stamp_;
+        rclcpp::Time last_ui_heartbeat_stamp_;
         float ui_hb_threshold_;
-        ros::Timer heartbeat_timer_;
+        rclcpp::TimerBase::SharedPtr heartbeat_timer_;
 
         // Record
         bool do_record_;
         bool bag_active_;
         std::string record_config_name_;
-        ros::Publisher start_record_pub_;
-        ros::Publisher stop_record_pub_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr start_record_pub_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr stop_record_pub_;
 
         // Drone state params
-        geometry_msgs::PoseStamped slam_pose_;
-        geometry_msgs::PoseStamped home_pos_;
-        geometry_msgs::Polygon map_polygon_;
-        geometry_msgs::PoseStamped initial_transit_point_;
-        ros::Timer mode_monitor_timer_;
+        geometry_msgs::msg::PoseStamped slam_pose_;
+        geometry_msgs::msg::PoseStamped home_pos_;
+        geometry_msgs::msg::Polygon map_polygon_;
+        geometry_msgs::msg::PoseStamped initial_transit_point_;
+        rclcpp::TimerBase::SharedPtr mode_monitor_timer_;
         std::string cmd_history_;
-        messages_88::TaskStatus task_msg_;
-        ros::Publisher task_pub_;
-        // ros::Publisher task_json_pub_;
-        geometry_msgs::PoseStamped goal_;
-        ros::Subscriber goal_sub_;
+        messages_88::msg::TaskStatus task_msg_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr task_pub_;
+        // rclcpp::Publisher<std_msgs::msg::String>::SharedPtr task_json_pub_;
+        geometry_msgs::msg::PoseStamped goal_;
+        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr goal_sub_;
         double estimated_drone_speed_;
         double battery_failsafe_safety_factor_;
         bool needs_takeoff_;
         int takeoff_attempts_;
 
-        actionlib::SimpleActionClient<messages_88::ExploreAction> explore_action_client_;
+        rclcpp_action::SimpleActionClient<messages_88::ExploreAction> explore_action_client_;
 
         // State
         bool is_armed_;
         bool in_autonomous_flight_;
 
-        ros::Publisher local_pos_pub_;
-        ros::Publisher local_vel_pub_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr local_pos_pub_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr local_vel_pub_;
 
         // Remote ID
-        ros::Publisher odid_basic_id_pub_;
-        ros::Publisher odid_operator_id_pub_;
-        ros::Publisher odid_self_id_pub_;
-        ros::Publisher odid_system_pub_;
-        ros::Publisher odid_system_update_pub_;
-        ros::Timer odid_timer_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr odid_basic_id_pub_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr odid_operator_id_pub_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr odid_self_id_pub_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr odid_system_pub_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr odid_system_update_pub_;
+        rclcpp::TimerBase::SharedPtr odid_timer_;
         bool init_remote_id_message_sent_;
         int last_rid_updated_timestamp_;
         std::string operator_id_;
 
         // Goal details
-        geometry_msgs::Point current_target_;
-        messages_88::ExploreGoal current_explore_goal_;
+        geometry_msgs::msg::Point current_target_;
+        messages_88::msg::Frontier current_explore_goal_;
 
         // Mavros modes
         std::string land_mode_;
@@ -294,17 +292,17 @@ class TaskManager {
         std::string rtl_mode_;
 
         Task current_task_;
-        ros::Timer status_timer_;
+        rclcpp::TimerBase::SharedPtr status_timer_;
 
         // Explicit UTM param handling
         bool explicit_global_params_;
-        ros::Publisher global_pose_pub_;
-        geometry_msgs::TransformStamped utm2map_tf_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr global_pose_pub_;
+        geometry_msgs::msg::TransformStamped utm2map_tf_;
         double home_lat_;
         double home_lon_;
 
         // Burn unit handling
-        ros::Subscriber burn_unit_sub_;
+        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr burn_unit_sub_;
         int current_index_;
         std::string burn_dir_prefix_;
         std::string burn_dir_;
@@ -328,13 +326,13 @@ class TaskManager {
         bool pauseOperations();
         void startBag();
         void stopBag();
-        bool polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region);
-        void padNavTarget(geometry_msgs::PoseStamped &target);
+        bool polygonDistanceOk(geometry_msgs::msg::PoseStamped &target, geometry_msgs::msg::Polygon &map_region);
+        void padNavTarget(geometry_msgs::msg::PoseStamped &target);
         std::string getTaskString(Task task);
         std::string getEventTypeString(EventType type);
         std::string getSeverityString(Severity sev);
         void initFlightControllerInterface();
-        bool convert2Geo(messages_88::Geopoint::Request& req, messages_88::Geopoint::Response& resp);
+        bool convert2Geo(messages_88::srv::Geopoint::Request& req, messages_88::srv::Geopoint::Response& resp);
         void logEvent(EventType type, Severity sev, std::string description);
 
 
@@ -346,7 +344,7 @@ class TaskManager {
         void publishHealth();
         json makeTaskJson();
         void acceptFlight(json flight);
-        void packageFromTymbal(const std_msgs::String::ConstPtr &msg);
+        void packageFromTymbal(const std_msgs::msg::String::SharedPtr msg);
 
 };
 

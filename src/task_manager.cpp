@@ -4,7 +4,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 */
 
 #include "task_manager/task_manager.h"
-//#include "bag_recorder/Rosbag.h"
 
 #include <boost/date_time/local_time/local_time.hpp>
 #include <boost/filesystem.hpp>
@@ -16,6 +15,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 #include "geometry_msgs/msg/twist.hpp"
 
+//#include "bag_recorder/msg/rosbag.hpp"
 #include "decco_utilities.h"
 
 /* #include <mavros_msgs/BasicID.h>
@@ -27,8 +27,10 @@ Author: Erin Linebarger <erin@robotics88.com>
 // #include <pcl_ros/point_cloud.h>
 // #include <pcl_ros/transforms.h>
 
-inline static bool operator==(const geometry_msgs::Point& one,
-                              const geometry_msgs::Point& two)
+using std::placeholders::_1;
+
+inline static bool operator==(const geometry_msgs::msg::Point& one,
+                              const geometry_msgs::msg::Point& two)
 {
   double dx = one.x - two.x;
   double dy = one.y - two.y;
@@ -101,128 +103,128 @@ TaskManager::TaskManager(ros::NodeHandle& node)
     , thermal_timeout_(1.0)
     , rosbag_timeout_(1.0)
 {
-    private_nh_.param<bool>("enable_autonomy", enable_autonomy_, enable_autonomy_);
-    private_nh_.param<bool>("use_failsafes", use_failsafes_, use_failsafes_);
-    private_nh_.param<float>("default_alt", target_altitude_, target_altitude_);
-    private_nh_.param<float>("min_alt", min_altitude_, min_altitude_);
-    private_nh_.param<float>("max_alt", max_altitude_, max_altitude_);
-    private_nh_.param<double>("max_dist_to_polygon", max_dist_to_polygon_, max_dist_to_polygon_);
+    this->declare_parameter("enable_autonomy", enable_autonomy_);
+    this->declare_parameter("use_failsafes", use_failsafes_);
+    this->declare_parameter("default_alt", target_altitude_);
+    this->declare_parameter("min_alt", min_altitude_);
+    this->declare_parameter("max_alt", max_altitude_);
+    this->declare_parameter("max_dist_to_polygon", max_dist_to_polygon_);
 
     std::string goal_topic = "/mavros/setpoint_position/local";
-    private_nh_.param<std::string>("goal_topic", goal_topic, goal_topic);
-    private_nh_.param<bool>("do_slam", do_slam_, do_slam_);
-    private_nh_.param<bool>("do_record", do_record_, do_record_);
-    private_nh_.param<std::string>("mavros_map_frame", mavros_map_frame_, mavros_map_frame_);
-    private_nh_.param<std::string>("base_frame", mavros_base_frame_, mavros_base_frame_);
-    private_nh_.param<std::string>("slam_map_frame", slam_map_frame_, slam_map_frame_);
-    private_nh_.param<std::string>("path_planner_topic", path_planner_topic_, path_planner_topic_);
-    private_nh_.param<std::string>("slam_pose_topic", slam_pose_topic_, slam_pose_topic_);
-    private_nh_.param<std::string>("costmap_topic", costmap_topic_, costmap_topic_);
-    private_nh_.param<std::string>("lidar_topic", lidar_topic_, lidar_topic_);
-    private_nh_.param<std::string>("attollo_topic", attollo_topic_, attollo_topic_);
-    private_nh_.param<std::string>("mapir_topic", mapir_topic_, mapir_topic_);
-    private_nh_.param<std::string>("mapir_rgb_topic", mapir_rgb_topic_, mapir_rgb_topic_);
-    private_nh_.param<std::string>("thermal_topic", thermal_topic_, thermal_topic_);
-    private_nh_.param<std::string>("rosbag_topic", rosbag_topic_, rosbag_topic_);
-    private_nh_.param<bool>("offline", offline_, offline_);
-    private_nh_.param<bool>("save_pcd", save_pcd_, save_pcd_);
-    private_nh_.param<bool>("simulate", simulate_, simulate_);
-    private_nh_.param<std::string>("data_directory", burn_dir_prefix_, burn_dir_prefix_);
-    private_nh_.param<bool>("explicit_global", explicit_global_params_, explicit_global_params_);
-    private_nh_.param<double>("estimated_drone_speed", estimated_drone_speed_, estimated_drone_speed_);
+    this->declare_parameter("goal_topic", goal_topic);
+    this->declare_parameter("do_slam", do_slam_);
+    this->declare_parameter("do_record", do_record_);
+    this->declare_parameter("mavros_map_frame", mavros_map_frame_);
+    this->declare_parameter("base_frame", mavros_base_frame_);
+    this->declare_parameter("slam_map_frame", slam_map_frame_);
+    this->declare_parameter("path_planner_topic", path_planner_topic_);
+    this->declare_parameter("slam_pose_topic", slam_pose_topic_);
+    this->declare_parameter("costmap_topic", costmap_topic_);
+    this->declare_parameter("lidar_topic", lidar_topic_);
+    this->declare_parameter("attollo_topic", attollo_topic_);
+    this->declare_parameter("mapir_topic", mapir_topic_);
+    this->declare_parameter("mapir_rgb_topic", mapir_rgb_topic_);
+    this->declare_parameter("thermal_topic", thermal_topic_);
+    this->declare_parameter("rosbag_topic", rosbag_topic_);
+    this->declare_parameter("offline", offline_);
+    this->declare_parameter("save_pcd", save_pcd_);
+    this->declare_parameter("simulate", simulate_);
+    this->declare_parameter("data_directory", burn_dir_prefix_);
+    this->declare_parameter("explicit_global", explicit_global_params_);
+    this->declare_parameter("estimated_drone_speed", estimated_drone_speed_);
     estimated_drone_speed_ = estimated_drone_speed_ < 1 ? 1.0 : estimated_drone_speed_; // This protects against a later potential div by 0
-    private_nh_.param<double>("battery_failsafe_safety_factor", battery_failsafe_safety_factor_, battery_failsafe_safety_factor_);
-    private_nh_.param<bool>("do_slam", do_slam_, do_slam_);
-    private_nh_.param<bool>("do_mapir", do_mapir_, do_mapir_);
-    private_nh_.param<bool>("do_mapir_rgb", do_mapir_rgb_, do_mapir_rgb_);
-    private_nh_.param<bool>("do_attollo", do_attollo_, do_attollo_);
-    private_nh_.param<bool>("do_thermal_cam", do_thermal_, do_thermal_);
+    this->declare_parameter("battery_failsafe_safety_factor", battery_failsafe_safety_factor_);
+    this->declare_parameter("do_slam", do_slam_);
+    this->declare_parameter("do_mapir", do_mapir_);
+    this->declare_parameter("do_mapir_rgb", do_mapir_rgb_);
+    this->declare_parameter("do_attollo", do_attollo_);
+    this->declare_parameter("do_thermal_cam", do_thermal_);
     int lidar_type;
-    private_nh_.param<int>("lidar_type", lidar_type, lidar_type);
-    private_nh_.param<double>("lidar_pitch", lidar_pitch_, lidar_pitch_);
-    private_nh_.param<double>("lidar_x", lidar_x_, lidar_x_);
-    private_nh_.param<double>("lidar_z", lidar_z_, lidar_z_);
+    this->declare_parameter("lidar_type", lidar_type);
+    this->declare_parameter("lidar_pitch", lidar_pitch_);
+    this->declare_parameter("lidar_x", lidar_x_);
+    this->declare_parameter("lidar_z", lidar_z_);
 
     // SLAM pose sub
-    slam_pose_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>(slam_pose_topic_, 10, &TaskManager::slamPoseCallback, this);
+    slam_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(slam_pose_topic_, 10, std::bind(&TaskManager::slamPoseCallback, this, _1));
 
     // Health pubs/subs
-    health_pub_ = nh_.advertise<std_msgs::String>("/mapversation/health_report", 10);
+    health_pub_ = this->create_publisher<std_msgs::msg::String>("/mapversation/health_report", 10);
     if (do_slam_) {
-        path_planner_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(path_planner_topic_, 10, &TaskManager::pathPlannerCallback, this);
+        path_planner_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(path_planner_topic_, 10, std::bind(&TaskManager::pathPlannerCallback, this, _1));
         // Pointcloud republisher only if SLAM running
-        pointcloud_repub_ = nh_.advertise<sensor_msgs::PointCloud2>("/cloud_registered_map", 10);
-        registered_cloud_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>("/cloud_registered", 10, &TaskManager::registeredPclCallback, this);
+        pointcloud_repub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered_map", 10);
+        registered_cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered", 10, std::bind(&TaskManager::registeredPclCallback, this, _1));
     }
-    costmap_sub_ = nh_.subscribe<map_msgs::OccupancyGridUpdate>(costmap_topic_, 10, &TaskManager::costmapCallback, this);
+    costmap_sub_ = this->create_subscription<map_msgs::msg::OccupancyGridUpdate>(costmap_topic_, 10, std::bind(&TaskManager::costmapCallback, this, _1));
     if (lidar_type == 2) {
-        lidar_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(lidar_topic_, 10, &TaskManager::pointcloudCallback, this);
+        lidar_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(lidar_topic_, 10, std::bind(&TaskManager::pointcloudCallback, this, _1));
     }
     else if (lidar_type == 4) {
-        lidar_sub_ = nh_.subscribe<livox_ros_driver::CustomMsg>(lidar_topic_, 10, &TaskManager::livoxCallback, this);
+        lidar_sub_ = this->create_subscription<livox_ros_driver::CustomMsg>(lidar_topic_, 10, std::bind(&TaskManager::livoxCallback, this, _1));
     }
     if (do_mapir_) {
-        mapir_sub_ = nh_.subscribe<sensor_msgs::Image>(mapir_topic_, 10, &TaskManager::mapirCallback, this);
+        mapir_sub_ = this->create_subscription<sensor_msgs::msg::Image>(mapir_topic_, 10, std::bind(&TaskManager::mapirCallback, this, _1));
     }
     else if (do_mapir_rgb_) {
-        mapir_sub_ = nh_.subscribe<sensor_msgs::Image>(mapir_rgb_topic_, 10, &TaskManager::mapirCallback, this);
+        mapir_sub_ = this->create_subscription<sensor_msgs::msg::Image>(mapir_rgb_topic_, 10, std::bind(&TaskManager::mapirCallback, this, _1));
     }
     if (do_attollo_) {
-        attollo_sub_ = nh_.subscribe<sensor_msgs::Image>(attollo_topic_, 10, &TaskManager::attolloCallback, this);
+        attollo_sub_ = this->create_subscription<sensor_msgs::msg::Image>(attollo_topic_, 10, std::bind(&TaskManager::attolloCallback, this, _1));
     }
     if (do_thermal_) {
-        thermal_sub_ = nh_.subscribe<sensor_msgs::Image>(thermal_topic_, 10, &TaskManager::thermalCallback, this);
+        thermal_sub_ = this->create_subscription<sensor_msgs::msg::Image>(thermal_topic_, 10, std::bind(&TaskManager::thermalCallback, this, _1));
     }
-    rosbag_sub_ = nh_.subscribe<std_msgs::String>(rosbag_topic_, 10, &TaskManager::rosbagCallback, this);
+    rosbag_sub_ = this->create_subscription<std_msgs::msg::String>(rosbag_topic_, 10, std::bind(&TaskManager::rosbagCallback, this, _1));
 
     // Geo/map state services
     geopoint_service_ = nh_.advertiseService("/slam2geo", &TaskManager::convert2Geo, this);
 
     // MAVROS
-    local_pos_pub_ = nh_.advertise<geometry_msgs::PoseStamped>(goal_topic, 10);
-    local_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("/mavros/setpoint_velocity/cmd_vel_unstamped", 10);
-    vision_pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("/mavros/vision_pose/pose", 10);
+    local_pos_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(goal_topic, 10);
+    local_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/mavros/setpoint_velocity/cmd_vel_unstamped", 10);
+    vision_pose_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/vision_pose/pose", 10);
 
     // Remote ID
-    odid_basic_id_pub_ = nh_.advertise<mavros_msgs::BasicID>("/mavros/open_drone_id/basic_id", 10);
-    odid_operator_id_pub_ = nh_.advertise<mavros_msgs::OperatorID>("/mavros/open_drone_id/operator_id", 10);
-    odid_self_id_pub_ = nh_.advertise<mavros_msgs::SelfID>("/mavros/open_drone_id/self_id", 10);
-    odid_system_pub_ = nh_.advertise<mavros_msgs::System>("/mavros/open_drone_id/system", 10);
-    odid_system_update_pub_ = nh_.advertise<mavros_msgs::SystemUpdate>("/mavros/open_drone_id/system_update", 10);
-    odid_timer_ = nh_.createTimer(ros::Duration(1.0), &TaskManager::odidTimerCallback, this);
+    odid_basic_id_pub_ = this->create_publisher<mavros_msgs::msg::BasicID>("/mavros/open_drone_id/basic_id", 10);
+    odid_operator_id_pub_ = this->create_publisher<mavros_msgs::msg::OperatorID>("/mavros/open_drone_id/operator_id", 10);
+    odid_self_id_pub_ = this->create_publisher<mavros_msgs::msg::SelfID>("/mavros/open_drone_id/self_id", 10);
+    odid_system_pub_ = this->create_publisher<mavros_msgs::msg::System>("/mavros/open_drone_id/system", 10);
+    odid_system_update_pub_ = this->create_publisher<mavros_msgs::msg::SystemUpdate>("/mavros/open_drone_id/system_update", 10);
+    odid_timer_ = this->create_wall_timer(ros::Duration(1.0), &TaskManager::odidTimerCallback, this);
 
     // Heartbeat timer
     int heartbeat_hz = 1;
-    heartbeat_timer_ = nh_.createTimer(ros::Duration(1.0 / heartbeat_hz), &TaskManager::heartbeatTimerCallback, this);
+    heartbeat_timer_ = this->create_wall_timer(ros::Duration(1.0 / heartbeat_hz), &TaskManager::heartbeatTimerCallback, this);
 
     // Recording
-    start_record_pub_ = nh_.advertise<bag_recorder::Rosbag>("/record/start", 5);
-    stop_record_pub_ = nh_.advertise<std_msgs::String>("/record/stop", 5);
+    start_record_pub_ = this->create_publisher<bag_recorder::msg::Rosbag>("/record/start", 5);
+    stop_record_pub_ = this->create_publisher<std_msgs::msg::String>("/record/stop", 5);
     if (offline_) {
-        map_yaw_sub_ = nh_.subscribe<std_msgs::Float64>("map_yaw", 10, &TaskManager::mapYawCallback, this);
+        map_yaw_sub_ = this->create_subscription<std_msgs::msg::Float64>("map_yaw", 10, std::bind(&TaskManager::mapYawCallback, this, _1));
         if (save_pcd_) {
             pcl_save_ .reset(new pcl::PointCloud<pcl::PointXYZI>());
         }
     }
     else {
-        map_yaw_pub_ = nh_.advertise<std_msgs::Float64>("map_yaw", 5, true);
+        map_yaw_pub_ = this->create_publisher<std_msgs::msg::Float64>("map_yaw", 5, true);
     }
 
     // Task status pub
-    task_pub_ = nh_.advertise<messages_88::TaskStatus>("task_status", 10);
-    goal_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>(goal_topic, 10, &TaskManager::goalCallback, this);
+    task_pub_ = this->create_publisher<messages_88::msg::TaskStatus>("task_status", 10);
+    goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(goal_topic, 10, std::bind(&TaskManager::goalCallback, this, _1));
     task_msg_.enable_autonomy = false;
     task_msg_.enable_exploration = false;
 
     // tymbal subscriber
-    tymbal_sub_ = nh_.subscribe<std_msgs::String>("/tymbal/to_decco", 10, &TaskManager::packageFromTymbal, this);
+    tymbal_sub_ = this->create_subscription<std_msgs::msg::String>("/tymbal/to_decco", 10, std::bind(&TaskManager::packageFromTymbal, this, _1));
 
     initFlightControllerInterface();
 
-    health_check_timer_ = private_nh_.createTimer(ros::Duration(0.1),
+    health_check_timer_ = private_this->create_wall_timer(ros::Duration(0.1),
                                [this](const ros::TimerEvent&) { checkHealth(); });
 
-    task_manager_timer_ = private_nh_.createTimer(task_manager_loop_duration_,
+    task_manager_timer_ = private_this->create_wall_timer(task_manager_loop_duration_,
                                [this](const ros::TimerEvent&) { runTaskManager(); });
 }
 
@@ -451,7 +453,7 @@ void TaskManager::startExploration() {
     explore_action_client_.waitForServer();
 
     // Start with a rotation command in case no frontiers immediately processed, will be overridden with first exploration goal
-    geometry_msgs::Twist vel;
+    geometry_msgs::msg::Twist vel;
     vel.angular.x = 0;
     vel.angular.y = 0;
     vel.angular.z = M_PI_2; // PI/2 rad/s
@@ -601,13 +603,13 @@ bool TaskManager::initialized() {
         yaw = -yaw + 90.0;
         // Convert to radians
         map_yaw_ = yaw * M_PI / 180.0;
-        std_msgs::Float64 yaw_msg;
+        std_msgs::msg::Float64 yaw_msg;
         yaw_msg.data = map_yaw_;
         map_yaw_pub_.publish(yaw_msg);
     }
 
     // Get roll, pitch for map stabilization
-    geometry_msgs::Quaternion init_orientation;
+    geometry_msgs::msg::Quaternion init_orientation;
     ros::Rate r(0.5);
     logEvent(EventType::INFO, Severity::LOW, "Initializing IMU");
     while (!flight_controller_interface_.getAveragedOrientation(init_orientation)) {
@@ -617,7 +619,7 @@ bool TaskManager::initialized() {
     tf2::Matrix3x3 m(quatmav);
     double roll, pitch, yaw;
     m.getRPY(roll, pitch, yaw);
-    ROS_INFO("Roll: %f, Pitch: %f, Yaw, %f", roll * 180 / M_PI, pitch * 180 / M_PI, yaw * 180 / M_PI);
+    RCLCPP_INFO(this->get_logger(), "Roll: %f, Pitch: %f, Yaw, %f", roll * 180 / M_PI, pitch * 180 / M_PI, yaw * 180 / M_PI);
     map_yaw_ = yaw;
 
     // If using tilted lidar, add the lidar pitch to the map to slam tf, since
@@ -643,7 +645,7 @@ bool TaskManager::initialized() {
     quat_tf.setRPY(roll, pitch, map_yaw_); // TODO, get rid of map_yaw_? It's the same as IMU yaw. Also confirm IMU is ok and not being affected by param setup on launch
     quat_tf.normalize();
 
-    geometry_msgs::Quaternion quat;
+    geometry_msgs::msg::Quaternion quat;
     tf2::convert(quat_tf, quat);
     map_to_slam_tf_.transform.rotation = quat;
 
@@ -651,7 +653,7 @@ bool TaskManager::initialized() {
     tf2::Transform map2, slam2;
     tf2::convert(map_to_slam_tf_.transform, map2);
     slam2 = map2.inverse();
-    geometry_msgs::Transform slam2_tf;
+    geometry_msgs::msg::Transform slam2_tf;
     tf2::convert(slam2, slam2_tf);
     slam_to_map_tf_.header.frame_id = slam_map_frame_;
     slam_to_map_tf_.header.stamp = map_to_slam_tf_.header.stamp;
@@ -665,18 +667,18 @@ bool TaskManager::initialized() {
     map_tf_init_ = true;
 
     logEvent(EventType::INFO, Severity::LOW, "Waiting for global position");
-    ros::topic::waitForMessage<sensor_msgs::NavSatFix>("/mavros/global_position/global", nh_);
+    ros::topic::waitForMessage<sensor_msgs::msg::NavSatFix>("/mavros/global_position/global", nh_);
     while (home_utm_zone_ < 0) {
         home_utm_zone_ = flight_controller_interface_.getUTMZone();
         ros::spinOnce();
         ros::Duration(0.2).sleep();
     }
-    ROS_INFO("Got global, UTM zone: %d. LL : (%f, %f)", home_utm_zone_, flight_controller_interface_.getCurrentGlobalPosition().latitude, flight_controller_interface_.getCurrentGlobalPosition().longitude);
+    RCLCPP_INFO(this->get_logger(), "Got global, UTM zone: %d. LL : (%f, %f)", home_utm_zone_, flight_controller_interface_.getCurrentGlobalPosition().latitude, flight_controller_interface_.getCurrentGlobalPosition().longitude);
     double utm_x, utm_y;
     flight_controller_interface_.initUTM(utm_x, utm_y);
     hello_decco_manager_.setUtm(utm_x, utm_y, home_utm_zone_);
-    ROS_INFO("UTM offsets: (%f, %f)", utm_x, utm_y);
-    ROS_INFO("Map yaw: %f", map_yaw_ * 180 / M_PI);
+    RCLCPP_INFO(this->get_logger(), "UTM offsets: (%f, %f)", utm_x, utm_y);
+    RCLCPP_INFO(this->get_logger(), "Map yaw: %f", map_yaw_ * 180 / M_PI);
     utm2map_tf_.header.frame_id = "utm";
     utm2map_tf_.header.stamp = ros::Time::now();
     utm2map_tf_.child_frame_id = mavros_map_frame_;
@@ -703,7 +705,7 @@ bool TaskManager::convert2Geo(messages_88::Geopoint::Request& req, messages_88::
         return false;
         // TODO decide what to do about it
     }
-    geometry_msgs::PointStamped in, out;
+    geometry_msgs::msg::PointStamped in, out;
     in.header.frame_id = slam_map_frame_;
     in.header.stamp = ros::Time(0);
     in.point.x = req.slam_position.x;
@@ -720,10 +722,10 @@ bool TaskManager::convert2Geo(messages_88::Geopoint::Request& req, messages_88::
 }
 
 void TaskManager::heartbeatTimerCallback(const ros::TimerEvent&) {
-    sensor_msgs::NavSatFix hb = flight_controller_interface_.getCurrentGlobalPosition();
-    geometry_msgs::PoseStamped local = flight_controller_interface_.getCurrentLocalPosition();
+    sensor_msgs::msg::NavSatFix hb = flight_controller_interface_.getCurrentGlobalPosition();
+    geometry_msgs::msg::PoseStamped local = flight_controller_interface_.getCurrentLocalPosition();
     double altitudeAgl = flight_controller_interface_.getAltitudeAGL();
-    geometry_msgs::Quaternion quat_flu = local.pose.orientation;
+    geometry_msgs::msg::Quaternion quat_flu = local.pose.orientation;
     double yaw = flight_controller_interface_.getCompass();
     json j = {
         {"latitude", hb.latitude},
@@ -751,14 +753,14 @@ void TaskManager::heartbeatTimerCallback(const ros::TimerEvent&) {
 void TaskManager::odidTimerCallback(const ros::TimerEvent&) {
 
     // Self ID
-    mavros_msgs::SelfID self_id;
+    mavros_msgs::msg::SelfID self_id;
     self_id.header.stamp = ros::Time::now();
     if (current_task_ == Task::FAILSAFE_LANDING) {
-        self_id.description_type = mavros_msgs::SelfID::MAV_ODID_DESC_TYPE_EMERGENCY;
+        self_id.description_type = mavros_msgs::msg::SelfID::MAV_ODID_DESC_TYPE_EMERGENCY;
         self_id.description = "FAILSAFE. CAUTION";
     }
     else {
-        self_id.description_type = mavros_msgs::SelfID::MAV_ODID_DESC_TYPE_TEXT;
+        self_id.description_type = mavros_msgs::msg::SelfID::MAV_ODID_DESC_TYPE_TEXT;
         self_id.description = getTaskString(current_task_);
     }
     odid_self_id_pub_.publish(self_id);
@@ -809,7 +811,7 @@ void TaskManager::checkArmStatus() {
 }
 
 bool TaskManager::isBatteryOk() {
-    geometry_msgs::Point location = flight_controller_interface_.getCurrentLocalPosition().pose.position;
+    geometry_msgs::msg::Point location = flight_controller_interface_.getCurrentLocalPosition().pose.position;
     double distance = sqrt(location.x * location.x + location.y * location.y);
     double time_to_home = distance / estimated_drone_speed_;
     double flight_time_remaining = flight_controller_interface_.getFlightTimeRemaining();
@@ -836,13 +838,13 @@ void TaskManager::stopBag() {
         return;
     }
     logEvent(EventType::INFO, Severity::LOW, "Stopping bag");
-    std_msgs::String stop_msg;
+    std_msgs::msg::String stop_msg;
     stop_msg.data = record_config_name_;
     stop_record_pub_.publish(stop_msg);
     bag_active_ = false;
 }
 
-bool TaskManager::polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry_msgs::Polygon &map_region) {
+bool TaskManager::polygonDistanceOk(geometry_msgs::msg::PoseStamped &target, geometry_msgs::msg::Polygon &map_region) {
 
     if (decco_utilities::isInside(map_polygon_, flight_controller_interface_.getCurrentSlamPosition().pose.position))
         return true;
@@ -859,7 +861,7 @@ bool TaskManager::polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry
         }
     }
     // Find line intersection with each segment connecting to closest point
-    geometry_msgs::Point32 point1, point2, closest_point = map_region.points.at(closest_point_ind);
+    geometry_msgs::msg::Point32 point1, point2, closest_point = map_region.points.at(closest_point_ind);
     int ind1, ind2;
     if (closest_point_ind == 0) {
         ind1 = map_region.points.size() - 1;
@@ -878,20 +880,20 @@ bool TaskManager::polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry
 
     // Compute intersections
 
-    geometry_msgs::Point drone_location_64 = flight_controller_interface_.getCurrentSlamPosition().pose.position;
-    geometry_msgs::Point32 drone_location;
+    geometry_msgs::msg::Point drone_location_64 = flight_controller_interface_.getCurrentSlamPosition().pose.position;
+    geometry_msgs::msg::Point32 drone_location;
     drone_location.x = drone_location_64.x;
     drone_location.y = drone_location_64.y;
     
-    geometry_msgs::Point32 intersection_point_1;
+    geometry_msgs::msg::Point32 intersection_point_1;
     bool intersection1 = decco_utilities::intersectsOrthogonal(closest_point, point1, drone_location, intersection_point_1);
     double dist1 = decco_utilities::distance_xy(drone_location, intersection_point_1);
 
-    geometry_msgs::Point32 intersection_point_2;
+    geometry_msgs::msg::Point32 intersection_point_2;
     bool intersection2 = decco_utilities::intersectsOrthogonal(closest_point, point2, drone_location, intersection_point_2);
     double dist2 = decco_utilities::distance_xy(drone_location, intersection_point_2);
 
-    geometry_msgs::Point target_position;
+    geometry_msgs::msg::Point target_position;
     if (intersection1 && intersection2) {
 
         if (dist1 < dist2) {
@@ -931,10 +933,10 @@ bool TaskManager::polygonDistanceOk(geometry_msgs::PoseStamped &target, geometry
     return true;
 }
 
-void TaskManager::padNavTarget(geometry_msgs::PoseStamped &target) {
+void TaskManager::padNavTarget(geometry_msgs::msg::PoseStamped &target) {
     // Add 2m to ensure fully inside polygon, otherwise exploration won't start
     float padding = 2.0;
-    geometry_msgs::Point my_position = flight_controller_interface_.getCurrentLocalPosition().pose.position;
+    geometry_msgs::msg::Point my_position = flight_controller_interface_.getCurrentLocalPosition().pose.position;
     double dif_x = target.pose.position.x - my_position.x;
     double dif_y = target.pose.position.y - my_position.y;
     double norm = sqrt(std::pow(dif_x, 2) + std::pow(dif_y, 2));
@@ -983,7 +985,7 @@ std::string TaskManager::getSeverityString(Severity sev) {
     }
 }
 
-void TaskManager::slamPoseCallback(const geometry_msgs::PoseStampedConstPtr &slam_pose) {
+void TaskManager::slamPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr slam_pose) {
 
     slam_pose_ = *slam_pose;
 
@@ -992,7 +994,7 @@ void TaskManager::slamPoseCallback(const geometry_msgs::PoseStampedConstPtr &sla
         return;
     }
 
-    geometry_msgs::TransformStamped tf;
+    geometry_msgs::msg::TransformStamped tf;
     try {
         tf = tf_buffer_.lookupTransform(mavros_map_frame_, slam_map_frame_, ros::Time(0));
     } catch (tf2::TransformException & ex) {
@@ -1001,8 +1003,8 @@ void TaskManager::slamPoseCallback(const geometry_msgs::PoseStampedConstPtr &sla
     }
 
     // Apply the transform to the drone pose
-    geometry_msgs::PoseStamped msg_body_pose;
-    geometry_msgs::PoseStamped slam = *slam_pose;
+    geometry_msgs::msg::PoseStamped msg_body_pose;
+    geometry_msgs::msg::PoseStamped slam = *slam_pose;
 
     tf2::doTransform(slam, msg_body_pose, tf);
     msg_body_pose.header.frame_id = mavros_map_frame_;
@@ -1014,7 +1016,7 @@ void TaskManager::slamPoseCallback(const geometry_msgs::PoseStampedConstPtr &sla
 
     // Map tf for offline
     if (explicit_global_params_) {
-        geometry_msgs::PointStamped point_in, point_out;
+        geometry_msgs::msg::PointStamped point_in, point_out;
         point_in.header = slam_pose->header;
         point_in.point.x = 0;
         point_in.point.y = 0;
@@ -1022,7 +1024,7 @@ void TaskManager::slamPoseCallback(const geometry_msgs::PoseStampedConstPtr &sla
         tf2::doTransform(point_in, point_out, utm2map_tf_);
         double lat, lon;
         decco_utilities::utmToLL(point_out.point.x, point_out.point.y, home_utm_zone_, lat, lon);
-        sensor_msgs::NavSatFix nav_msg;
+        sensor_msgs::msg::NavSatFix nav_msg;
         nav_msg.header.frame_id = mavros_base_frame_;
         nav_msg.header.stamp = slam_pose->header.stamp;
         nav_msg.latitude = lat;
@@ -1032,7 +1034,7 @@ void TaskManager::slamPoseCallback(const geometry_msgs::PoseStampedConstPtr &sla
     }
 }
 
-void TaskManager::registeredPclCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
+void TaskManager::registeredPclCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
     if (!map_tf_init_) {
         return;
     }
@@ -1042,7 +1044,7 @@ void TaskManager::registeredPclCallback(const sensor_msgs::PointCloud2ConstPtr &
 
     pcl_ros::transformPointCloud(*reg_cloud, *map_cloud, map_to_slam_tf_.transform);
 
-    sensor_msgs::PointCloud2 map_cloud_ros;
+    sensor_msgs::msg::PointCloud2 map_cloud_ros;
     pcl::toROSMsg(*map_cloud, map_cloud_ros);
     map_cloud_ros.header.frame_id = mavros_map_frame_;
     pointcloud_repub_.publish(map_cloud_ros);
@@ -1058,48 +1060,48 @@ void TaskManager::registeredPclCallback(const sensor_msgs::PointCloud2ConstPtr &
     }
 }
 
-void TaskManager::pathPlannerCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
+void TaskManager::pathPlannerCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
     last_path_planner_stamp_ = msg->header.stamp;
 }
 
-void TaskManager::costmapCallback(const map_msgs::OccupancyGridUpdate::ConstPtr &msg) {
+void TaskManager::costmapCallback(const map_msgs::msg::OccupancyGridUpdate::::SharedPtr msg) {
     last_costmap_stamp_ = msg->header.stamp;
 }
 
-void TaskManager::pointcloudCallback(const sensor_msgs::PointCloud2ConstPtr &msg) {
+void TaskManager::pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
     last_lidar_stamp_ =  msg->header.stamp;
 }
 
-void TaskManager::livoxCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg) {
+void TaskManager::livoxCallback(const livox_ros_driver::CustomMsg::::SharedPtr msg) {
     last_lidar_stamp_ =  msg->header.stamp;
 }
 
-void TaskManager::mapirCallback(const sensor_msgs::ImageConstPtr &msg) {
+void TaskManager::mapirCallback(const sensor_msgs::msg::Image::SharedPtr msg) {
     last_mapir_stamp_ = msg->header.stamp;
 }
 
-void TaskManager::attolloCallback(const sensor_msgs::ImageConstPtr &msg) {
+void TaskManager::attolloCallback(const sensor_msgs::msg::Image::SharedPtr msg) {
     last_attollo_stamp_ = msg->header.stamp;
 }
 
-void TaskManager::thermalCallback(const sensor_msgs::ImageConstPtr &msg) {
+void TaskManager::thermalCallback(const sensor_msgs::msg::Image::SharedPtr msg) {
     last_thermal_stamp_ = msg->header.stamp;
 }
 
-void TaskManager::rosbagCallback(const std_msgs::StringConstPtr &msg) {
+void TaskManager::rosbagCallback(const std_msgs::msg::String::SharedPtr msg) {
     last_rosbag_stamp_ = ros::Time::now();
 }
 
-void TaskManager::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
+void TaskManager::goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
     goal_ = *msg;
 }
 
-void TaskManager::mapYawCallback(const std_msgs::Float64::ConstPtr &msg) {
+void TaskManager::mapYawCallback(const std_msgs::msg::Float64::SharedPtr msg) {
     map_yaw_ = msg->data;
-    ROS_INFO("Got map yaw: %f", map_yaw_ * 180 / M_PI);
+    RCLCPP_INFO(this->get_logger(), "Got map yaw: %f", map_yaw_ * 180 / M_PI);
 }
 
-void TaskManager::packageFromTymbal(const std_msgs::String::ConstPtr &msg) {
+void TaskManager::packageFromTymbal(const std_msgs::msg::String::SharedPtr msg) {
     json mapver_json = json::parse(msg->data);
     std::string topic = mapver_json["topic"];
     json gossip_json = mapver_json["gossip"];
@@ -1178,7 +1180,7 @@ void TaskManager::altitudesResponse(json &json_msg) {
     if (!json_msg["max_altitude"].is_number() || 
         !json_msg["min_altitude"].is_number() || 
         !json_msg["default_altitude"].is_number()) {
-        ROS_WARN("Altitude message from mapversation contains invalid data");
+        RCLCPP_WARN(this->get_logger(), "Altitude message from mapversation contains invalid data");
         return;
     }
 
@@ -1212,27 +1214,27 @@ void TaskManager::remoteIDResponse(json &json) {
     
     if (!init_remote_id_message_sent_) {
         // Basic ID
-        mavros_msgs::BasicID basic_id;
+        mavros_msgs::msg::BasicID basic_id;
         basic_id.header.stamp = ros::Time::now();
-        basic_id.id_type = mavros_msgs::BasicID::MAV_ODID_ID_TYPE_CAA_REGISTRATION_ID;
-        basic_id.ua_type = mavros_msgs::BasicID::MAV_ODID_UA_TYPE_HELICOPTER_OR_MULTIROTOR;
+        basic_id.id_type = mavros_msgs::msg::BasicID::MAV_ODID_ID_TYPE_CAA_REGISTRATION_ID;
+        basic_id.ua_type = mavros_msgs::msg::BasicID::MAV_ODID_UA_TYPE_HELICOPTER_OR_MULTIROTOR;
         basic_id.uas_id = uas_id_str;
         odid_basic_id_pub_.publish(basic_id);
 
         // Operator ID
-        mavros_msgs::OperatorID operator_id;
+        mavros_msgs::msg::OperatorID operator_id;
         operator_id.header.stamp = ros::Time::now();
-        operator_id.operator_id_type = mavros_msgs::OperatorID::MAV_ODID_OPERATOR_ID_TYPE_CAA;
+        operator_id.operator_id_type = mavros_msgs::msg::OperatorID::MAV_ODID_OPERATOR_ID_TYPE_CAA;
         operator_id.operator_id = operator_id_str;
         odid_operator_id_pub_.publish(operator_id);
         operator_id_ = operator_id_str;
 
         // System
         // This should probably just be published at startup, and System Update published here
-        mavros_msgs::System system;
+        mavros_msgs::msg::System system;
         system.header.stamp = ros::Time::now();
-        system.operator_location_type = mavros_msgs::System::MAV_ODID_OPERATOR_LOCATION_TYPE_TAKEOFF; // TODO dynamic operator location
-        system.classification_type = mavros_msgs::System::MAV_ODID_CLASSIFICATION_TYPE_UNDECLARED;
+        system.operator_location_type = mavros_msgs::msg::System::MAV_ODID_OPERATOR_LOCATION_TYPE_TAKEOFF; // TODO dynamic operator location
+        system.classification_type = mavros_msgs::msg::System::MAV_ODID_CLASSIFICATION_TYPE_UNDECLARED;
         system.operator_latitude = operator_latitude * 1E7;
         system.operator_longitude = operator_longitude * 1E7;
         system.operator_altitude_geo = operator_altitude_geo;
@@ -1243,7 +1245,7 @@ void TaskManager::remoteIDResponse(json &json) {
     }
 
     // SystemUpdate
-    mavros_msgs::SystemUpdate system_update;
+    mavros_msgs::msg::SystemUpdate system_update;
     system_update.header.stamp = ros::Time::now();
     system_update.operator_latitude = operator_latitude * 1E7;
     system_update.operator_longitude = operator_longitude * 1E7;
@@ -1355,17 +1357,17 @@ void TaskManager::logEvent(EventType type, Severity sev, std::string description
     switch (sev) {
         case Severity::LOW:
         {
-            ROS_INFO("%s", description.c_str());
+            RCLCPP_INFO(this->get_logger(), "%s", description.c_str());
             break;
         }
         case Severity::MEDIUM:
         {
-            ROS_WARN("%s", description.c_str());
+            RCLCPP_WARN(this->get_logger(), "%s", description.c_str());
             break;
         }
         case Severity::HIGH:
         {
-            ROS_ERROR("%s", description.c_str());
+            RCLCPP_ERROR(this->get_logger(), "%s", description.c_str());
             break;
         }
     }
@@ -1383,7 +1385,7 @@ void TaskManager::logEvent(EventType type, Severity sev, std::string description
     hello_decco_manager_.packageToTymbalHD("event", j);
 
     if (in_autonomous_flight_) {
-        sensor_msgs::NavSatFix hb = flight_controller_interface_.getCurrentGlobalPosition();
+        sensor_msgs::msg::NavSatFix hb = flight_controller_interface_.getCurrentGlobalPosition();
         json ll_json = {
             {"latitude", hb.latitude},
             {"longitude", hb.longitude}

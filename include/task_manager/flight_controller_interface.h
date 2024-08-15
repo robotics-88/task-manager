@@ -22,6 +22,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "mavros_msgs/msg/status_text.hpp"
 #include "messages_88/action/explore.hpp"
 #include "messages_88/action/nav_to_point.hpp"
+#include "messages_88/srv/geopoint.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 #include "sensor_msgs/msg/nav_sat_fix.hpp"
@@ -37,18 +38,18 @@ namespace flight_controller_interface {
  * @class FlightControllerInterface
  * @brief Manages task and flight state of drone.
  */
-class FlightControllerInterface {
-
+class FlightControllerInterface : public rclcpp::Node
+{
     public:
-        FlightControllerInterface(ros::NodeHandle& node);
+        FlightControllerInterface();
         ~FlightControllerInterface();
 
         // State access methods
         void setAutonomyEnabled(bool enabled);
         
-        geometry_msgs::PoseStamped getCurrentSlamPosition() {return current_slam_pose_;}
-        geometry_msgs::PoseStamped getCurrentLocalPosition() {return current_pose_;}
-        sensor_msgs::NavSatFix getCurrentGlobalPosition() {return current_ll_;}
+        geometry_msgs::msg::PoseStamped getCurrentSlamPosition() {return current_slam_pose_;}
+        geometry_msgs::msg::PoseStamped getCurrentLocalPosition() {return current_pose_;}
+        sensor_msgs::msg::NavSatFix getCurrentGlobalPosition() {return current_ll_;}
         double getAltitudeAGL() {return current_altitude_;}
         int getUTMZone() {return detected_utm_zone_;}
         std::string getFlightMode() {return current_mode_;}
@@ -64,19 +65,19 @@ class FlightControllerInterface {
         std::string getPreflightCheckReasons() {return preflight_check_reasons_;}
 
         bool getMapYaw(double &yaw);
-        bool getAveragedOrientation(geometry_msgs::Quaternion &orientation);
+        bool getAveragedOrientation(geometry_msgs::msg::Quaternion &orientation);
 
         // Subscriber callbacks
-        void slamPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
-        void localPositionCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
-        void globalPositionCallback(const sensor_msgs::NavSatFix::ConstPtr &msg);
-        void altitudeCallback(const std_msgs::Float64::ConstPtr & msg);
-        void imuCallback(const sensor_msgs::Imu::ConstPtr &msg);
-        void compassCallback(const std_msgs::Float64::ConstPtr & msg);
-        void batteryCallback(const sensor_msgs::BatteryState::ConstPtr &msg);
-        void sysStatusCallback(const mavros_msgs::SysStatus::ConstPtr &msg);
-        void statusCallback(const mavros_msgs::State::ConstPtr & msg);
-        void statusTextCallback(const mavros_msgs::StatusText::ConstPtr & msg);
+        void slamPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
+        void localPositionCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
+        void globalPositionCallback(const sensor_msgs::msg::NavSatFix::SharedPtr msg);
+        void altitudeCallback(const std_msgs::msg::Float64::SharedPtr  msg);
+        void imuCallback(const sensor_msgs::msg::Imu::SharedPtr msg);
+        void compassCallback(const std_msgs::msg::Float64::SharedPtr  msg);
+        void batteryCallback(const sensor_msgs::msg::BatteryState::SharedPtr msg);
+        void sysStatusCallback(const mavros_msgs::msg::SysStatus::SharedPtr msg);
+        void statusCallback(const mavros_msgs::msg::State::SharedPtr  msg);
+        void statusTextCallback(const mavros_msgs::msg::StatusText::SharedPtr  msg);
 
         // Mavros state control
         bool setMode(std::string mode);
@@ -84,9 +85,9 @@ class FlightControllerInterface {
         bool takeOff();
 
         // safety/validity checking
-        void initializeDrone(const ros::TimerEvent &event);
+        void initializeDrone();
         void initUTM(double &utm_x, double &utm_y);
-        void checkMsgRates(const ros::TimerEvent &event);
+        void checkMsgRates();
         void requestMavlinkStreams();
 
         // Other methods
@@ -95,9 +96,6 @@ class FlightControllerInterface {
 
 
     private:
-
-        ros::NodeHandle private_nh_;
-        ros::NodeHandle nh_;
 
         bool offline_;
         bool simulate_;
@@ -108,28 +106,29 @@ class FlightControllerInterface {
 
         // Control defaults
         float target_altitude_;
-        ros::Publisher safety_area_viz_;
         bool ardupilot_;
         bool compass_received_;
 
-        // Mavros subscribers and topics
-        ros::Subscriber mavros_global_pos_subscriber_;
-        ros::Subscriber mavros_local_pos_subscriber_;
-        ros::Subscriber mavros_state_subscriber_;
-        ros::Subscriber mavros_alt_subscriber_;
-        ros::Subscriber mavros_home_subscriber_;
-        ros::Publisher local_pos_pub_;
-        ros::Subscriber mavros_imu_subscriber_;
-        ros::Subscriber mavros_compass_subscriber_;
-        ros::Subscriber mavros_battery_subscriber_;
-        ros::Subscriber slam_pose_subscriber_;
-        ros::Subscriber mavros_sys_status_subscriber_;
-        ros::Subscriber mavros_status_text_subscriber_;
+        // Subscribers
+        rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr mavros_global_pos_subscriber_;
+        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr mavros_local_pos_subscriber_;
+        rclcpp::Subscription<mavros_msgs::msg::State>::SharedPtr mavros_state_subscriber_;
+        rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr mavros_alt_subscriber_;
+        rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr mavros_imu_subscriber_;
+        rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr mavros_compass_subscriber_;
+        rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr mavros_battery_subscriber_;
+        rclcpp::Subscription<mavros_msgs::msg::SysStatus>::SharedPtr mavros_sys_status_subscriber_;
+        rclcpp::Subscription<mavros_msgs::msg::StatusText>::SharedPtr mavros_status_text_subscriber_;
+
+        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr slam_pose_subscriber_;
+
+        // Publishers
+        rclcpp::Publisher<messages_88::msg::Battery>::SharedPtr battery_pub_; // Publisher mostly for debug
 
         // Mavros service clients
-        ros::ServiceClient arming_client_;
-        ros::ServiceClient set_mode_client_;
-        ros::ServiceClient takeoff_client_;
+        rclcpp::Service<mavros_msgs::srv::CommandBool>::SharedPtr arming_client_;
+        rclcpp::Service<mavros_msgs::srv::SetMode>::SharedPtr set_mode_client_;
+        rclcpp::Service<mavros_msgs::srv::CommandTOL>::SharedPtr takeoff_client_;
 
         // Mavros modes
         std::string land_mode_;
@@ -138,11 +137,11 @@ class FlightControllerInterface {
         std::string rtl_mode_;
 
         // General private data
-        sensor_msgs::NavSatFix current_ll_;
-        geometry_msgs::PoseStamped current_pose_;
-        sensor_msgs::Imu current_imu_;
-        std::deque<sensor_msgs::Imu> imu_averaging_vec_;
-        sensor_msgs::Imu mavros_imu_init_;
+        sensor_msgs::msg::NavSatFix current_ll_;
+        geometry_msgs::msg::PoseStamped current_pose_;
+        sensor_msgs::msg::Imu current_imu_;
+        std::deque<sensor_msgs::msg::Imu> imu_averaging_vec_;
+        sensor_msgs::msg::Imu mavros_imu_init_;
         int imu_averaging_n_;
         float flight_time_remaining_;
         double home_compass_hdg_;
@@ -155,18 +154,18 @@ class FlightControllerInterface {
         bool armed_;
         bool in_air_;
         bool in_guided_mode_;
-        ros::Duration service_wait_duration_;
+        rclcpp::Duration service_wait_duration_;
         int detected_utm_zone_;
         bool utm_set_;
         std::string preflight_check_reasons_;
         std::string prearm_text_;
-        ros::Time last_prearm_text_;
+        rclcpp::TimerBase::SharedPtr last_prearm_text_;
 
         // Battery estimation stuff
-        sensor_msgs::BatteryState current_battery_;
+        sensor_msgs::msg::BatteryState current_battery_;
         float last_resting_percent_;
-        ros::Time last_resting_percent_time_;
-        ros::Time last_battery_measurement_;
+        rclcpp::TimerBase::SharedPtr last_resting_percent_time_;
+        rclcpp::TimerBase::SharedPtr last_battery_measurement_;
         float current_drawn_since_resting_percent_;
         std::vector<float> recent_currents_;
         float battery_percentage_;
@@ -174,15 +173,15 @@ class FlightControllerInterface {
         float battery_size_;
         float estimated_current_;
         float estimated_flight_time_remaining_;
-        ros::Publisher battery_pub_; // Publisher mostly for debug
+        
 
         // Slam pose
-        geometry_msgs::PoseStamped current_slam_pose_;
+        geometry_msgs::msg::PoseStamped current_slam_pose_;
 
         // Message rate check stuff
         float all_stream_rate_;
         float msg_rate_timer_dt_;
-        ros::Timer msg_rate_timer_;
+        rclcpp::TimerBase::SharedPtr msg_rate_timer_;
         float imu_rate_;
         int imu_count_;
         float local_pos_rate_;
@@ -199,7 +198,7 @@ class FlightControllerInterface {
         int check_msg_rates_counter_;
         int compass_wait_counter_;
         int attempts_;
-        ros::Timer drone_init_timer_;
+        rclcpp::TimerBase::SharedPtr drone_init_timer_;
         bool param_fetch_complete_;
         bool heading_src_ok_;
         bool stream_rates_ok_;

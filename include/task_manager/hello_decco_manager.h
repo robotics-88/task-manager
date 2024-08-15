@@ -8,18 +8,19 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 #include "rclcpp/rclcpp.hpp"
 
-#include <geometry_msgs/msg/point.hpp>
-#include <geometry_msgs/msg/point_stamped.hpp>
-#include <geometry_msgs/msg/polygon.hpp>
-#include <sensor_msgs/msg/nav_sat_fix.hpp>
-#include <std_msgs/msg/string.hpp>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
-#include <tf2_ros/transform_listener.h>
+#include "mavros_msgs/srv/waypoint_push.hpp"
+#include "geometry_msgs/msg/point.hpp"
+#include "geometry_msgs/msg/point_stamped.hpp"
+#include "geometry_msgs/msg/polygon.hpp"
+#include "sensor_msgs/msg/nav_sat_fix.hpp"
+#include "std_msgs/msg/string.hpp"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.h"
+#include "tf2_ros/transform_listener.h"
 
-#include <ConcavePolygon.h>
-#include <CentroidSplitter.h>
+#include "ConcavePolygon.h"
+#include "CentroidSplitter.h"
 
-#include <task_manager/json.hpp>
+#include "task_manager/json.hpp"
 using json = nlohmann::json;
 
 namespace hello_decco_manager {
@@ -27,10 +28,10 @@ namespace hello_decco_manager {
  * @class HelloDeccoManager
  * @brief Manages interactions with Hello Decco
  */
-class HelloDeccoManager {
-
+class HelloDeccoManager : public rclcpp::Node
+{
     public:
-        HelloDeccoManager(ros::NodeHandle& node);
+        HelloDeccoManager();
         ~HelloDeccoManager();
 
         void acceptFlight(json msgJson, int utm_zone, bool &geofence_ok);
@@ -40,16 +41,16 @@ class HelloDeccoManager {
             utm_y_offset_ = -utm_y;
             utm_zone_ = zone;
         }
-        geometry_msgs::Polygon polygonFromJson(json jsonPolygon);
-        geometry_msgs::Polygon polygonToMap(const geometry_msgs::Polygon &polygon);
+        geometry_msgs::msg::Polygon polygonFromJson(json jsonPolygon);
+        geometry_msgs::msg::Polygon polygonToMap(const geometry_msgs::msg::Polygon &polygon);
         void packageToTymbalHD(std::string topic, json gossip);
         void packageToTymbalPuddle(std::string topic, json gossip);
 
-        void setDroneLocationLocal(geometry_msgs::PoseStamped location) {
+        void setDroneLocationLocal(geometry_msgs::msg::PoseStamped location) {
             drone_location_ = location;
         }
 
-        geometry_msgs::Polygon getMapPolygon() { 
+        geometry_msgs::msg::Polygon getMapPolygon() { 
             return map_region_;
         }
 
@@ -66,9 +67,6 @@ class HelloDeccoManager {
             PUT
         };
 
-        ros::NodeHandle private_nh_;
-        ros::NodeHandle nh_;
-
         // Frames/TF
         std::string mavros_map_frame_;
         std::string slam_map_frame_;
@@ -77,32 +75,32 @@ class HelloDeccoManager {
         double utm_x_offset_;
         double utm_y_offset_;
         int utm_zone_;
-        geometry_msgs::PoseStamped drone_location_;
+        geometry_msgs::msg::PoseStamped drone_location_;
 
         // tymbal
-        ros::Publisher tymbal_hd_pub_;
-        ros::Publisher tymbal_puddle_pub_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr tymbal_hd_pub_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr tymbal_puddle_pub_;
 
         json flight_json_;
-        ros::Publisher map_region_pub_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr map_region_pub_;
         unsigned long start_time_;
         unsigned long end_time_;
 
         // MAVROS geofence publisher
-        ros::ServiceClient mavros_geofence_client_;
+        rclcpp::Client<mavros_msgs::srv::WaypointPush>::SharedPtr mavros_geofence_client_;
 
         // Subpolygon creation variables
         std::vector<cxd::Vertex > vertices_;
-        geometry_msgs::Polygon map_region_; // Entire unit
-        std::vector<geometry_msgs::Polygon> local_subpolygons_; // Flight units
+        geometry_msgs::msg::Polygon map_region_; // Entire unit
+        std::vector<geometry_msgs::msg::Polygon> local_subpolygons_; // Flight units
         double flightleg_area_m2_;
 
         void flightReceipt();
-        void polygonInitializer(const geometry_msgs::Polygon &msg, bool make_legs, bool &geofence_ok);
+        void polygonInitializer(const geometry_msgs::msg::Polygon &msg, bool make_legs, bool &geofence_ok);
 
         // Polygon mgmt
-        bool polygonToGeofence(const geometry_msgs::Polygon &polygon);
-        int polygonNumFlights(const geometry_msgs::Polygon &polygon);
+        bool polygonToGeofence(const geometry_msgs::msg::Polygon &polygon);
+        int polygonNumFlights(const geometry_msgs::msg::Polygon &polygon);
         int concaveToMinimalConvexPolygons();
         void visualizeLegs();
         void visualizePolygon();

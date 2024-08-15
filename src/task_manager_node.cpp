@@ -7,18 +7,15 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 int main(int argc, char** argv)
 {
-  ros::init(argc, argv, "task_manager");
-  if (ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME,
-                                     ros::console::levels::Info)) {
-    ros::console::notifyLoggerLevelsChanged();
-  }
+  rclcpp::init(argc, argv);
+  rclcpp::executors::MultiThreadedExecutor exec(rclcpp::ExecutorOptions(), 2);
 
-  ros::NodeHandle node;
-  task_manager::TaskManager task_manager(node);
+  rclcpp::NodeOptions options;
+  auto node = std::make_shared<task_manager::TaskManager>(options);
 
-  ros::AsyncSpinner spinner(3);
-  spinner.start();
-  ros::waitForShutdown();
+  exec.add_node(node);
 
+  exec.spin();
+  rclcpp::shutdown();
   return 0;
 }
