@@ -62,7 +62,7 @@ class FlightControllerInterface
         float getBatteryPercentage() {return battery_percentage_;}
         float getBatteryVoltage() {return battery_voltage_;}
         bool getDroneReadyToArm() {return ready_to_arm_;}
-        int getImuAveragingN() {return imu_averaging_n_;}
+        unsigned getImuAveragingN() {return imu_averaging_n_;}
         std::string getPreflightCheckReasons() {return preflight_check_reasons_;}
 
         bool getMapYaw(double &yaw);
@@ -76,7 +76,7 @@ class FlightControllerInterface
         void imuCallback(const sensor_msgs::msg::Imu::SharedPtr msg);
         void compassCallback(const std_msgs::msg::Float64::SharedPtr  msg);
         void batteryCallback(const sensor_msgs::msg::BatteryState::SharedPtr msg);
-        void sysStatusCallback(const mavros_msgs::msg::SysStatus::SharedPtr msg);
+        // void sysStatusCallback(const mavros_msgs::msg::SysStatus::SharedPtr msg);
         void statusCallback(const mavros_msgs::msg::State::SharedPtr  msg);
         void statusTextCallback(const mavros_msgs::msg::StatusText::SharedPtr  msg);
 
@@ -120,7 +120,7 @@ class FlightControllerInterface
         rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr mavros_imu_subscriber_;
         rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr mavros_compass_subscriber_;
         rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr mavros_battery_subscriber_;
-        rclcpp::Subscription<mavros_msgs::msg::SysStatus>::SharedPtr mavros_sys_status_subscriber_;
+        // rclcpp::Subscription<mavros_msgs::msg::SysStatus>::SharedPtr mavros_sys_status_subscriber_;
         rclcpp::Subscription<mavros_msgs::msg::StatusText>::SharedPtr mavros_status_text_subscriber_;
 
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr slam_pose_subscriber_;
@@ -145,11 +145,11 @@ class FlightControllerInterface
         sensor_msgs::msg::Imu current_imu_;
         std::deque<sensor_msgs::msg::Imu> imu_averaging_vec_;
         sensor_msgs::msg::Imu mavros_imu_init_;
-        int imu_averaging_n_;
+        unsigned imu_averaging_n_;
         float flight_time_remaining_;
         double home_compass_hdg_;
         double compass_hdg_;
-        int compass_count_;
+        unsigned compass_count_;
         double current_altitude_;
         std::string current_mode_;
         bool connected_;
@@ -157,7 +157,6 @@ class FlightControllerInterface
         bool armed_;
         bool in_air_;
         bool in_guided_mode_;
-        rclcpp::Duration service_wait_duration_;
         int detected_utm_zone_;
         bool utm_set_;
         std::string preflight_check_reasons_;
@@ -186,21 +185,21 @@ class FlightControllerInterface
         float msg_rate_timer_dt_;
         rclcpp::TimerBase::SharedPtr msg_rate_timer_;
         float imu_rate_;
-        int imu_count_;
+        unsigned imu_count_;
         float local_pos_rate_;
-        int local_pos_count_;
+        unsigned local_pos_count_;
         float stream_rate_modifier_;
         float battery_rate_;
-        int battery_count_;
+        unsigned battery_count_;
 
         bool imu_rate_ok_;
         bool battery_rate_ok_;
 
         // Initialization check stuff
         bool drone_initialized_;
-        int check_msg_rates_counter_;
-        int compass_wait_counter_;
-        int attempts_;
+        unsigned check_msg_rates_counter_;
+        unsigned compass_wait_counter_;
+        unsigned attempts_;
         rclcpp::TimerBase::SharedPtr drone_init_timer_;
         bool param_fetch_complete_;
         bool heading_src_ok_;

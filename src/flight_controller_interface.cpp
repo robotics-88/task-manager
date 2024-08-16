@@ -14,13 +14,12 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 #include "geometry_msgs/msg/polygon_stamped.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
-#include "visualization_msgs/msg/marker.hpp"
 
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
 
-#include "libmavconn/include/mavconn/mavlink_dialect.hpp"
+#include "mavconn/mavlink_dialect.hpp"
 
 using std::placeholders::_1;
 using namespace std::chrono_literals;
@@ -41,7 +40,6 @@ FlightControllerInterface::FlightControllerInterface(const std::shared_ptr<rclcp
   , compass_received_(false)
   , current_altitude_(-1.0)
   , target_altitude_(2.0)
-  , service_wait_duration_(2.0)
   , detected_utm_zone_(-1)
   , utm_set_(false)
   , battery_percentage_(0.0)
@@ -101,18 +99,18 @@ FlightControllerInterface::FlightControllerInterface(const std::shared_ptr<rclcp
         stream_rate_modifier_ = 1.f;
 
     // Set subscribers for Mavros
-    mavros_global_pos_subscriber_ = nh_->create_subscription<sensor_msgs::msg::NavSatFix>("/mavros/global_position/global", 10, std::bind(&FlightControllerInterface::globalPositionCallback, nh_, _1));
-    mavros_local_pos_subscriber_ = nh_->create_subscription<geometry_msgs::msg::PoseStamped>("/mavros/local_position/pose", 10, std::bind(&FlightControllerInterface::localPositionCallback, nh_, _1));
-    mavros_state_subscriber_ = nh_->create_subscription<mavros_msgs::msg::State>("/mavros/state", 10, std::bind(&FlightControllerInterface::statusCallback, nh_, _1));
-    mavros_alt_subscriber_ = nh_->create_subscription<std_msgs::msg::Float64>("/mavros/global_position/rel_alt", 10, std::bind(&FlightControllerInterface::altitudeCallback, nh_, _1));
-    mavros_imu_subscriber_ = nh_->create_subscription<sensor_msgs::msg::Imu>("/mavros/imu/data", 10, std::bind(&FlightControllerInterface::imuCallback, nh_, _1));
-    mavros_compass_subscriber_ = nh_->create_subscription<std_msgs::msg::Float64>("/mavros/global_position/compass_hdg", 10, std::bind(&FlightControllerInterface::compassCallback, nh_, _1));
-    mavros_battery_subscriber_ = nh_->create_subscription<sensor_msgs::msg::BatteryState>("/mavros/battery", 10, std::bind(&FlightControllerInterface::batteryCallback, nh_, _1));
-    mavros_sys_status_subscriber_ = nh_->create_subscription<mavros_msgs::msg::SysStatus>("/mavros/sys_status", 10, std::bind(&FlightControllerInterface::sysStatusCallback, nh_, _1));
-    mavros_status_text_subscriber_ = nh_->create_subscription<mavros_msgs::msg::StatusText>("/mavros/statustext/recv", 10, std::bind(&FlightControllerInterface::statusTextCallback, nh_, _1));
+    mavros_global_pos_subscriber_ = nh_->create_subscription<sensor_msgs::msg::NavSatFix>("/mavros/global_position/global", 10, std::bind(&FlightControllerInterface::globalPositionCallback, this, _1));
+    mavros_local_pos_subscriber_ = nh_->create_subscription<geometry_msgs::msg::PoseStamped>("/mavros/local_position/pose", 10, std::bind(&FlightControllerInterface::localPositionCallback, this, _1));
+    mavros_state_subscriber_ = nh_->create_subscription<mavros_msgs::msg::State>("/mavros/state", 10, std::bind(&FlightControllerInterface::statusCallback, this, _1));
+    mavros_alt_subscriber_ = nh_->create_subscription<std_msgs::msg::Float64>("/mavros/global_position/rel_alt", 10, std::bind(&FlightControllerInterface::altitudeCallback, this, _1));
+    mavros_imu_subscriber_ = nh_->create_subscription<sensor_msgs::msg::Imu>("/mavros/imu/data", 10, std::bind(&FlightControllerInterface::imuCallback, this, _1));
+    mavros_compass_subscriber_ = nh_->create_subscription<std_msgs::msg::Float64>("/mavros/global_position/compass_hdg", 10, std::bind(&FlightControllerInterface::compassCallback, this, _1));
+    mavros_battery_subscriber_ = nh_->create_subscription<sensor_msgs::msg::BatteryState>("/mavros/battery", 10, std::bind(&FlightControllerInterface::batteryCallback, this, _1));
+    // mavros_sys_status_subscriber_ = nh_->create_subscription<mavros_msgs::msg::SysStatus>("/mavros/sys_status", 10, std::bind(&FlightControllerInterface::sysStatusCallback, this, _1));
+    mavros_status_text_subscriber_ = nh_->create_subscription<mavros_msgs::msg::StatusText>("/mavros/statustext/recv", 10, std::bind(&FlightControllerInterface::statusTextCallback, this, _1));
 
     // Slam pose subscriber
-    slam_pose_subscriber_ = nh_->create_subscription<geometry_msgs::msg::PoseStamped>("/decco/pose", 10, std::bind(&FlightControllerInterface::slamPoseCallback, nh_, _1));
+    slam_pose_subscriber_ = nh_->create_subscription<geometry_msgs::msg::PoseStamped>("/decco/pose", 10, std::bind(&FlightControllerInterface::slamPoseCallback, this, _1));
 
     battery_pub_ = nh_->create_publisher<messages_88::msg::Battery>("/decco/battery", 10);
 
@@ -121,8 +119,8 @@ FlightControllerInterface::FlightControllerInterface(const std::shared_ptr<rclcp
         requestMavlinkStreams();
 
         attempts_ = 0;
-        drone_init_timer_ = nh_->create_wall_timer(1s, std::bind(&FlightControllerInterface::initializeDrone, nh_));
-        msg_rate_timer_ = nh_->create_wall_timer(std::chrono::duration<float>(msg_rate_timer_dt_), std::bind(&FlightControllerInterface::checkMsgRates, nh_));
+        drone_init_timer_ = nh_->create_wall_timer(1s, std::bind(&FlightControllerInterface::initializeDrone, this));
+        msg_rate_timer_ = nh_->create_wall_timer(std::chrono::duration<float>(msg_rate_timer_dt_), std::bind(&FlightControllerInterface::checkMsgRates, this));
     }
 
     land_mode_ = "LAND";
@@ -131,7 +129,7 @@ FlightControllerInterface::FlightControllerInterface(const std::shared_ptr<rclcp
     guided_mode_ = "GUIDED";
 
     // fill recent current vector with starting estimated current from param
-    for (int i = 0; i < 10; i++) {
+    for (unsigned i = 0; i < 10; i++) {
         recent_currents_.push_back(estimated_current_);
     }
 
@@ -153,31 +151,31 @@ void FlightControllerInterface::initializeDrone() {
     // Try setting a dummy param to check if param fetch has completed
     if (!param_fetch_complete_) {
 
-        // Wait an extra long on 
+        
+        // Wait an extra long on first run
         if (attempts_ == 0) {
-
+            RCLCPP_INFO(nh_->get_logger(), "Drone state manager waiting for param fetch to complete");
             // Param fetch takes about 50 seconds in sim, 15 seconds on drone
-            int approx_time_to_fetch = simulate_ ? 50 : 15;
-            for (int i = 0; i < approx_time_to_fetch; i++) {
-                ROS_INFO_THROTTLE(5, "Drone state manager waiting for param fetch to complete");
-                ros::Duration(1.0).sleep();
-            }
+            double approx_time_to_fetch = simulate_ ? 50 : 15;
+            rclcpp::Rate(approx_time_to_fetch).sleep();
         }
 
         // Run the action
         auto param_set_client = nh_->create_client<mavros_msgs::srv::ParamSet>("/mavros/param/set");
-        mavros_msgs::srv::ParamSet param_set_srv;
-        param_set_srv.request.param_id = "ACRO_RP_RATE"; // Use nh_ as we don't care about acro mode stuff.
-        param_set_srv.request.value.real = 360.0;
-        param_set_client.call(param_set_srv);
+        auto param_set_req = std::make_shared<mavros_msgs::srv::ParamSet::Request>();
+        param_set_req->param_id = "ACRO_RP_RATE"; // Use nh_ as we don't care about acro mode stuff.
+        param_set_req->value.real = 360.0;
+        auto result = param_set_client->async_send_request(param_set_req);
 
         // Check success
-        if (!param_set_srv.response.success) {
+        if (rclcpp::spin_until_future_complete(nh_, result) !=
+            rclcpp::FutureReturnCode::SUCCESS
+            || !result.get()->success) {
             if (attempts_ == 10) {
                 RCLCPP_ERROR(nh_->get_logger(), "Setting parameter failed after 10 attempts");
                 drone_init_timer_.reset();
             }
-            ROS_WARN_THROTTLE(5, "Param set failed (param fetch may still be occuring)");
+            RCLCPP_WARN_THROTTLE(nh_->get_logger(), *nh_->get_clock(), 5000, "Param set failed (param fetch may still be occuring)");
 
             attempts_++;
             return;
@@ -222,12 +220,13 @@ void FlightControllerInterface::initializeDrone() {
 
         // Run the action
         auto geofence_clear_client = nh_->create_client<mavros_msgs::srv::WaypointClear>("/mavros/geofence/clear");
-        geofence_clear_client.waitForExistence();
-        mavros_msgs::srv::WaypointClear waypoint_clear_srv;
-        geofence_clear_client.call(waypoint_clear_srv);
+        auto waypoint_clear_req = std::make_shared<mavros_msgs::srv::WaypointClear::Request>();
+        auto result = geofence_clear_client->async_send_request(waypoint_clear_req);
 
         // Check success
-        if (!waypoint_clear_srv.response.success) {
+        if (rclcpp::spin_until_future_complete(nh_, result) !=
+            rclcpp::FutureReturnCode::SUCCESS
+            || !result.get()->success) {
             if (attempts_ == 3) {
                 RCLCPP_ERROR(nh_->get_logger(), "Geofence clear failed after 3 attempts");
                 drone_init_timer_.reset();
@@ -248,12 +247,13 @@ void FlightControllerInterface::initializeDrone() {
 
         // Run the action
         auto mission_clear_client = nh_->create_client<mavros_msgs::srv::WaypointClear>("/mavros/mission/clear");
-        mission_clear_client.waitForExistence();
-        mavros_msgs::srv::WaypointClear waypoint_clear_srv;
-        mission_clear_client.call(waypoint_clear_srv);
+        auto waypoint_clear_req = std::make_shared<mavros_msgs::srv::WaypointClear::Request>();
+        auto result = mission_clear_client->async_send_request(waypoint_clear_req);
 
         // Check success
-        if (!waypoint_clear_srv.response.success) {
+        if (rclcpp::spin_until_future_complete(nh_, result) !=
+            rclcpp::FutureReturnCode::SUCCESS
+            || !result.get()->success) {
             if (attempts_ == 3) {
                 RCLCPP_ERROR(nh_->get_logger(), "Mission clear failed after 3 attempts");
                 drone_init_timer_.reset();
@@ -274,14 +274,15 @@ void FlightControllerInterface::initializeDrone() {
             
         // Run the action
         auto param_set_client = nh_->create_client<mavros_msgs::srv::ParamSet>("/mavros/param/set");
-        param_set_client.waitForExistence();
-        mavros_msgs::srv::ParamSet param_set_srv;
-        param_set_srv.request.param_id = "EK3_SRC1_YAW";
-        param_set_srv.request.value.integer = 1; // 1 = Compass, 6 = ExternalNav
-        param_set_client.call(param_set_srv);
+        auto param_set_req = std::make_shared<mavros_msgs::srv::ParamSet::Request>(); 
+        param_set_req->param_id = "EK3_SRC1_YAW";
+        param_set_req->value.integer = 1; // 1 = Compass, 6 = ExternalNav
+        auto result = param_set_client->async_send_request(param_set_req);
 
         // Check success
-        if (!param_set_srv.response.success) {
+        if (rclcpp::spin_until_future_complete(nh_, result) !=
+            rclcpp::FutureReturnCode::SUCCESS
+            || !result.get()->success) {
             if (attempts_ == 3) {
                 RCLCPP_ERROR(nh_->get_logger(), "EKF heading source param set failed after 3 attempts");
                 drone_init_timer_.reset();
@@ -331,17 +332,19 @@ void FlightControllerInterface::initializeDrone() {
 
         // Run the action
         auto param_set_client = nh_->create_client<mavros_msgs::srv::ParamSet>("/mavros/param/set");
-        mavros_msgs::srv::ParamSet param_set_srv;
+        auto param_set_req = std::make_shared<mavros_msgs::srv::ParamSet::Request>();
 
         std::map<std::string, int>::iterator it;
 
         for (it = param_map_.begin(); it != param_map_.end(); it++) {
-            param_set_srv.request.param_id = it->first;
-            param_set_srv.request.value.integer = it->second;
-            param_set_client.call(param_set_srv);
+            param_set_req->param_id = it->first;
+            param_set_req->value.integer = it->second;
+            auto result = param_set_client->async_send_request(param_set_req);
 
             // Check success
-            if (!param_set_srv.response.success) {
+            if (rclcpp::spin_until_future_complete(nh_, result) !=
+                rclcpp::FutureReturnCode::SUCCESS
+                || !result.get()->success) {
                 if (attempts_ == 3) {
                     RCLCPP_ERROR(nh_->get_logger(), "Param set of param %s failed after 3 attempts", it->first.c_str());
                     drone_init_timer_.reset();
@@ -364,33 +367,54 @@ void FlightControllerInterface::initializeDrone() {
 
 void FlightControllerInterface::requestMavlinkStreams() {
 
-    ROS_INFO_THROTTLE(5, "Requesting MAVLink streams from autopilot");
+    RCLCPP_INFO_THROTTLE(nh_->get_logger(), *nh_->get_clock(), 5000, "Requesting MAVLink streams from autopilot");
 
     // Request all streams
     auto streamrate_client = nh_->create_client<mavros_msgs::srv::StreamRate>("/mavros/set_stream_rate");
-    streamrate_client.waitForExistence();
-    mavros_msgs::srv::StreamRate streamrate_srv;
-    streamrate_srv.request.stream_id = 0;
-    streamrate_srv.request.message_rate = all_stream_rate_ * stream_rate_modifier_;
-    streamrate_srv.request.on_off = 1;
-    streamrate_client.call(streamrate_srv);
+    auto streamrate_req = std::make_shared<mavros_msgs::srv::StreamRate::Request>(); 
+    streamrate_req->stream_id = 0;
+    streamrate_req->message_rate = all_stream_rate_ * stream_rate_modifier_;
+    streamrate_req->on_off = 1;
+    auto streamrate_res = streamrate_client->async_send_request(streamrate_req);
+
+    if (rclcpp::spin_until_future_complete(nh_, streamrate_res) !=
+        rclcpp::FutureReturnCode::SUCCESS) {
+        RCLCPP_WARN(nh_->get_logger(), "Seting general stream rate failed");
+    }
 
     // Request specific streams at particular rates
     auto msg_interval_client = nh_->create_client<mavros_msgs::srv::MessageInterval>("/mavros/set_message_interval");
-    msg_interval_client.waitForExistence();
-    mavros_msgs::srv::MessageInterval msg_interval_srv;
+    auto msg_interval_req = std::make_shared<mavros_msgs::srv::MessageInterval::Request>();
 
-    msg_interval_srv.request.message_id = 30; // ATTITUDE
-    msg_interval_srv.request.message_rate = imu_rate_ * stream_rate_modifier_;
-    msg_interval_client.call(msg_interval_srv);
+    msg_interval_req->message_id = 30; // ATTITUDE
+    msg_interval_req->message_rate = imu_rate_ * stream_rate_modifier_;
+    auto attitude_res = msg_interval_client->async_send_request(msg_interval_req);
 
-    msg_interval_srv.request.message_id = 32; // LOCAL_POSITION_NED
-    msg_interval_srv.request.message_rate = local_pos_rate_ * stream_rate_modifier_;
-    msg_interval_client.call(msg_interval_srv);
+    if (rclcpp::spin_until_future_complete(nh_, attitude_res) !=
+        rclcpp::FutureReturnCode::SUCCESS
+        || !attitude_res.get()->success) {
+        RCLCPP_WARN(nh_->get_logger(), "Seting attitude stream rate failed");
+    }
 
-    msg_interval_srv.request.message_id = 147; // BATTERY_STATUS
-    msg_interval_srv.request.message_rate = battery_rate_ * stream_rate_modifier_;
-    msg_interval_client.call(msg_interval_srv);
+    msg_interval_req->message_id = 32; // LOCAL_POSITION_NED
+    msg_interval_req->message_rate = local_pos_rate_ * stream_rate_modifier_;
+    auto local_pos_res = msg_interval_client->async_send_request(msg_interval_req);
+
+    if (rclcpp::spin_until_future_complete(nh_, local_pos_res) !=
+        rclcpp::FutureReturnCode::SUCCESS
+        || !local_pos_res.get()->success) {
+        RCLCPP_WARN(nh_->get_logger(), "Setting local pos stream rate failed");
+    }
+
+    msg_interval_req->message_id = 147; // BATTERY_STATUS
+    msg_interval_req->message_rate = battery_rate_ * stream_rate_modifier_;
+    auto battery_res = msg_interval_client->async_send_request(msg_interval_req);
+
+    if (rclcpp::spin_until_future_complete(nh_, battery_res) !=
+        rclcpp::FutureReturnCode::SUCCESS
+        || !battery_res.get()->success) {
+        RCLCPP_WARN(nh_->get_logger(), "Setting battery stream rate failed");
+    }
 }
 
 void FlightControllerInterface::initUTM(double &utm_x, double &utm_y) {
@@ -529,7 +553,7 @@ void FlightControllerInterface::batteryCallback(const sensor_msgs::msg::BatteryS
         current_drawn_since_resting_percent_ = 0.f;
     }
 
-    current_drawn_since_resting_percent_ += current * (nh_->get_clock()->now() - last_battery_measurement_).toSec() / 3600;
+    current_drawn_since_resting_percent_ += current * (nh_->get_clock()->now() - last_battery_measurement_).seconds() / 3600;
     last_battery_measurement_ = nh_->get_clock()->now();
 
     float battery_percent_drawn_since_resting_ = current_drawn_since_resting_percent_ / battery_size_ * 100.f;
@@ -580,154 +604,154 @@ void FlightControllerInterface::altitudeCallback(const std_msgs::msg::Float64::S
     current_altitude_ = msg->data;
 }
 
-void FlightControllerInterface::sysStatusCallback(const mavros_msgs::msg::SysStatus::SharedPtr msg) {
-    // Bitwise check of healthy sensors vs enabled sensors
-    ready_to_arm_ = (msg->sensors_health & msg->sensors_enabled) == msg->sensors_enabled;
+// void FlightControllerInterface::sysStatusCallback(const mavros_msgs::msg::SysStatus::SharedPtr msg) {
+//     // Bitwise check of healthy sensors vs enabled sensors
+//     ready_to_arm_ = (msg->sensors_health & msg->sensors_enabled) == msg->sensors_enabled;
 
-    using STS = mavlink::common::MAV_SYS_STATUS_SENSOR;
+//     using STS = mavlink::common::MAV_SYS_STATUS_SENSOR;
 
-    std::string reasons = "";
+//     std::string reasons = "";
 
-    // If not ready to arm, determine reasons
-    if (ready_to_arm_)
-        return;
+//     // If not ready to arm, determine reasons
+//     if (ready_to_arm_)
+//         return;
 
-    if (msg->sensors_enabled & (uint32_t)STS::SENSOR_3D_GYRO &&
-        !(msg->sensors_health & (uint32_t)STS::SENSOR_3D_GYRO))
-        reasons += "gyro, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::SENSOR_3D_GYRO &&
+//         !(msg->sensors_health & (uint32_t)STS::SENSOR_3D_GYRO))
+//         reasons += "gyro, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::SENSOR_3D_ACCEL &&
-        !(msg->sensors_health & (uint32_t)STS::SENSOR_3D_ACCEL))
-        reasons += "accelerometer, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::SENSOR_3D_ACCEL &&
+//         !(msg->sensors_health & (uint32_t)STS::SENSOR_3D_ACCEL))
+//         reasons += "accelerometer, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::SENSOR_3D_MAG &&
-        !(msg->sensors_health & (uint32_t)STS::SENSOR_3D_MAG))
-        reasons += "magnetometer, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::SENSOR_3D_MAG &&
+//         !(msg->sensors_health & (uint32_t)STS::SENSOR_3D_MAG))
+//         reasons += "magnetometer, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::ABSOLUTE_PRESSURE &&
-        !(msg->sensors_health & (uint32_t)STS::ABSOLUTE_PRESSURE))
-        reasons += "absolute pressure, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::ABSOLUTE_PRESSURE &&
+//         !(msg->sensors_health & (uint32_t)STS::ABSOLUTE_PRESSURE))
+//         reasons += "absolute pressure, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::DIFFERENTIAL_PRESSURE &&
-        !(msg->sensors_health & (uint32_t)STS::DIFFERENTIAL_PRESSURE))
-        reasons += "differential pressure, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::DIFFERENTIAL_PRESSURE &&
+//         !(msg->sensors_health & (uint32_t)STS::DIFFERENTIAL_PRESSURE))
+//         reasons += "differential pressure, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::GPS &&
-        !(msg->sensors_health & (uint32_t)STS::GPS))
-        reasons += "GPS, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::GPS &&
+//         !(msg->sensors_health & (uint32_t)STS::GPS))
+//         reasons += "GPS, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::OPTICAL_FLOW &&
-        !(msg->sensors_health & (uint32_t)STS::OPTICAL_FLOW))
-        reasons += "optical flow, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::OPTICAL_FLOW &&
+//         !(msg->sensors_health & (uint32_t)STS::OPTICAL_FLOW))
+//         reasons += "optical flow, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::VISION_POSITION &&
-        !(msg->sensors_health & (uint32_t)STS::VISION_POSITION))
-        reasons += "computer vision position, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::VISION_POSITION &&
+//         !(msg->sensors_health & (uint32_t)STS::VISION_POSITION))
+//         reasons += "computer vision position, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::LASER_POSITION &&
-        !(msg->sensors_health & (uint32_t)STS::LASER_POSITION))
-        reasons += "laser based position, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::LASER_POSITION &&
+//         !(msg->sensors_health & (uint32_t)STS::LASER_POSITION))
+//         reasons += "laser based position, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::EXTERNAL_GROUND_TRUTH &&
-        !(msg->sensors_health & (uint32_t)STS::EXTERNAL_GROUND_TRUTH))
-        reasons += "external ground truth, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::EXTERNAL_GROUND_TRUTH &&
+//         !(msg->sensors_health & (uint32_t)STS::EXTERNAL_GROUND_TRUTH))
+//         reasons += "external ground truth, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::ANGULAR_RATE_CONTROL &&
-        !(msg->sensors_health & (uint32_t)STS::ANGULAR_RATE_CONTROL))
-        reasons += "angular rate control, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::ANGULAR_RATE_CONTROL &&
+//         !(msg->sensors_health & (uint32_t)STS::ANGULAR_RATE_CONTROL))
+//         reasons += "angular rate control, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::ATTITUDE_STABILIZATION &&
-        !(msg->sensors_health & (uint32_t)STS::ATTITUDE_STABILIZATION))
-        reasons += "attitude stabilization, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::ATTITUDE_STABILIZATION &&
+//         !(msg->sensors_health & (uint32_t)STS::ATTITUDE_STABILIZATION))
+//         reasons += "attitude stabilization, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::YAW_POSITION &&
-        !(msg->sensors_health & (uint32_t)STS::YAW_POSITION))
-        reasons += "yaw position, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::YAW_POSITION &&
+//         !(msg->sensors_health & (uint32_t)STS::YAW_POSITION))
+//         reasons += "yaw position, ";
 
-	if (msg->sensors_enabled & (uint32_t)STS::Z_ALTITUDE_CONTROL &&
-        !(msg->sensors_health & (uint32_t)STS::Z_ALTITUDE_CONTROL))
-        reasons += "z altitude control, ";
+// 	if (msg->sensors_enabled & (uint32_t)STS::Z_ALTITUDE_CONTROL &&
+//         !(msg->sensors_health & (uint32_t)STS::Z_ALTITUDE_CONTROL))
+//         reasons += "z altitude control, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::XY_POSITION_CONTROL &&
-        !(msg->sensors_health & (uint32_t)STS::XY_POSITION_CONTROL))
-        reasons += "x/y position control, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::XY_POSITION_CONTROL &&
+//         !(msg->sensors_health & (uint32_t)STS::XY_POSITION_CONTROL))
+//         reasons += "x/y position control, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::MOTOR_OUTPUTS &&
-        !(msg->sensors_health & (uint32_t)STS::MOTOR_OUTPUTS))
-        reasons += "motor outputs, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::MOTOR_OUTPUTS &&
+//         !(msg->sensors_health & (uint32_t)STS::MOTOR_OUTPUTS))
+//         reasons += "motor outputs, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::RC_RECEIVER &&
-        !(msg->sensors_health & (uint32_t)STS::RC_RECEIVER))
-        reasons += "rc receiver, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::RC_RECEIVER &&
+//         !(msg->sensors_health & (uint32_t)STS::RC_RECEIVER))
+//         reasons += "rc receiver, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::SENSOR_3D_GYRO2 &&
-        !(msg->sensors_health & (uint32_t)STS::SENSOR_3D_GYRO2))
-        reasons += "gyro 2, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::SENSOR_3D_GYRO2 &&
+//         !(msg->sensors_health & (uint32_t)STS::SENSOR_3D_GYRO2))
+//         reasons += "gyro 2, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::SENSOR_3D_ACCEL2 &&
-        !(msg->sensors_health & (uint32_t)STS::SENSOR_3D_ACCEL2))
-        reasons += "accelerometer 2, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::SENSOR_3D_ACCEL2 &&
+//         !(msg->sensors_health & (uint32_t)STS::SENSOR_3D_ACCEL2))
+//         reasons += "accelerometer 2, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::SENSOR_3D_MAG2 &&
-        !(msg->sensors_health & (uint32_t)STS::SENSOR_3D_MAG2))
-        reasons += "magnetometer 2, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::SENSOR_3D_MAG2 &&
+//         !(msg->sensors_health & (uint32_t)STS::SENSOR_3D_MAG2))
+//         reasons += "magnetometer 2, ";
 
-	if (msg->sensors_enabled & (uint32_t)STS::GEOFENCE &&
-        !(msg->sensors_health & (uint32_t)STS::GEOFENCE))
-        reasons += "geofence, ";
+// 	if (msg->sensors_enabled & (uint32_t)STS::GEOFENCE &&
+//         !(msg->sensors_health & (uint32_t)STS::GEOFENCE))
+//         reasons += "geofence, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::AHRS &&
-        !(msg->sensors_health & (uint32_t)STS::AHRS))
-        reasons += "AHRS, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::AHRS &&
+//         !(msg->sensors_health & (uint32_t)STS::AHRS))
+//         reasons += "AHRS, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::TERRAIN &&
-        !(msg->sensors_health & (uint32_t)STS::TERRAIN))
-        reasons += "terrain, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::TERRAIN &&
+//         !(msg->sensors_health & (uint32_t)STS::TERRAIN))
+//         reasons += "terrain, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::REVERSE_MOTOR &&
-        !(msg->sensors_health & (uint32_t)STS::REVERSE_MOTOR))
-        reasons += "motors reversed, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::REVERSE_MOTOR &&
+//         !(msg->sensors_health & (uint32_t)STS::REVERSE_MOTOR))
+//         reasons += "motors reversed, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::LOGGING &&
-        !(msg->sensors_health & (uint32_t)STS::LOGGING))
-        reasons += "logging, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::LOGGING &&
+//         !(msg->sensors_health & (uint32_t)STS::LOGGING))
+//         reasons += "logging, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::BATTERY &&
-        !(msg->sensors_health & (uint32_t)STS::BATTERY))
-        reasons += "battery, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::BATTERY &&
+//         !(msg->sensors_health & (uint32_t)STS::BATTERY))
+//         reasons += "battery, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::PROXIMITY &&
-        !(msg->sensors_health & (uint32_t)STS::PROXIMITY))
-        reasons += "proximity, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::PROXIMITY &&
+//         !(msg->sensors_health & (uint32_t)STS::PROXIMITY))
+//         reasons += "proximity, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::SATCOM &&
-        !(msg->sensors_health & (uint32_t)STS::SATCOM))
-        reasons += "satellite communication, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::SATCOM &&
+//         !(msg->sensors_health & (uint32_t)STS::SATCOM))
+//         reasons += "satellite communication, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::PREARM_CHECK &&
-        !(msg->sensors_health & (uint32_t)STS::PREARM_CHECK)) {
-        // Add prearm text from statustext message
-        reasons += "prearm checks: [";
-        reasons += prearm_text_ + "], ";
-    }
+//     if (msg->sensors_enabled & (uint32_t)STS::PREARM_CHECK &&
+//         !(msg->sensors_health & (uint32_t)STS::PREARM_CHECK)) {
+//         // Add prearm text from statustext message
+//         reasons += "prearm checks: [";
+//         reasons += prearm_text_ + "], ";
+//     }
 
-    if (msg->sensors_enabled & (uint32_t)STS::OBSTACLE_AVOIDANCE &&
-        !(msg->sensors_health & (uint32_t)STS::OBSTACLE_AVOIDANCE))
-        reasons += "obstacle avoidance / collision prevention, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::OBSTACLE_AVOIDANCE &&
+//         !(msg->sensors_health & (uint32_t)STS::OBSTACLE_AVOIDANCE))
+//         reasons += "obstacle avoidance / collision prevention, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::PROPULSION &&
-        !(msg->sensors_health & (uint32_t)STS::PROPULSION))
-        reasons += "propulsion, ";
+//     if (msg->sensors_enabled & (uint32_t)STS::PROPULSION &&
+//         !(msg->sensors_health & (uint32_t)STS::PROPULSION))
+//         reasons += "propulsion, ";
 
-    preflight_check_reasons_ = reasons;
-}
+//     preflight_check_reasons_ = reasons;
+// }
 
 void FlightControllerInterface::statusTextCallback(const mavros_msgs::msg::StatusText::SharedPtr  msg) {
     std::string text = msg->text;
     std::string prefix = "PreArm: ";
 
     // Prearm text gets updated every 30 seconds, so clear it out just before then for a reset
-    if ((nh_->get_clock()->now() - last_prearm_text_).toSec() > 29.0) {
+    if ((nh_->get_clock()->now() - last_prearm_text_).seconds() > 29.0) {
         prearm_text_ = "";
     }
 
@@ -740,10 +764,12 @@ void FlightControllerInterface::statusTextCallback(const mavros_msgs::msg::Statu
 }
 
 bool FlightControllerInterface::setMode(std::string mode) {
-    mavros_msgs::srv::SetMode offb_set_mode;
-    offb_set_mode.request.custom_mode = mode;
-    set_mode_client_.waitForExistence(service_wait_duration_);
-    if (set_mode_client_.call(offb_set_mode) && offb_set_mode.response.mode_sent) {
+    auto offb_set_mode_req = std::make_shared<mavros_msgs::srv::SetMode::Request>();
+    offb_set_mode_req->custom_mode = mode;
+    auto result = set_mode_client_->async_send_request(offb_set_mode_req);
+    if (rclcpp::spin_until_future_complete(nh_, result) ==
+            rclcpp::FutureReturnCode::SUCCESS
+            && result.get()->mode_sent) {
         RCLCPP_INFO(nh_->get_logger(), "Mode set to: %s", mode.c_str());
         return true;
     }
@@ -762,10 +788,12 @@ bool FlightControllerInterface::arm() {
         RCLCPP_WARN(nh_->get_logger(), "Autonomy disabled in arming.");
         return false;
     }
-    mavros_msgs::srv::CommandBool arm_cmd;
-    arm_cmd.request.value = true;
-    arming_client_.waitForExistence(service_wait_duration_);
-    if(arming_client_.call(arm_cmd) && arm_cmd.response.success){
+    auto arm_cmd_req = std::make_shared<mavros_msgs::srv::CommandBool::Request>();
+    arm_cmd_req->value = true;
+    auto result = arming_client_->async_send_request(arm_cmd_req);
+    if (rclcpp::spin_until_future_complete(nh_, result) ==
+            rclcpp::FutureReturnCode::SUCCESS
+            && result.get()->success){
         RCLCPP_INFO(nh_->get_logger(), "Vehicle armed");
         return true;
     }
@@ -773,6 +801,8 @@ bool FlightControllerInterface::arm() {
         RCLCPP_WARN(nh_->get_logger(), "Arming failed");
         return false;
     }
+
+    return false;
 }
 
 bool FlightControllerInterface::takeOff() {
@@ -799,16 +829,17 @@ bool FlightControllerInterface::takeOff() {
         }
     }
 
-    mavros_msgs::srv::CommandTOL takeoff_request;
+    auto takeoff_req = std::make_shared<mavros_msgs::srv::CommandTOL::Request>();
 
-    if (!ros::param::get("/task_manager/default_alt", target_altitude_))
+    if (!nh_->get_parameter("/task_manager/default_alt", target_altitude_))
         RCLCPP_WARN(nh_->get_logger(), "Drone state manager cannot get default altitude param");
 
     RCLCPP_INFO(nh_->get_logger(), "Requesting takeoff to %fm", target_altitude_);
-    takeoff_request.request.altitude = target_altitude_;
-    takeoff_client_.waitForExistence(service_wait_duration_);
-    takeoff_client_.call(takeoff_request);
-    if (takeoff_client_.call(takeoff_request) && takeoff_request.response.success) {
+    takeoff_req->altitude = target_altitude_;
+    auto result = takeoff_client_->async_send_request(takeoff_req);
+    if (rclcpp::spin_until_future_complete(nh_, result) ==
+            rclcpp::FutureReturnCode::SUCCESS
+            && result.get()->success) {
         RCLCPP_INFO(nh_->get_logger(), "Vehicle takeoff succeeded");
         return true;
     }
@@ -816,6 +847,8 @@ bool FlightControllerInterface::takeOff() {
         RCLCPP_WARN(nh_->get_logger(), "Vehicle takeoff failed");
         return false;
     }
+
+    return false;
 }
 
 float FlightControllerInterface::calculateBatteryPercentage(float voltage) {
