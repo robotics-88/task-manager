@@ -16,6 +16,7 @@
   <depend>nav2_costmap_2d</depend>
   <depend>geometry_msgs</depend>
   <depend>livox_ros_driver2</depend>
+  <depend>libmavconn</depend>
   <depend>mavros</depend>
   <depend>messages_88</depend>
   <depend>pcl_ros</depend>
@@ -24,6 +25,7 @@
   <depend>tf2</depend>
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
+  <depend>visualization_msgs</depend>
 
   <exec_depend>ros2launch</exec_depend>
 

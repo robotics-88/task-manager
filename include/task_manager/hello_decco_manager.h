@@ -12,10 +12,10 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "geometry_msgs/msg/point.hpp"
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "geometry_msgs/msg/polygon.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
 #include "sensor_msgs/msg/nav_sat_fix.hpp"
 #include "std_msgs/msg/string.hpp"
-#include "tf2_geometry_msgs/tf2_geometry_msgs.h"
-#include "tf2_ros/transform_listener.h"
+#include "visualization_msgs/msg/marker.hpp"
 
 #include "ConcavePolygon.h"
 #include "CentroidSplitter.h"
@@ -31,11 +31,11 @@ namespace hello_decco_manager {
 class HelloDeccoManager
 {
     public:
-        HelloDeccoManager(const std::shared_ptr<rclcpp::Node> nh);
+        explicit HelloDeccoManager(const std::shared_ptr<rclcpp::Node> nh);
         ~HelloDeccoManager();
 
-        void acceptFlight(json msgJson, int utm_zone, bool &geofence_ok);
-        void updateFlightStatus(int index, std::string flight_status);
+        void acceptFlight(json msgJson, bool &geofence_ok);
+        void updateFlightStatus(std::string flight_status);
         void setUtm(double utm_x, double utm_y, int zone) {
             utm_x_offset_ = -utm_x;
             utm_y_offset_ = -utm_y;
@@ -72,8 +72,6 @@ class HelloDeccoManager
         // Frames/TF
         std::string mavros_map_frame_;
         std::string slam_map_frame_;
-        tf2_ros::Buffer tf_buffer_;
-        tf2_ros::TransformListener tf_listener_;
         double utm_x_offset_;
         double utm_y_offset_;
         int utm_zone_;

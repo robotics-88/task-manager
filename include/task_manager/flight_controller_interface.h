@@ -42,7 +42,7 @@ namespace flight_controller_interface {
 class FlightControllerInterface
 {
     public:
-        FlightControllerInterface(const std::shared_ptr<rclcpp::Node> nh);
+        explicit FlightControllerInterface(const std::shared_ptr<rclcpp::Node> nh);
         ~FlightControllerInterface();
 
         // State access methods

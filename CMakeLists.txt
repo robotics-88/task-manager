@@ -16,6 +16,7 @@ find_package(rclcpp_action)
 find_package(bag_recorder)
 find_package(geometry_msgs)
 find_package(livox_ros_driver2)
+find_package(libmavconn)
 find_package(mavros)
 find_package(mavros_msgs)
 find_package(messages_88)
@@ -25,6 +26,7 @@ find_package(std_msgs)
 find_package(tf2)
 find_package(tf2_geometry_msgs)
 find_package(tf2_ros)
+find_package(visualization_msgs)
 
 find_package(GeographicLib REQUIRED)
 find_package(PCL REQUIRED)
@@ -54,6 +56,7 @@ ament_target_dependencies(task_manager
   pcl_ros
   rclcpp
   std_msgs
+  libmavconn
   
 )
 

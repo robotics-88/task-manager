@@ -30,7 +30,6 @@ HelloDeccoManager::HelloDeccoManager(const std::shared_ptr<rclcpp::Node> nh)
     : nh_(nh)
     , mavros_map_frame_("map")
     , slam_map_frame_("slam_map")
-    , tf_listener_(tf_buffer_)
     , flightleg_area_m2_(2023.0)
 {
     double flightleg_acres;
@@ -53,7 +52,6 @@ void HelloDeccoManager::packageToTymbalHD(std::string topic, json gossip) {
     json msg_json;
     msg_json["topic"] = topic;
     json stamped_gossip = gossip;
-    unsigned long now_time;
     stamped_gossip["stamp"] = decco_utilities::rosTimeToMilliseconds(nh_->get_clock()->now());
     msg_json["gossip"] = stamped_gossip;
     std::string s = msg_json.dump();
@@ -79,7 +77,7 @@ void HelloDeccoManager::flightReceipt() {
     packageToTymbalHD("flight_confirm", msg);
 }
 
-void HelloDeccoManager::acceptFlight(json msgJson, int utm_zone, bool &geofence_ok) {
+void HelloDeccoManager::acceptFlight(json msgJson, bool &geofence_ok) {
     flightReceipt();
     // Parse data
     flight_json_ = msgJson;
@@ -110,7 +108,7 @@ void HelloDeccoManager::polygonInitializer(const geometry_msgs::msg::Polygon &ms
     }
 }
 
-void HelloDeccoManager::updateFlightStatus(int index, std::string flight_status) {
+void HelloDeccoManager::updateFlightStatus(std::string flight_status) {
     flight_json_["status"] = flight_status;
     if (flight_status == "ACTIVE") {
         start_time_ = decco_utilities::rosTimeToMilliseconds(nh_->get_clock()->now());
@@ -149,7 +147,7 @@ void HelloDeccoManager::visualizePolygon() {
     m.color.b = 0.0;
     m.id = 0;
 
-    for (int ii = 0; ii < map_region_.points.size(); ii++) {
+    for (unsigned ii = 0; ii < map_region_.points.size(); ii++) {
         // Add marker
         geometry_msgs::msg::Point p;
         p.x = map_region_.points.at(ii).x;
@@ -165,7 +163,7 @@ void HelloDeccoManager::visualizePolygon() {
 geometry_msgs::msg::Polygon HelloDeccoManager::polygonToMap(const geometry_msgs::msg::Polygon &polygon) {
     // Converts lat/lon polygon to local map polygon
     geometry_msgs::msg::Polygon map_polygon;
-    for (int ii = 0; ii < polygon.points.size(); ii++) {
+    for (unsigned ii = 0; ii < polygon.points.size(); ii++) {
         geometry_msgs::msg::Point32 poly_point;
         double px, py;
         decco_utilities::llToMap(polygon.points.at(ii).x, polygon.points.at(ii).y, px, py, utm_x_offset_, utm_y_offset_);
@@ -203,12 +201,12 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::msg::Polygon &pol
 
         RCLCPP_INFO(nh_->get_logger(), "Drone not inside polygon, adjusting polygon geofence");
 
-        int n1 = polygon_map.points.size();
+        unsigned n1 = polygon_map.points.size();
         double minDist = std::numeric_limits<double>::max();
-        int closest_point_ind = -1;
+        unsigned closest_point_ind = -1;
 
         // Find closest point in polygon to drone
-        for (int i = 0; i < n1; ++i) {
+        for (unsigned i = 0; i < n1; ++i) {
             double d = decco_utilities::distance_xy(polygon_map.points[i], drone_location);
             if (d < minDist) {
                 minDist = d;
@@ -218,7 +216,7 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::msg::Polygon &pol
 
         // Find line intersection with each segment connecting to closest point
         geometry_msgs::msg::Point32 point1, point2, closest_point = polygon_map.points.at(closest_point_ind);
-        int ind1, ind2;
+        unsigned ind1, ind2;
         if (closest_point_ind == 0) {
             ind1 = polygon_map.points.size() - 1;
         }
@@ -342,7 +340,7 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::msg::Polygon &pol
 
     // Now convert polygon to LL to use as geofence
     geometry_msgs::msg::Polygon geofence_polygon;
-    for (int i = 0; i < polygon_map.points.size(); i++) {
+    for (unsigned i = 0; i < polygon_map.points.size(); i++) {
             
         // Convert map frame polygon to lat/lon
         double lat, lon;
@@ -357,7 +355,7 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::msg::Polygon &pol
     }
 
     // Now push all points to waypoint struct
-    for (int i = 0; i < geofence_polygon.points.size(); i++) {
+    for (unsigned i = 0; i < geofence_polygon.points.size(); i++) {
         mavros_msgs::msg::Waypoint wp;
         wp.command = mavros_msgs::msg::CommandCode::NAV_FENCE_POLYGON_VERTEX_INCLUSION;
 
@@ -374,8 +372,8 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::msg::Polygon &pol
     // Run geofence rosservice call for mavros to upload geofence wps to autopilot
     auto result = mavros_geofence_client_->async_send_request(request);
 
-    if (rclcpp::spin_until_future_complete(nh_, rclcpp::FutureReturnCode::SUCCESS) ==
-    rclcpp::FutureReturnCode::SUCCESS)
+    if (rclcpp::spin_until_future_complete(nh_, result) ==
+        rclcpp::FutureReturnCode::SUCCESS)
     {
         return true;
     }
@@ -389,7 +387,7 @@ int HelloDeccoManager::polygonNumFlights(const geometry_msgs::msg::Polygon &poly
     GeographicLib::Geodesic geod(GeographicLib::Constants::WGS84_a(), GeographicLib::Constants::WGS84_f());
     // Alternatively: const Geodesic& geod = Geodesic::WGS84();
     GeographicLib::PolygonArea poly(geod);
-    for (int ii = 0; ii<polygon.points.size(); ii++) {
+    for (unsigned ii = 0; ii<polygon.points.size(); ii++) {
         poly.AddPoint(polygon.points.at(ii).x, polygon.points.at(ii).y);
     }
     double perimeter, area;
@@ -409,7 +407,7 @@ int HelloDeccoManager::polygonNumFlights(const geometry_msgs::msg::Polygon &poly
 }
 
 void HelloDeccoManager::visualizeLegs() {
-    for (int nn = 0; nn < local_subpolygons_.size(); nn++) {
+    for (unsigned nn = 0; nn < local_subpolygons_.size(); nn++) {
         // Set up subpolygon viz
         visualization_msgs::msg::Marker m;
         m.scale.x = 2.0;
@@ -425,7 +423,7 @@ void HelloDeccoManager::visualizeLegs() {
 
         // Compute subpolys
         geometry_msgs::msg::Polygon geom_polygon = local_subpolygons_.at(nn);
-        for (int vv = 0; vv < geom_polygon.points.size(); vv++) {
+        for (unsigned vv = 0; vv < geom_polygon.points.size(); vv++) {
             // Add marker
             geometry_msgs::msg::Point p;
             p.x = geom_polygon.points.at(vv).x;
@@ -446,7 +444,7 @@ void HelloDeccoManager::visualizeLegs() {
 //     std::vector<cxd::ConcavePolygon > subPolygonList;
 //     concavePoly.returnLowestLevelPolys(subPolygonList);
 //     int num_legs = concavePoly.getNumberSubPolys();
-//     for (int nn = 0; nn < subPolygonList.size(); nn++) {
+//     for (unsigned nn = 0; nn < subPolygonList.size(); nn++) {
 //         // Set up subpolygon viz
 //         visualization_msgs::msg::Marker m;
 //         m.scale.x = 2.0;
@@ -464,7 +462,7 @@ void HelloDeccoManager::visualizeLegs() {
 //         std::vector<cxd::Vertex > subPolyVerts = subPolygonList.at(nn).getVertices();
 //         geometry_msgs::msg::Polygon geom_polygon;
 //         std::vector<geometry_msgs::msg::Point32> geom_points;
-//         for (int vv = 0; vv < subPolyVerts.size(); vv++) {
+//         for (unsigned vv = 0; vv < subPolyVerts.size(); vv++) {
 //             geometry_msgs::msg::Point32 pt;
 //             pt.x = subPolyVerts.at(vv).position.x;
 //             pt.y = subPolyVerts.at(vv).position.y;
