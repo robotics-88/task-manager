@@ -22,6 +22,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "mavros_msgs/msg/status_text.hpp"
 #include "messages_88/action/explore.hpp"
 #include "messages_88/action/nav_to_point.hpp"
+#include "messages_88/msg/battery.hpp"
 #include "messages_88/srv/geopoint.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
 #include "sensor_msgs/msg/imu.hpp"
@@ -38,10 +39,10 @@ namespace flight_controller_interface {
  * @class FlightControllerInterface
  * @brief Manages task and flight state of drone.
  */
-class FlightControllerInterface : public rclcpp::Node
+class FlightControllerInterface
 {
     public:
-        FlightControllerInterface();
+        FlightControllerInterface(const std::shared_ptr<rclcpp::Node> nh);
         ~FlightControllerInterface();
 
         // State access methods
@@ -97,6 +98,8 @@ class FlightControllerInterface : public rclcpp::Node
 
     private:
 
+        const std::shared_ptr<rclcpp::Node> nh_;
+
         bool offline_;
         bool simulate_;
         bool do_slam_;
@@ -126,9 +129,9 @@ class FlightControllerInterface : public rclcpp::Node
         rclcpp::Publisher<messages_88::msg::Battery>::SharedPtr battery_pub_; // Publisher mostly for debug
 
         // Mavros service clients
-        rclcpp::Service<mavros_msgs::srv::CommandBool>::SharedPtr arming_client_;
-        rclcpp::Service<mavros_msgs::srv::SetMode>::SharedPtr set_mode_client_;
-        rclcpp::Service<mavros_msgs::srv::CommandTOL>::SharedPtr takeoff_client_;
+        rclcpp::Client<mavros_msgs::srv::CommandBool>::SharedPtr arming_client_;
+        rclcpp::Client<mavros_msgs::srv::SetMode>::SharedPtr set_mode_client_;
+        rclcpp::Client<mavros_msgs::srv::CommandTOL>::SharedPtr takeoff_client_;
 
         // Mavros modes
         std::string land_mode_;
@@ -159,13 +162,13 @@ class FlightControllerInterface : public rclcpp::Node
         bool utm_set_;
         std::string preflight_check_reasons_;
         std::string prearm_text_;
-        rclcpp::TimerBase::SharedPtr last_prearm_text_;
+        rclcpp::Time last_prearm_text_;
 
         // Battery estimation stuff
         sensor_msgs::msg::BatteryState current_battery_;
         float last_resting_percent_;
-        rclcpp::TimerBase::SharedPtr last_resting_percent_time_;
-        rclcpp::TimerBase::SharedPtr last_battery_measurement_;
+        rclcpp::Time last_resting_percent_time_;
+        rclcpp::Time last_battery_measurement_;
         float current_drawn_since_resting_percent_;
         std::vector<float> recent_currents_;
         float battery_percentage_;

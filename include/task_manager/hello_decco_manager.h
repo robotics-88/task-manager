@@ -28,10 +28,10 @@ namespace hello_decco_manager {
  * @class HelloDeccoManager
  * @brief Manages interactions with Hello Decco
  */
-class HelloDeccoManager : public rclcpp::Node
+class HelloDeccoManager
 {
     public:
-        HelloDeccoManager();
+        HelloDeccoManager(const std::shared_ptr<rclcpp::Node> nh);
         ~HelloDeccoManager();
 
         void acceptFlight(json msgJson, int utm_zone, bool &geofence_ok);
@@ -55,6 +55,8 @@ class HelloDeccoManager : public rclcpp::Node
         }
 
     private:
+        const std::shared_ptr<rclcpp::Node> nh_;
+
         enum FlightStatus {
             NOT_STARTED,
             ACTIVE,
@@ -82,7 +84,7 @@ class HelloDeccoManager : public rclcpp::Node
         rclcpp::Publisher<std_msgs::msg::String>::SharedPtr tymbal_puddle_pub_;
 
         json flight_json_;
-        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr map_region_pub_;
+        rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr map_region_pub_;
         unsigned long start_time_;
         unsigned long end_time_;
 

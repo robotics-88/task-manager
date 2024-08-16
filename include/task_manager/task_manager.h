@@ -25,10 +25,17 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/transform_listener.h>
 
+#include "mavros_msgs/msg/basic_id.hpp"
+#include "mavros_msgs/msg/operator_id.hpp"
+#include "mavros_msgs/msg/self_id.hpp"
+#include "mavros_msgs/msg/system.hpp"
+#include "mavros_msgs/msg/system_update.hpp"
+
 
 #include "messages_88/action/explore.hpp"
 #include "messages_88/action/nav_to_point.hpp"
-#include "messages_88/msg/task_status.h"
+#include "messages_88/msg/frontier.hpp"
+#include "messages_88/msg/task_status.hpp"
 #include "messages_88/srv/emergency.hpp"
 #include "messages_88/srv/init_drone_state.hpp"
 #include "messages_88/srv/geopoint.hpp"
@@ -47,11 +54,11 @@ namespace task_manager {
  * @class TaskManager
  * @brief The TaskManager manages the task queue (e.g., navigate to polygon, explore, handle emergency). Handles comms to/from UI, including task assignment, starting capabilities, and safety features based on drone status.
  */
-class TaskManager : public rclcpp::Node
+class TaskManager
 {
     public:
 
-        explicit TaskManager(const rclcpp::NodeOptions & options_ = rclcpp::NodeOptions());
+        explicit TaskManager(const std::shared_ptr<rclcpp::Node> nh);
         ~TaskManager() = default;
 
         enum Task
@@ -99,7 +106,7 @@ class TaskManager : public rclcpp::Node
         void pathPlannerCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) const;
         void costmapCallback(const map_msgs::msg::OccupancyGridUpdate::SharedPtr msg) const;
         void pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) const;
-        void livoxCallback(const livox_ros_driver::msg::CustomMsg::::SharedPtr msg) const;
+        void livoxCallback(const livox_ros_driver2::msg::CustomMsg::SharedPtr msg) const;
         void mapirCallback(const sensor_msgs::msg::Image::SharedPtr msg) const;
         void attolloCallback(const sensor_msgs::msg::Image::SharedPtr msg) const;
         void thermalCallback(const sensor_msgs::msg::Image::SharedPtr msg) const;
@@ -108,10 +115,43 @@ class TaskManager : public rclcpp::Node
         void mapYawCallback(const std_msgs::msg::Float64::SharedPtr msg) const;
 
     private:
+        const std::shared_ptr<rclcpp::Node> nh_;
         rclcpp::TimerBase::SharedPtr task_manager_timer_;
         rclcpp::TimerBase::SharedPtr health_check_timer_;
 
-        rclcpp::Duration task_manager_loop_duration_;
+        float task_manager_loop_duration_;
+
+        // Publishers
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                 health_pub_;
+        rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr                map_yaw_pub_;
+        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr       vision_pose_publisher_;
+        rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr         pointcloud_repub_;
+        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr       local_pos_pub_;
+        rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr             local_vel_pub_;
+        rclcpp::Publisher<mavros_msgs::msg::BasicID>::SharedPtr             odid_basic_id_pub_;
+        rclcpp::Publisher<mavros_msgs::msg::OperatorID>::SharedPtr          odid_operator_id_pub_;
+        rclcpp::Publisher<mavros_msgs::msg::SelfID>::SharedPtr              odid_self_id_pub_;
+        rclcpp::Publisher<mavros_msgs::msg::System>::SharedPtr              odid_system_pub_;
+        rclcpp::Publisher<mavros_msgs::msg::SystemUpdate>::SharedPtr        odid_system_update_pub_;
+        rclcpp::Publisher<bag_recorder::msg::Rosbag>::SharedPtr             start_record_pub_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                 stop_record_pub_;
+        rclcpp::Publisher<messages_88::msg::TaskStatus>::SharedPtr          task_pub_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                 global_pose_pub_;
+
+        // Subscriptions
+        rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr      path_planner_sub_;
+        rclcpp::Subscription<map_msgs::msg::OccupancyGridUpdate>::SharedPtr costmap_sub_;
+        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr              lidar_sub_;
+        rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr            mapir_sub_;
+        rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr            attollo_sub_;
+        rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr            thermal_sub_;
+        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr              rosbag_sub_;
+        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr              map_yaw_sub_;
+        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr              tymbal_sub_;
+        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr    slam_pose_sub_;
+        rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr      registered_cloud_sub_;
+        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr    goal_sub_;
+        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr              burn_unit_sub_;
 
         struct HealthChecks
         {
@@ -126,16 +166,7 @@ class TaskManager : public rclcpp::Node
             bool thermal_ok;
             bool rosbag_ok;
         } health_checks_;
-
-        // Timeouts and subscribers for health checks
-        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr path_planner_sub_;
-        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr costmap_sub_;
-        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr lidar_sub_;
-        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mapir_sub_;
-        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr attollo_sub_;
-        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr rosbag_sub_;
-        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr thermal_sub_;
-        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr health_pub_;
+        
         std::string path_planner_topic_;
         std::string costmap_topic_;
         std::string lidar_topic_;
@@ -182,8 +213,7 @@ class TaskManager : public rclcpp::Node
 
         // Offline handling
         bool offline_;
-        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr map_yaw_pub_;
-        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr map_yaw_sub_;
+        
         
         // UTM PCD saving
         bool save_pcd_;
@@ -192,7 +222,7 @@ class TaskManager : public rclcpp::Node
 
         // Hello Decco comms
         hello_decco_manager::HelloDeccoManager hello_decco_manager_;
-        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr tymbal_sub_;
+        
 
         // Control defaults
         float target_altitude_;
@@ -214,8 +244,7 @@ class TaskManager : public rclcpp::Node
         std::string mavros_base_frame_;
         std::string slam_map_frame_;
         geometry_msgs::msg::TransformStamped map_to_slam_tf_;
-        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr slam_pose_sub_;
-        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr vision_pose_publisher_;
+        
 
         rclcpp::TimerBase::SharedPtr map_tf_timer_;
         std::string slam_pose_topic_;
@@ -224,8 +253,7 @@ class TaskManager : public rclcpp::Node
         double lidar_z_;
 
         // PCL republisher
-        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr registered_cloud_sub_;
-        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pointcloud_repub_;
+        
         geometry_msgs::msg::TransformStamped slam_to_map_tf_;
 
         // Drone state and services
@@ -241,8 +269,6 @@ class TaskManager : public rclcpp::Node
         bool do_record_;
         bool bag_active_;
         std::string record_config_name_;
-        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr start_record_pub_;
-        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr stop_record_pub_;
 
         // Drone state params
         geometry_msgs::msg::PoseStamped slam_pose_;
@@ -252,30 +278,19 @@ class TaskManager : public rclcpp::Node
         rclcpp::TimerBase::SharedPtr mode_monitor_timer_;
         std::string cmd_history_;
         messages_88::msg::TaskStatus task_msg_;
-        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr task_pub_;
-        // rclcpp::Publisher<std_msgs::msg::String>::SharedPtr task_json_pub_;
+        
         geometry_msgs::msg::PoseStamped goal_;
-        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr goal_sub_;
         double estimated_drone_speed_;
         double battery_failsafe_safety_factor_;
         bool needs_takeoff_;
         int takeoff_attempts_;
 
-        rclcpp_action::SimpleActionClient<messages_88::ExploreAction> explore_action_client_;
+        rclcpp_action::Client<messages_88::action::Explore> explore_action_client_;
 
         // State
         bool is_armed_;
         bool in_autonomous_flight_;
 
-        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr local_pos_pub_;
-        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr local_vel_pub_;
-
-        // Remote ID
-        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr odid_basic_id_pub_;
-        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr odid_operator_id_pub_;
-        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr odid_self_id_pub_;
-        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr odid_system_pub_;
-        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr odid_system_update_pub_;
         rclcpp::TimerBase::SharedPtr odid_timer_;
         bool init_remote_id_message_sent_;
         int last_rid_updated_timestamp_;
@@ -296,13 +311,11 @@ class TaskManager : public rclcpp::Node
 
         // Explicit UTM param handling
         bool explicit_global_params_;
-        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr global_pose_pub_;
         geometry_msgs::msg::TransformStamped utm2map_tf_;
         double home_lat_;
         double home_lon_;
 
         // Burn unit handling
-        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr burn_unit_sub_;
         int current_index_;
         std::string burn_dir_prefix_;
         std::string burn_dir_;

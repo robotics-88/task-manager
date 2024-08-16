@@ -26,23 +26,24 @@ typedef bg::model::polygon<BgPoint> BgPolygon;
 
 namespace hello_decco_manager
 {
-HelloDeccoManager::HelloDeccoManager()
-    : mavros_map_frame_("map")
+HelloDeccoManager::HelloDeccoManager(const std::shared_ptr<rclcpp::Node> nh)
+    : nh_(nh)
+    , mavros_map_frame_("map")
     , slam_map_frame_("slam_map")
     , tf_listener_(tf_buffer_)
     , flightleg_area_m2_(2023.0)
 {
     double flightleg_acres;
-    private_nh_.param<double>("flightleg_area_acres", flightleg_acres, flightleg_acres);
+    nh_->declare_parameter("flightleg_area_acres", flightleg_acres);
     flightleg_area_m2_ = 4046.86 * flightleg_acres;
-    private_nh_.param<std::string>("mavros_map_frame", mavros_map_frame_, mavros_map_frame_);
-    private_nh_.param<std::string>("slam_map_frame", slam_map_frame_, slam_map_frame_);
+    nh_->declare_parameter("mavros_map_frame", mavros_map_frame_);
+    nh_->declare_parameter("slam_map_frame", slam_map_frame_);
 
-    tymbal_hd_pub_ = this->create_publisher<std_msgs::msg::String>("/tymbal/to_hello_decco", 10);
-    tymbal_puddle_pub_ = this->create_publisher<std_msgs::msg::String>("/tymbal/to_puddle", 10);
-    map_region_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("/map_region", 10);
+    tymbal_hd_pub_ = nh_->create_publisher<std_msgs::msg::String>("/tymbal/to_hello_decco", 10);
+    tymbal_puddle_pub_ = nh_->create_publisher<std_msgs::msg::String>("/tymbal/to_puddle", 10);
+    map_region_pub_ = nh_->create_publisher<visualization_msgs::msg::Marker>("/map_region", 10);
 
-    mavros_geofence_client_ = this->create_client<mavros_msgs::srv::WaypointPush>("/mavros/geofence/push");
+    mavros_geofence_client_ = nh_->create_client<mavros_msgs::srv::WaypointPush>("/mavros/geofence/push");
 }
 
 HelloDeccoManager::~HelloDeccoManager() {
@@ -53,12 +54,12 @@ void HelloDeccoManager::packageToTymbalHD(std::string topic, json gossip) {
     msg_json["topic"] = topic;
     json stamped_gossip = gossip;
     unsigned long now_time;
-    stamped_gossip["stamp"] = decco_utilities::rosTimeToMilliseconds(this->get_clock()->now());
+    stamped_gossip["stamp"] = decco_utilities::rosTimeToMilliseconds(nh_->get_clock()->now());
     msg_json["gossip"] = stamped_gossip;
     std::string s = msg_json.dump();
     auto msg_string = std_msgs::msg::String();
     msg_string.data = s;
-    tymbal_hd_pub_.publish(msg_string); // tymbal to Hello Decco
+    tymbal_hd_pub_->publish(msg_string); // tymbal to Hello Decco
 }
 
 void HelloDeccoManager::packageToTymbalPuddle(std::string topic, json gossip) {
@@ -69,7 +70,7 @@ void HelloDeccoManager::packageToTymbalPuddle(std::string topic, json gossip) {
     std::string s = msg_json.dump();
     std_msgs::msg::String msg_string;
     msg_string.data = s;
-    tymbal_puddle_pub_.publish(msg_string); // tymbal to Hello Decco
+    tymbal_puddle_pub_->publish(msg_string); // tymbal to Hello Decco
 }
 
 void HelloDeccoManager::flightReceipt() {
@@ -82,7 +83,7 @@ void HelloDeccoManager::acceptFlight(json msgJson, int utm_zone, bool &geofence_
     flightReceipt();
     // Parse data
     flight_json_ = msgJson;
-    RCLCPP_INFO(this->get_logger(), "Flight received");
+    RCLCPP_INFO(nh_->get_logger(), "Flight received");
     geometry_msgs::msg::Polygon poly = polygonFromJson(flight_json_["subpolygon"]);
     polygonInitializer(poly, false, geofence_ok);
 
@@ -96,7 +97,7 @@ void HelloDeccoManager::polygonInitializer(const geometry_msgs::msg::Polygon &ms
     visualizePolygon();
 
     if (!polygonToGeofence(msg)) {
-        RCLCPP_WARN(this->get_logger(), "Failed to convert polygon to geofence");
+        RCLCPP_WARN(nh_->get_logger(), "Failed to convert polygon to geofence");
         geofence_ok = false;
     }
     else {
@@ -105,23 +106,23 @@ void HelloDeccoManager::polygonInitializer(const geometry_msgs::msg::Polygon &ms
 
     if (make_legs) {
         int num_legs = polygonNumFlights(msg);
-        RCLCPP_INFO(this->get_logger(), "Polygon for exploration will take %d flights to complete.", num_legs);
+        RCLCPP_INFO(nh_->get_logger(), "Polygon for exploration will take %d flights to complete.", num_legs);
     }
 }
 
 void HelloDeccoManager::updateFlightStatus(int index, std::string flight_status) {
     flight_json_["status"] = flight_status;
     if (flight_status == "ACTIVE") {
-        start_time_ = decco_utilities::rosTimeToMilliseconds(this->get_clock()->now());
+        start_time_ = decco_utilities::rosTimeToMilliseconds(nh_->get_clock()->now());
         flight_json_["startTime"] = std::to_string(start_time_);
     }
     else if (flight_status == "COMPLETED") {
-        end_time_ = decco_utilities::rosTimeToMilliseconds(this->get_clock()->now());
+        end_time_ = decco_utilities::rosTimeToMilliseconds(nh_->get_clock()->now());
         flight_json_["endTime"] = std::to_string(end_time_);
         flight_json_["duration"] = std::to_string(end_time_ - start_time_);
     }
     packageToTymbalHD("flight_receive", flight_json_);
-    RCLCPP_INFO(this->get_logger(), "Burn json filled in");
+    RCLCPP_INFO(nh_->get_logger(), "Burn json filled in");
 }
 
 geometry_msgs::msg::Polygon HelloDeccoManager::polygonFromJson(json jsonPolygon) {
@@ -139,7 +140,7 @@ void HelloDeccoManager::visualizePolygon() {
     visualization_msgs::msg::Marker m;
     m.scale.x = 2.0;
     m.header.frame_id = mavros_map_frame_;
-    m.header.stamp = this->get_clock()->now();
+    m.header.stamp = nh_->get_clock()->now();
     m.type = visualization_msgs::msg::Marker::LINE_STRIP;
     m.action = visualization_msgs::msg::Marker::ADD;
     m.color.a = 1.0;
@@ -158,7 +159,7 @@ void HelloDeccoManager::visualizePolygon() {
     // Repost first marker at end to close the loop
     geometry_msgs::msg::Point p = m.points.at(0);
     m.points.push_back(p);
-    map_region_pub_.publish(m);
+    map_region_pub_->publish(m);
 }
 
 geometry_msgs::msg::Polygon HelloDeccoManager::polygonToMap(const geometry_msgs::msg::Polygon &polygon) {
@@ -200,7 +201,7 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::msg::Polygon &pol
     // If decco is not inside polygon, adjust polygon to include drone location
     if (!decco_utilities::isInside(polygon_map, drone_location)) {
 
-        RCLCPP_INFO(this->get_logger(), "Drone not inside polygon, adjusting polygon geofence");
+        RCLCPP_INFO(nh_->get_logger(), "Drone not inside polygon, adjusting polygon geofence");
 
         int n1 = polygon_map.points.size();
         double minDist = std::numeric_limits<double>::max();
@@ -335,7 +336,7 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::msg::Polygon &pol
 
     std::string reason;
     if (!bg::is_valid(bg_poly, reason)) {
-        RCLCPP_ERROR(this->get_logger(), "Geofence polgyon invalid due to %s, not setting geofence", reason.c_str());
+        RCLCPP_ERROR(nh_->get_logger(), "Geofence polgyon invalid due to %s, not setting geofence", reason.c_str());
         return false;
     }
 
@@ -369,17 +370,17 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::msg::Polygon &pol
         request->waypoints.push_back(wp);
     }
 
-    RCLCPP_INFO(this->get_logger(), "Uploading polygon to geofence");
+    RCLCPP_INFO(nh_->get_logger(), "Uploading polygon to geofence");
     // Run geofence rosservice call for mavros to upload geofence wps to autopilot
     auto result = mavros_geofence_client_->async_send_request(request);
 
-    if (rclcpp::spin_until_future_complete(this, rclcpp::FutureReturnCode::SUCCESS) ==
+    if (rclcpp::spin_until_future_complete(nh_, rclcpp::FutureReturnCode::SUCCESS) ==
     rclcpp::FutureReturnCode::SUCCESS)
     {
         return true;
     }
     else {
-        RCLCPP_WARN(this->get_logger(), "Geofence push service call failed");
+        RCLCPP_WARN(nh_->get_logger(), "Geofence push service call failed");
         return false;
     }
 }
@@ -413,7 +414,7 @@ void HelloDeccoManager::visualizeLegs() {
         visualization_msgs::msg::Marker m;
         m.scale.x = 2.0;
         m.header.frame_id = mavros_map_frame_;
-        m.header.stamp = this->get_clock()->now();
+        m.header.stamp = nh_->get_clock()->now();
         m.type = visualization_msgs::msg::Marker::LINE_STRIP;
         m.action = visualization_msgs::msg::Marker::ADD;
         m.color.a = 1.0;
@@ -434,7 +435,7 @@ void HelloDeccoManager::visualizeLegs() {
         // Repost first marker at end to close the loop
         geometry_msgs::msg::Point p = m.points.at(0);
         m.points.push_back(p);
-        map_region_pub_.publish(m);
+        map_region_pub_->publish(m);
     }
 }
 
@@ -450,7 +451,7 @@ void HelloDeccoManager::visualizeLegs() {
 //         visualization_msgs::msg::Marker m;
 //         m.scale.x = 2.0;
 //         m.header.frame_id = mavros_map_frame_;
-//         m.header.stamp = this->get_clock()->now();
+//         m.header.stamp = nh_->get_clock()->now();
 //         m.type = visualization_msgs::msg::Marker::LINE_STRIP;
 //         m.action = visualization_msgs::msg::Marker::ADD;
 //         m.color.a = 1.0;
@@ -481,7 +482,7 @@ void HelloDeccoManager::visualizeLegs() {
 //         // Repost first marker at end to close the loop
 //         geometry_msgs::msg::Point p = m.points.at(0);
 //         m.points.push_back(p);
-//         map_region_pub_.publish(m);
+//         map_region_pub_->publish(m);
 //     }
 //     return num_legs;
 // }
