@@ -19,6 +19,7 @@
   <depend>libmavconn</depend>
   <depend>mavros</depend>
   <depend>messages_88</depend>
+  <depend>pcl_conversions</depend>
   <depend>pcl_ros</depend>
   <depend>std_msgs</depend>
   <depend>sensor_msgs</depend>

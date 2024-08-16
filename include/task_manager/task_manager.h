@@ -6,31 +6,28 @@ Author: Erin Linebarger <erin@robotics88.com>
 #ifndef TASK_MANAGER_H_
 #define TASK_MANAGER_H_
 
+#define BOOST_BIND_NO_PLACEHOLDERS
+
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
 
+
+//#include "bag_recorder/msg/rosbag.hpp"
 #include "nav2_costmap_2d/costmap_2d.hpp"
 #include "geometry_msgs/msg/polygon.h"
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "geometry_msgs/msg/twist.hpp"
+
+
 #include "livox_ros_driver2/msg/custom_msg.hpp"
 
 #include "map_msgs/msg/occupancy_grid_update.hpp"
-//#include "pcl_ros/point_cloud.hpp"
-#include "pcl/point_cloud.h"
-#include "pcl/point_types.h"
-#include "sensor_msgs/msg/image.hpp"
-#include "sensor_msgs/msg/point_cloud2.hpp"
-#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
-#include <tf2_ros/static_transform_broadcaster.h>
-#include <tf2_ros/transform_broadcaster.h>
-#include <tf2_ros/transform_listener.h>
 
 #include "mavros_msgs/msg/basic_id.hpp"
 #include "mavros_msgs/msg/operator_id.hpp"
 #include "mavros_msgs/msg/self_id.hpp"
 #include "mavros_msgs/msg/system.hpp"
 #include "mavros_msgs/msg/system_update.hpp"
-
 
 #include "messages_88/action/explore.hpp"
 #include "messages_88/action/nav_to_point.hpp"
@@ -43,9 +40,20 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "messages_88/srv/prepare_drone.hpp"
 #include "messages_88/srv/prepare_explore.hpp"
 #include "messages_88/srv/save.hpp"
+
+#include "pcl_conversions/pcl_conversions.h"
+//#include "pcl_ros/point_cloud.hpp"
+#include "pcl/point_cloud.h"
+#include "pcl/point_types.h"
+#include "sensor_msgs/msg/image.hpp"
+#include "sensor_msgs/msg/point_cloud2.hpp"
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_ros/static_transform_broadcaster.h>
+#include <tf2_ros/transform_broadcaster.h>
+#include <tf2_ros/transform_listener.h>
+
 #include "flight_controller_interface.h"
 #include "hello_decco_manager.h"
-
 #include "json.hpp"
 using json = nlohmann::json;
 
@@ -101,18 +109,18 @@ class TaskManager
         void odidTimerCallback();
 
         // Subscriber callbacks
-        void slamPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr slam_pose) const;
-        void registeredPclCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) const;
-        void pathPlannerCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) const;
-        void costmapCallback(const map_msgs::msg::OccupancyGridUpdate::SharedPtr msg) const;
-        void pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) const;
-        void livoxCallback(const livox_ros_driver2::msg::CustomMsg::SharedPtr msg) const;
-        void mapirCallback(const sensor_msgs::msg::Image::SharedPtr msg) const;
-        void attolloCallback(const sensor_msgs::msg::Image::SharedPtr msg) const;
-        void thermalCallback(const sensor_msgs::msg::Image::SharedPtr msg) const;
-        void rosbagCallback(const std_msgs::msg::String::SharedPtr msg) const;
-        void goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg) const;
-        void mapYawCallback(const std_msgs::msg::Float64::SharedPtr msg) const;
+        void slamPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr slam_pose);
+        void registeredPclCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
+        void pathPlannerCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
+        void costmapCallback(const map_msgs::msg::OccupancyGridUpdate::SharedPtr msg);
+        void pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
+        void livoxCallback(const livox_ros_driver2::msg::CustomMsg::SharedPtr msg);
+        void mapirCallback(const sensor_msgs::msg::Image::SharedPtr msg);
+        void attolloCallback(const sensor_msgs::msg::Image::SharedPtr msg);
+        void thermalCallback(const sensor_msgs::msg::Image::SharedPtr msg);
+        void rosbagCallback(const std_msgs::msg::String::SharedPtr msg);
+        void goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
+        void mapYawCallback(const std_msgs::msg::Float64::SharedPtr msg);
 
     private:
         const std::shared_ptr<rclcpp::Node> nh_;
@@ -136,17 +144,18 @@ class TaskManager
         rclcpp::Publisher<bag_recorder::msg::Rosbag>::SharedPtr             start_record_pub_;
         rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                 stop_record_pub_;
         rclcpp::Publisher<messages_88::msg::TaskStatus>::SharedPtr          task_pub_;
-        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                 global_pose_pub_;
+        rclcpp::Publisher<sensor_msgs::msg::NavSatFix>::SharedPtr           global_pose_pub_;
 
         // Subscriptions
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr      path_planner_sub_;
         rclcpp::Subscription<map_msgs::msg::OccupancyGridUpdate>::SharedPtr costmap_sub_;
-        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr              lidar_sub_;
+        rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr      lidar_sub_;
+        rclcpp::Subscription<livox_ros_driver2::msg::CustomMsg>::SharedPtr  livox_lidar_sub_;
         rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr            mapir_sub_;
         rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr            attollo_sub_;
         rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr            thermal_sub_;
         rclcpp::Subscription<std_msgs::msg::String>::SharedPtr              rosbag_sub_;
-        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr              map_yaw_sub_;
+        rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr             map_yaw_sub_;
         rclcpp::Subscription<std_msgs::msg::String>::SharedPtr              tymbal_sub_;
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr    slam_pose_sub_;
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr      registered_cloud_sub_;
@@ -298,7 +307,7 @@ class TaskManager
 
         // Goal details
         geometry_msgs::msg::Point current_target_;
-        messages_88::msg::Frontier current_explore_goal_;
+        messages_88::action::Explore current_explore_goal_;
 
         // Mavros modes
         std::string land_mode_;

@@ -12,7 +12,6 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 
 find_package(rclcpp_action)
-# find_package(actionlib_msgs)
 find_package(bag_recorder)
 find_package(geometry_msgs)
 find_package(livox_ros_driver2)
@@ -20,6 +19,7 @@ find_package(libmavconn)
 find_package(mavros)
 find_package(mavros_msgs)
 find_package(messages_88)
+find_package(pcl_conversions)
 find_package(pcl_ros)
 find_package(sensor_msgs)
 find_package(std_msgs)
@@ -53,11 +53,12 @@ add_executable(task_manager
 
 ament_target_dependencies(task_manager
   messages_88
+  pcl_conversions
   pcl_ros
   rclcpp
   std_msgs
   libmavconn
-  
+  livox_ros_driver2
 )
 
 install(TARGETS

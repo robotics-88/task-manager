@@ -12,10 +12,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <boost/uuid/uuid_io.hpp>  
 #include <float.h>
 
-
-#include "geometry_msgs/msg/twist.hpp"
-
-//#include "bag_recorder/msg/rosbag.hpp"
 #include "decco_utilities.h"
 
 // #include <pcl_ros/point_cloud.h>
@@ -126,7 +122,7 @@ TaskManager::TaskManager(const std::shared_ptr<rclcpp::Node> nh)
     nh_->declare_parameter("data_directory", burn_dir_prefix_);
     nh_->declare_parameter("explicit_global", explicit_global_params_);
     nh_->declare_parameter("estimated_drone_speed", estimated_drone_speed_);
-    estimated_drone_speed_ = estimated_drone_speed_ < 1 ? 1.0 : estimated_drone_speed_; // nh_ protects against a later potential div by 0
+    estimated_drone_speed_ = estimated_drone_speed_ < 1 ? 1.0 : estimated_drone_speed_; // this protects against a later potential div by 0
     nh_->declare_parameter("battery_failsafe_safety_factor", battery_failsafe_safety_factor_);
     nh_->declare_parameter("do_slam", do_slam_);
     nh_->declare_parameter("do_mapir", do_mapir_);
@@ -140,37 +136,37 @@ TaskManager::TaskManager(const std::shared_ptr<rclcpp::Node> nh)
     nh_->declare_parameter("lidar_z", lidar_z_);
 
     // SLAM pose sub
-    slam_pose_sub_ = nh_->create_subscription<geometry_msgs::msg::PoseStamped>(slam_pose_topic_, 10, std::bind(&TaskManager::slamPoseCallback, nh_, _1));
+    slam_pose_sub_ = nh_->create_subscription<geometry_msgs::msg::PoseStamped>(slam_pose_topic_, 10, std::bind(&TaskManager::slamPoseCallback, this, _1));
 
     // Health pubs/subs
     health_pub_ = nh_->create_publisher<std_msgs::msg::String>("/mapversation/health_report", 10);
     if (do_slam_) {
-        path_planner_sub_ = nh_->create_subscription<sensor_msgs::msg::PointCloud2>(path_planner_topic_, 10, std::bind(&TaskManager::pathPlannerCallback, nh_, _1));
+        path_planner_sub_ = nh_->create_subscription<sensor_msgs::msg::PointCloud2>(path_planner_topic_, 10, std::bind(&TaskManager::pathPlannerCallback, this, _1));
         // Pointcloud republisher only if SLAM running
         pointcloud_repub_ = nh_->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered_map", 10);
-        registered_cloud_sub_ = nh_->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered", 10, std::bind(&TaskManager::registeredPclCallback, nh_, _1));
+        registered_cloud_sub_ = nh_->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered", 10, std::bind(&TaskManager::registeredPclCallback, this, _1));
     }
-    costmap_sub_ = nh_->create_subscription<map_msgs::msg::OccupancyGridUpdate>(costmap_topic_, 10, std::bind(&TaskManager::costmapCallback, nh_, _1));
+    costmap_sub_ = nh_->create_subscription<map_msgs::msg::OccupancyGridUpdate>(costmap_topic_, 10, std::bind(&TaskManager::costmapCallback, this, _1));
     if (lidar_type == 2) {
-        lidar_sub_ = nh_->create_subscription<sensor_msgs::msg::PointCloud2>(lidar_topic_, 10, std::bind(&TaskManager::pointcloudCallback, nh_, _1));
+        lidar_sub_ = nh_->create_subscription<sensor_msgs::msg::PointCloud2>(lidar_topic_, 10, std::bind(&TaskManager::pointcloudCallback, this, _1));
     }
     else if (lidar_type == 4) {
-        lidar_sub_ = nh_->create_subscription<livox_ros_driver2::msg::CustomMsg>(lidar_topic_, 10, std::bind(&TaskManager::livoxCallback, nh_, _1));
+        livox_lidar_sub_ = nh_->create_subscription<livox_ros_driver2::msg::CustomMsg>(lidar_topic_, 10, std::bind(&TaskManager::livoxCallback, this, _1));
     }
     if (do_mapir_) {
-        mapir_sub_ = nh_->create_subscription<sensor_msgs::msg::Image>(mapir_topic_, 10, std::bind(&TaskManager::mapirCallback, nh_, _1));
+        mapir_sub_ = nh_->create_subscription<sensor_msgs::msg::Image>(mapir_topic_, 10, std::bind(&TaskManager::mapirCallback, this, _1));
     }
     else if (do_mapir_rgb_) {
-        mapir_sub_ = nh_->create_subscription<sensor_msgs::msg::Image>(mapir_rgb_topic_, 10, std::bind(&TaskManager::mapirCallback, nh_, _1));
+        mapir_sub_ = nh_->create_subscription<sensor_msgs::msg::Image>(mapir_rgb_topic_, 10, std::bind(&TaskManager::mapirCallback, this, _1));
     }
     if (do_attollo_) {
-        attollo_sub_ = nh_->create_subscription<sensor_msgs::msg::Image>(attollo_topic_, 10, std::bind(&TaskManager::attolloCallback, nh_, _1));
+        attollo_sub_ = nh_->create_subscription<sensor_msgs::msg::Image>(attollo_topic_, 10, std::bind(&TaskManager::attolloCallback, this, _1));
     }
     if (do_thermal_) {
-        thermal_sub_ = nh_->create_subscription<sensor_msgs::msg::Image>(thermal_topic_, 10, std::bind(&TaskManager::thermalCallback, nh_, _1));
+        thermal_sub_ = nh_->create_subscription<sensor_msgs::msg::Image>(thermal_topic_, 10, std::bind(&TaskManager::thermalCallback, this, _1));
     }
 
-    rosbag_sub_ = nh_->create_subscription<std_msgs::msg::String>(rosbag_topic_, 10, std::bind(&TaskManager::rosbagCallback, nh_, _1));
+    rosbag_sub_ = nh_->create_subscription<std_msgs::msg::String>(rosbag_topic_, 10, std::bind(&TaskManager::rosbagCallback, this, _1));
 
     // Geo/map state services
     geopoint_service_ = nh_->create_service<messages_88::srv::Geopoint>("/slam2geo", &TaskManager::convert2Geo);
@@ -195,7 +191,7 @@ TaskManager::TaskManager(const std::shared_ptr<rclcpp::Node> nh)
     start_record_pub_ = nh_->create_publisher<bag_recorder::msg::Rosbag>("/record/start", 5);
     stop_record_pub_ = nh_->create_publisher<std_msgs::msg::String>("/record/stop", 5);
     if (offline_) {
-        map_yaw_sub_ = nh_->create_subscription<std_msgs::msg::Float64>("map_yaw", 10, std::bind(&TaskManager::mapYawCallback, nh_, _1));
+        map_yaw_sub_ = nh_->create_subscription<std_msgs::msg::Float64>("map_yaw", 10, std::bind(&TaskManager::mapYawCallback, this, _1));
         if (save_pcd_) {
             pcl_save_ .reset(new pcl::PointCloud<pcl::PointXYZI>());
         }
@@ -206,18 +202,18 @@ TaskManager::TaskManager(const std::shared_ptr<rclcpp::Node> nh)
 
     // Task status pub
     task_pub_ = nh_->create_publisher<messages_88::msg::TaskStatus>("task_status", 10);
-    goal_sub_ = nh_->create_subscription<geometry_msgs::msg::PoseStamped>(goal_topic, 10, std::bind(&TaskManager::goalCallback, nh_, _1));
+    goal_sub_ = nh_->create_subscription<geometry_msgs::msg::PoseStamped>(goal_topic, 10, std::bind(&TaskManager::goalCallback, this, _1));
     task_msg_.enable_autonomy = false;
     task_msg_.enable_exploration = false;
 
     // tymbal subscriber
-    tymbal_sub_ = nh_->create_subscription<std_msgs::msg::String>("/tymbal/to_decco", 10, std::bind(&TaskManager::packageFromTymbal, nh_, _1));
+    tymbal_sub_ = nh_->create_subscription<std_msgs::msg::String>("/tymbal/to_decco", 10, std::bind(&TaskManager::packageFromTymbal, this, _1));
 
     initFlightControllerInterface();
 
-    health_check_timer_ = nh_->create_wall_timer(100ms, std::bind(&TaskManager::checkHealth, nh_));
+    health_check_timer_ = nh_->create_wall_timer(100ms, std::bind(&TaskManager::checkHealth, this));
 
-    task_manager_timer_ = nh_->create_wall_timer(std::chrono::duration<float>(task_manager_loop_duration_), std::bind(&TaskManager::runTaskManager, nh_));
+    task_manager_timer_ = nh_->create_wall_timer(std::chrono::duration<float>(task_manager_loop_duration_), std::bind(&TaskManager::runTaskManager, this));
 }
 
 TaskManager::~TaskManager(){
@@ -271,7 +267,7 @@ void TaskManager::runTaskManager() {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Preflight checks passed, ready to arm");
                 updateCurrentTask(Task::READY);
             } 
-            else if (nh_->get_clock()->now() - last_preflight_check_log_stamp_ > ros::Duration(10.0)) {
+            else if (nh_->get_clock()->now() - last_preflight_check_log_stamp_ > rclcpp::Duration(10.0)) {
                 logEvent(EventType::FLIGHT_CONTROL, Severity::MEDIUM,
                          "Preflight check failed due to " + flight_controller_interface_.getPreflightCheckReasons());
                 last_preflight_check_log_stamp_ = nh_->get_clock()->now();
@@ -347,7 +343,7 @@ void TaskManager::runTaskManager() {
                 ) {
 
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Initiating RTL_88 due to exploration " + goal_state.toString());
-                hello_decco_manager_.updateFlightStatus(current_index_, "COMPLETED");
+                hello_decco_manager_.updateFlightStatus("COMPLETED");
                 startRtl88();
             }
 
@@ -387,7 +383,8 @@ void TaskManager::runTaskManager() {
     hello_decco_manager_.packageToTymbalHD("task_status", task_json);
 
     json path_json;
-    path_json["timestamp"] = flight_controller_interface_.getCurrentGlobalPosition().header.stamp.toSec();
+    path_json["timestamp"] = static_cast<float>(flight_controller_interface_.getCurrentGlobalPosition().header.stamp.sec
+                                + static_cast<float>(flight_controller_interface_.getCurrentGlobalPosition().header.stamp.nanosec) / 1e9);
     path_json["latitude"] = flight_controller_interface_.getCurrentGlobalPosition().latitude;
     path_json["longitude"] = flight_controller_interface_.getCurrentGlobalPosition().longitude;
     // hello_decco_manager_.packageToTymbalPuddle("/flight", path_json);
@@ -585,7 +582,7 @@ bool TaskManager::initialized() {
     if (!offline_) {
         double yaw = 0;
         if (!flight_controller_interface_.getMapYaw(yaw)) {
-            ROS_WARN_THROTTLE(10, "Waiting for heading from autopilot...");
+            RCLCPP_WARN_THROTTLE(nh_->get_logger(), *nh_->get_clock(), 10000, "Waiting for heading from autopilot...");
             return false;
         }
 
@@ -662,8 +659,8 @@ bool TaskManager::initialized() {
     ros::topic::waitForMessage<sensor_msgs::msg::NavSatFix>("/mavros/global_position/global", nh_);
     while (home_utm_zone_ < 0) {
         home_utm_zone_ = flight_controller_interface_.getUTMZone();
-        ros::spinOnce();
-        ros::Duration(0.2).sleep();
+        rclcpp::spinOnce();
+        rclcpp::Rate(0.2).sleep();
     }
     RCLCPP_INFO(nh_->get_logger(), "Got global, UTM zone: %d. LL : (%f, %f)", home_utm_zone_, flight_controller_interface_.getCurrentGlobalPosition().latitude, flight_controller_interface_.getCurrentGlobalPosition().longitude);
     double utm_x, utm_y;
@@ -699,7 +696,7 @@ bool TaskManager::convert2Geo(messages_88::srv::Geopoint::Request& req, messages
     }
     geometry_msgs::msg::PointStamped in, out;
     in.header.frame_id = slam_map_frame_;
-    in.header.stamp = ros::Time(0);
+    in.header.stamp = nh_->get_clock()->now();
     in.point.x = req.slam_position.x;
     in.point.y = req.slam_position.y;
     in.point.z = req.slam_position.z;
@@ -713,7 +710,7 @@ bool TaskManager::convert2Geo(messages_88::srv::Geopoint::Request& req, messages
     return true;
 }
 
-void TaskManager::heartbeatTimerCallback(const ros::TimerEvent&) {
+void TaskManager::heartbeatTimerCallback() {
     sensor_msgs::msg::NavSatFix hb = flight_controller_interface_.getCurrentGlobalPosition();
     geometry_msgs::msg::PoseStamped local = flight_controller_interface_.getCurrentLocalPosition();
     double altitudeAgl = flight_controller_interface_.getAltitudeAGL();
@@ -726,23 +723,23 @@ void TaskManager::heartbeatTimerCallback(const ros::TimerEvent&) {
         {"heading", yaw},
         {"header", {
             {"frame_id", hb.header.frame_id},
-            {"stamp", hb.header.stamp.toSec()}
+            {"stamp", static_cast<float>(hb.header.stamp.sec) + static_cast<float>(hb.header.stamp.nanosec) / 1e9}
         }}
     };
     hello_decco_manager_.packageToTymbalHD("decco_heartbeat", j);
 
-    ros::Time now_time = nh_->get_clock()->now();
-    float interval = (now_time - last_ui_heartbeat_stamp_).toSec();
+    rclcpp::Time now_time = nh_->get_clock()->now();
+    float interval = (now_time - last_ui_heartbeat_stamp_).seconds();
     // TODO needs also check if drone state is in air/action
     if (interval > ui_hb_threshold_) {
-        messages_88::Emergency emergency;
+        messages_88::srv::Emergency emergency;
         // TODO fill in pause msg
         // emergency_client_.call(emergency);
     }
 }
 
 // Publish the ODID messages that require updates
-void TaskManager::odidTimerCallback(const ros::TimerEvent&) {
+void TaskManager::odidTimerCallback() {
 
     // Self ID
     mavros_msgs::msg::SelfID self_id;
@@ -977,7 +974,7 @@ std::string TaskManager::getSeverityString(Severity sev) {
     }
 }
 
-void TaskManager::slamPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr slam_pose) const {
+void TaskManager::slamPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr slam_pose) {
 
     slam_pose_ = *slam_pose;
 
@@ -988,9 +985,9 @@ void TaskManager::slamPoseCallback(const geometry_msgs::msg::PoseStamped::Shared
 
     geometry_msgs::msg::TransformStamped tf;
     try {
-        tf = tf_buffer_.lookupTransform(mavros_map_frame_, slam_map_frame_, ros::Time(0));
+        tf = tf_buffer_.lookupTransform(mavros_map_frame_, slam_map_frame_, tf2::TimePointZero);
     } catch (tf2::TransformException & ex) {
-        ROS_WARN_THROTTLE(10, "Cannot publish vision pose as map<>slam_map tf not yet available");
+        RCLCPP_WARN_THROTTLE(nh_->get_logger(), *nh_->get_clock(), 10000, "Cannot publish vision pose as map<>slam_map tf not yet available");
         return;
     }
 
@@ -1026,7 +1023,7 @@ void TaskManager::slamPoseCallback(const geometry_msgs::msg::PoseStamped::Shared
     }
 }
 
-void TaskManager::registeredPclCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) const {
+void TaskManager::registeredPclCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
     if (!map_tf_init_) {
         return;
     }
@@ -1052,43 +1049,43 @@ void TaskManager::registeredPclCallback(const sensor_msgs::msg::PointCloud2::Sha
     }
 }
 
-void TaskManager::pathPlannerCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) const {
+void TaskManager::pathPlannerCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
     last_path_planner_stamp_ = msg->header.stamp;
 }
 
-void TaskManager::costmapCallback(const map_msgs::msg::OccupancyGridUpdate::SharedPtr msg) const {
+void TaskManager::costmapCallback(const map_msgs::msg::OccupancyGridUpdate::SharedPtr msg) {
     last_costmap_stamp_ = msg->header.stamp;
 }
 
-void TaskManager::pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) const {
+void TaskManager::pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
     last_lidar_stamp_ =  msg->header.stamp;
 }
 
-void TaskManager::livoxCallback(const livox_ros_driver2::msg::CustomMsg::SharedPtr msg) const {
+void TaskManager::livoxCallback(const livox_ros_driver2::msg::CustomMsg::SharedPtr msg) {
     last_lidar_stamp_ =  msg->header.stamp;
 }
 
-void TaskManager::mapirCallback(const sensor_msgs::msg::Image::SharedPtr msg) const {
+void TaskManager::mapirCallback(const sensor_msgs::msg::Image::SharedPtr msg) {
     last_mapir_stamp_ = msg->header.stamp;
 }
 
-void TaskManager::attolloCallback(const sensor_msgs::msg::Image::SharedPtr msg) const {
+void TaskManager::attolloCallback(const sensor_msgs::msg::Image::SharedPtr msg) {
     last_attollo_stamp_ = msg->header.stamp;
 }
 
-void TaskManager::thermalCallback(const sensor_msgs::msg::Image::SharedPtr msg) const {
+void TaskManager::thermalCallback(const sensor_msgs::msg::Image::SharedPtr msg) {
     last_thermal_stamp_ = msg->header.stamp;
 }
 
-void TaskManager::rosbagCallback(const std_msgs::msg::String::SharedPtr msg) const {
+void TaskManager::rosbagCallback(const std_msgs::msg::String::SharedPtr msg) {
     last_rosbag_stamp_ = nh_->get_clock()->now();
 }
 
-void TaskManager::goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg) const {
+void TaskManager::goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
     goal_ = *msg;
 }
 
-void TaskManager::mapYawCallback(const std_msgs::msg::Float64::SharedPtr msg) const {
+void TaskManager::mapYawCallback(const std_msgs::msg::Float64::SharedPtr msg) {
     map_yaw_ = msg->data;
     RCLCPP_INFO(nh_->get_logger(), "Got map yaw: %f", map_yaw_ * 180 / M_PI);
 }
@@ -1126,7 +1123,7 @@ void TaskManager::acceptFlight(json flight) {
 
     hello_decco_manager_.setDroneLocationLocal(slam_pose_);
     bool geofence_ok;
-    hello_decco_manager_.acceptFlight(flight, home_utm_zone_, geofence_ok);
+    hello_decco_manager_.acceptFlight(flight, geofence_ok);
 
     if (!geofence_ok) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Geofence invalid, not setting geofence");
