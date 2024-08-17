@@ -179,7 +179,7 @@ TaskManager::TaskManager(const std::shared_ptr<rclcpp::Node> nh)
       std::bind(&TaskManager::explore_result_callback, this, std::placeholders::_1);
 
     // Geo/map state services
-    geopoint_service_ = nh_->create_service<messages_88::srv::Geopoint>("/slam2geo", &TaskManager::convert2Geo);
+    // geopoint_service_ = nh_->create_service<messages_88::srv::Geopoint>("/slam2geo", &TaskManager::convert2Geo);
 
     // MAVROS
     local_pos_pub_ = nh_->create_publisher<geometry_msgs::msg::PoseStamped>(goal_topic, 10);
@@ -220,7 +220,7 @@ TaskManager::TaskManager(const std::shared_ptr<rclcpp::Node> nh)
     tymbal_sub_ = nh_->create_subscription<std_msgs::msg::String>("/tymbal/to_decco", 10, std::bind(&TaskManager::packageFromTymbal, this, _1));
 
     // TF
-    tf_static_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
+    tf_static_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(nh_);
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(nh_->get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
