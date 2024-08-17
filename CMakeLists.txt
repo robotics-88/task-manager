@@ -11,22 +11,20 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 
-find_package(rclcpp_action)
-find_package(bag_recorder)
-find_package(geometry_msgs)
-find_package(livox_ros_driver2)
-find_package(libmavconn)
-find_package(mavros)
-find_package(mavros_msgs)
-find_package(messages_88)
-find_package(pcl_conversions)
-find_package(pcl_ros)
-find_package(sensor_msgs)
-find_package(std_msgs)
-find_package(tf2)
-find_package(tf2_geometry_msgs)
-find_package(tf2_ros)
-find_package(visualization_msgs)
+find_package(rclcpp_action REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(livox_ros_driver2 REQUIRED)
+find_package(libmavconn REQUIRED)
+find_package(mavros REQUIRED)
+find_package(mavros_msgs REQUIRED)
+find_package(messages_88 REQUIRED)
+find_package(pcl_ros REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
 find_package(GeographicLib REQUIRED)
 find_package(PCL REQUIRED)
@@ -53,7 +51,6 @@ add_executable(task_manager
 
 ament_target_dependencies(task_manager
   messages_88
-  pcl_conversions
   pcl_ros
   rclcpp
   std_msgs

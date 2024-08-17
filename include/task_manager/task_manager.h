@@ -41,7 +41,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "messages_88/srv/prepare_explore.hpp"
 #include "messages_88/srv/save.hpp"
 
-#include "pcl_conversions/pcl_conversions.h"
+//#include "pcl_conversions/pcl_conversions.h"
 //#include "pcl_ros/point_cloud.hpp"
 #include "pcl/point_cloud.h"
 #include "pcl/point_types.h"
@@ -307,7 +307,7 @@ class TaskManager
 
         // Goal details
         geometry_msgs::msg::Point current_target_;
-        messages_88::action::Explore current_explore_goal_;
+        messages_88::action::Explore_Goal current_explore_goal_;
 
         // Mavros modes
         std::string land_mode_;

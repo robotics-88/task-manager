@@ -336,10 +336,10 @@ void TaskManager::runTaskManager() {
         }
         case Task::EXPLORING: {            
             // Check action client status to see if complete
-            rclcpp_action::GoalStatus goal_state = explore_action_client_.getState();
-            if (goal_state == actionlib::SimpleClientGoalState::ABORTED || 
-                goal_state == actionlib::SimpleClientGoalState::LOST ||
-                goal_state == actionlib::SimpleClientGoalState::SUCCEEDED
+            rclcpp_action::GoalStatus goal_state = explore_action_client_.async_get_result();
+            if (goal_state.status == rclcpp_action::GoalStatus::STATUS_ABORTED || 
+                goal_state.status == rclcpp_action::GoalStatus::STATUS_CANCELED ||
+                goal_state.status == rclcpp_action::GoalStatus::STATUS_SUCCEEDED
                 ) {
 
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Initiating RTL_88 due to exploration " + goal_state.toString());
@@ -439,7 +439,7 @@ void TaskManager::startExploration() {
     current_explore_goal_.min_altitude = min_altitude_;
     current_explore_goal_.max_altitude = max_altitude_;
 
-    explore_action_client_.waitForServer();
+    explore_action_client_.wait_for_action_server();
 
     // Start with a rotation command in case no frontiers immediately processed, will be overridden with first exploration goal
     geometry_msgs::msg::Twist vel;
@@ -448,10 +448,10 @@ void TaskManager::startExploration() {
     vel.angular.z = M_PI_2; // PI/2 rad/s
     local_vel_pub_->publish(vel);
 
-    explore_action_client_.sendGoal(current_explore_goal_);
+    explore_action_client_.async_send_goal(current_explore_goal_);
 
     logEvent(EventType::STATE_MACHINE, Severity::LOW, "Sent explore goal");
-    hello_decco_manager_.updateFlightStatus(current_index_, "ACTIVE");
+    hello_decco_manager_.updateFlightStatus("ACTIVE");
 
     updateCurrentTask(Task::EXPLORING);
 }
@@ -501,7 +501,7 @@ void TaskManager::checkHealth() {
     health_checks_.slam_ok = now - last_slam_pos_stamp_ < slam_timeout_;
     health_checks_.path_ok = now - last_path_planner_stamp_ < path_timeout_;
     health_checks_.costmap_ok = now - last_costmap_stamp_ < costmap_timeout_;
-    health_checks_.explore_ok = explore_action_client_.waitForServer(explore_timeout_);
+    health_checks_.explore_ok = explore_action_client_.wait_for_action_server(explore_timeout_);
     health_checks_.mapir_ok = now - last_mapir_stamp_ < mapir_timeout_;
     health_checks_.attollo_ok = now - last_attollo_stamp_ < attollo_timeout_;
     health_checks_.thermal_ok = now - last_thermal_stamp_ < thermal_timeout_;
@@ -599,10 +599,9 @@ bool TaskManager::initialized() {
 
     // Get roll, pitch for map stabilization
     geometry_msgs::msg::Quaternion init_orientation;
-    rclcpp::Rate r(0.5);
     logEvent(EventType::INFO, Severity::LOW, "Initializing IMU");
     while (!flight_controller_interface_.getAveragedOrientation(init_orientation)) {
-        r.sleep();
+        rclcpp::Rate(1.0).sleep();
     }
     tf2::Quaternion quatmav(init_orientation.x, init_orientation.y, init_orientation.z, init_orientation.w);
     tf2::Matrix3x3 m(quatmav);
@@ -656,11 +655,9 @@ bool TaskManager::initialized() {
     map_tf_init_ = true;
 
     logEvent(EventType::INFO, Severity::LOW, "Waiting for global position");
-    ros::topic::waitForMessage<sensor_msgs::msg::NavSatFix>("/mavros/global_position/global", nh_);
     while (home_utm_zone_ < 0) {
         home_utm_zone_ = flight_controller_interface_.getUTMZone();
-        rclcpp::spinOnce();
-        rclcpp::Rate(0.2).sleep();
+        rclcpp::Rate(1.0).sleep();
     }
     RCLCPP_INFO(nh_->get_logger(), "Got global, UTM zone: %d. LL : (%f, %f)", home_utm_zone_, flight_controller_interface_.getCurrentGlobalPosition().latitude, flight_controller_interface_.getCurrentGlobalPosition().longitude);
     double utm_x, utm_y;
