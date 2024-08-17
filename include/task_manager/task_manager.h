@@ -41,16 +41,16 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "messages_88/srv/prepare_explore.hpp"
 #include "messages_88/srv/save.hpp"
 
-//#include "pcl_conversions/pcl_conversions.h"
-//#include "pcl_ros/point_cloud.hpp"
+#include "pcl_conversions/pcl_conversions.h"
+#include "pcl_ros/transforms.hpp"
 #include "pcl/point_cloud.h"
 #include "pcl/point_types.h"
 #include "sensor_msgs/msg/image.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
-#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
-#include <tf2_ros/static_transform_broadcaster.h>
-#include <tf2_ros/transform_broadcaster.h>
-#include <tf2_ros/transform_listener.h>
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+#include "tf2_ros/static_transform_broadcaster.h"
+#include "tf2_ros/transform_broadcaster.h"
+#include "tf2_ros/transform_listener.h"
 
 #include "flight_controller_interface.h"
 #include "hello_decco_manager.h"
@@ -67,7 +67,7 @@ class TaskManager
     public:
 
         explicit TaskManager(const std::shared_ptr<rclcpp::Node> nh);
-        ~TaskManager() = default;
+        ~TaskManager();
 
         enum Task
         {
@@ -127,7 +127,9 @@ class TaskManager
         rclcpp::TimerBase::SharedPtr task_manager_timer_;
         rclcpp::TimerBase::SharedPtr health_check_timer_;
 
-        float task_manager_loop_duration_;
+        // Subclasses
+        hello_decco_manager::HelloDeccoManager hello_decco_manager_;
+        flight_controller_interface::FlightControllerInterface flight_controller_interface_;
 
         // Publishers
         rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                 health_pub_;
@@ -141,7 +143,7 @@ class TaskManager
         rclcpp::Publisher<mavros_msgs::msg::SelfID>::SharedPtr              odid_self_id_pub_;
         rclcpp::Publisher<mavros_msgs::msg::System>::SharedPtr              odid_system_pub_;
         rclcpp::Publisher<mavros_msgs::msg::SystemUpdate>::SharedPtr        odid_system_update_pub_;
-        rclcpp::Publisher<bag_recorder::msg::Rosbag>::SharedPtr             start_record_pub_;
+        // rclcpp::Publisher<bag_recorder::msg::Rosbag>::SharedPtr             start_record_pub_;
         rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                 stop_record_pub_;
         rclcpp::Publisher<messages_88::msg::TaskStatus>::SharedPtr          task_pub_;
         rclcpp::Publisher<sensor_msgs::msg::NavSatFix>::SharedPtr           global_pose_pub_;
@@ -189,11 +191,11 @@ class TaskManager
         rclcpp::Duration slam_timeout_;
         rclcpp::Duration path_timeout_;
         rclcpp::Duration costmap_timeout_;
-        rclcpp::Duration explore_timeout_;
         rclcpp::Duration mapir_timeout_;
         rclcpp::Duration attollo_timeout_;
         rclcpp::Duration thermal_timeout_;
         rclcpp::Duration rosbag_timeout_;
+        std::chrono::seconds explore_timeout_;
         rclcpp::Time last_lidar_stamp_;
         rclcpp::Time last_slam_pos_stamp_;
         rclcpp::Time last_path_planner_stamp_;
@@ -203,6 +205,7 @@ class TaskManager
         rclcpp::Time last_attollo_stamp_;
         rclcpp::Time last_rosbag_stamp_;
 
+        float task_manager_loop_duration_;
         rclcpp::TimerBase::SharedPtr health_pub_timer_;
         rclcpp::Duration health_check_pub_duration_;
         rclcpp::Time last_health_pub_stamp_;
@@ -223,15 +226,10 @@ class TaskManager
         // Offline handling
         bool offline_;
         
-        
         // UTM PCD saving
         bool save_pcd_;
         pcl::PointCloud<pcl::PointXYZI>::Ptr pcl_save_;
-        bool utm_tf_init_;
-
-        // Hello Decco comms
-        hello_decco_manager::HelloDeccoManager hello_decco_manager_;
-        
+        bool utm_tf_init_;    
 
         // Control defaults
         float target_altitude_;
@@ -239,12 +237,11 @@ class TaskManager
         float max_altitude_;
         double max_dist_to_polygon_;
 
-        // Map params
-        tf2_ros::StaticTransformBroadcaster static_tf_broadcaster_;
-        tf2_ros::TransformBroadcaster tf_broadcaster_;
+        // TF
+        std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
+        std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
+        std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
         bool map_tf_init_;
-        tf2_ros::Buffer tf_buffer_;
-        tf2_ros::TransformListener tf_listener_;
         double map_yaw_;
         int home_utm_zone_;
 
@@ -253,8 +250,7 @@ class TaskManager
         std::string mavros_base_frame_;
         std::string slam_map_frame_;
         geometry_msgs::msg::TransformStamped map_to_slam_tf_;
-        
-
+    
         rclcpp::TimerBase::SharedPtr map_tf_timer_;
         std::string slam_pose_topic_;
         double lidar_pitch_;
@@ -262,12 +258,7 @@ class TaskManager
         double lidar_z_;
 
         // PCL republisher
-        
         geometry_msgs::msg::TransformStamped slam_to_map_tf_;
-
-        // Drone state and services
-        flight_controller_interface::FlightControllerInterface flight_controller_interface_;
-        rclcpp::Service<messages_88::srv::Geopoint>::SharedPtr geopoint_service_;
 
         // Heartbeat
         rclcpp::Time last_ui_heartbeat_stamp_;
@@ -294,7 +285,15 @@ class TaskManager
         bool needs_takeoff_;
         int takeoff_attempts_;
 
-        rclcpp_action::Client<messages_88::action::Explore> explore_action_client_;
+        // Explore action
+        using Explore = messages_88::action::Explore;
+        using ExploreGoalHandle = rclcpp_action::ClientGoalHandle<Explore>;
+        messages_88::action::Explore_Goal current_explore_goal_;
+        rclcpp_action::Client<Explore>::SharedPtr explore_action_client_;
+        rclcpp_action::ClientGoalHandle<Explore>::SharedPtr explore_action_goal_handle_;
+        void explore_goal_response_callback(const ExploreGoalHandle::SharedPtr & goal_handle);
+        void explore_feedback_callback(ExploreGoalHandle::SharedPtr, const std::shared_ptr<const Explore::Feedback> feedback);
+        void explore_result_callback(const ExploreGoalHandle::WrappedResult & result);
 
         // State
         bool is_armed_;
@@ -307,7 +306,6 @@ class TaskManager
 
         // Goal details
         geometry_msgs::msg::Point current_target_;
-        messages_88::action::Explore_Goal current_explore_goal_;
 
         // Mavros modes
         std::string land_mode_;
@@ -328,6 +326,8 @@ class TaskManager
         int current_index_;
         std::string burn_dir_prefix_;
         std::string burn_dir_;
+
+        rclcpp::Service<messages_88::srv::Geopoint>::SharedPtr geopoint_service_;
 
         // Task methods
         void updateCurrentTask(Task task);
@@ -354,7 +354,8 @@ class TaskManager
         std::string getEventTypeString(EventType type);
         std::string getSeverityString(Severity sev);
         void initFlightControllerInterface();
-        bool convert2Geo(messages_88::srv::Geopoint::Request& req, messages_88::srv::Geopoint::Response& resp);
+        bool convert2Geo(const std::shared_ptr<messages_88::srv::Geopoint::Request> req,
+                         const std::shared_ptr<messages_88::srv::Geopoint::Response> resp);
         void logEvent(EventType type, Severity sev, std::string description);
 
 

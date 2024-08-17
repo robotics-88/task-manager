@@ -9,8 +9,10 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <boost/filesystem.hpp>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
-#include <boost/uuid/uuid_io.hpp>  
+#include <boost/uuid/uuid_io.hpp>
 #include <float.h>
+
+#include <ament_index_cpp/get_package_share_directory.hpp>
 
 #include "decco_utilities.h"
 
@@ -48,7 +50,6 @@ TaskManager::TaskManager(const std::shared_ptr<rclcpp::Node> nh)
     , max_altitude_(10.0)
     , max_dist_to_polygon_(300.0)
     , map_tf_init_(false)
-    , tf_listener_(tf_buffer_)
     , home_utm_zone_(-1)
     , mavros_map_frame_("map")
     , slam_map_frame_("slam_map")
@@ -59,8 +60,7 @@ TaskManager::TaskManager(const std::shared_ptr<rclcpp::Node> nh)
     , bag_active_(false)
     , record_config_name_("r88_default")
     , cmd_history_("")
-    , explore_action_client_("explore", true)
-    , health_check_pub_duration_(5.0)
+    , health_check_pub_duration_(rclcpp::Duration(5.0, 0))
     , path_planner_topic_("/kd_pointcloud_accumulated")
     , costmap_topic_("/costmap_node/costmap/costmap_updates")
     , lidar_topic_("/cloud_registered")
@@ -83,15 +83,15 @@ TaskManager::TaskManager(const std::shared_ptr<rclcpp::Node> nh)
     , needs_takeoff_(false)
     , last_rid_updated_timestamp_(0)
     , operator_id_("")
-    , lidar_timeout_(0.5)
-    , slam_timeout_(0.5)
-    , path_timeout_(0.5)
-    , costmap_timeout_(3.0)
-    , explore_timeout_(1.0)
-    , mapir_timeout_(1.0)
-    , attollo_timeout_(1.0)
-    , thermal_timeout_(1.0)
-    , rosbag_timeout_(1.0)
+    , lidar_timeout_(rclcpp::Duration(0.5, 0))
+    , slam_timeout_(rclcpp::Duration(0.5, 0))
+    , path_timeout_(rclcpp::Duration(0.5, 0))
+    , costmap_timeout_(rclcpp::Duration(3.0, 0))
+    , explore_timeout_(1s)
+    , mapir_timeout_(rclcpp::Duration(1.0, 0))
+    , attollo_timeout_(rclcpp::Duration(1.0, 0))
+    , thermal_timeout_(rclcpp::Duration(1.0, 0))
+    , rosbag_timeout_(rclcpp::Duration(1.0, 0))
 {
     nh_->declare_parameter("enable_autonomy", enable_autonomy_);
     nh_->declare_parameter("use_failsafes", use_failsafes_);
@@ -168,6 +168,16 @@ TaskManager::TaskManager(const std::shared_ptr<rclcpp::Node> nh)
 
     rosbag_sub_ = nh_->create_subscription<std_msgs::msg::String>(rosbag_topic_, 10, std::bind(&TaskManager::rosbagCallback, this, _1));
 
+    // Explore action setup
+    explore_action_client_ = rclcpp_action::create_client<Explore>(nh_, "explore");
+    auto send_explore_goal_options = rclcpp_action::Client<Explore>::SendGoalOptions();
+    send_explore_goal_options.goal_response_callback =
+      std::bind(&TaskManager::explore_goal_response_callback, this, std::placeholders::_1);
+    send_explore_goal_options.feedback_callback =
+      std::bind(&TaskManager::explore_feedback_callback, this, std::placeholders::_1, std::placeholders::_2);
+    send_explore_goal_options.result_callback =
+      std::bind(&TaskManager::explore_result_callback, this, std::placeholders::_1);
+
     // Geo/map state services
     geopoint_service_ = nh_->create_service<messages_88::srv::Geopoint>("/slam2geo", &TaskManager::convert2Geo);
 
@@ -188,7 +198,7 @@ TaskManager::TaskManager(const std::shared_ptr<rclcpp::Node> nh)
     heartbeat_timer_ = nh_->create_wall_timer(1s, std::bind(&TaskManager::heartbeatTimerCallback, nh_));
 
     // Recording
-    start_record_pub_ = nh_->create_publisher<bag_recorder::msg::Rosbag>("/record/start", 5);
+    // start_record_pub_ = nh_->create_publisher<bag_recorder::msg::Rosbag>("/record/start", 5);
     stop_record_pub_ = nh_->create_publisher<std_msgs::msg::String>("/record/stop", 5);
     if (offline_) {
         map_yaw_sub_ = nh_->create_subscription<std_msgs::msg::Float64>("map_yaw", 10, std::bind(&TaskManager::mapYawCallback, this, _1));
@@ -209,6 +219,11 @@ TaskManager::TaskManager(const std::shared_ptr<rclcpp::Node> nh)
     // tymbal subscriber
     tymbal_sub_ = nh_->create_subscription<std_msgs::msg::String>("/tymbal/to_decco", 10, std::bind(&TaskManager::packageFromTymbal, this, _1));
 
+    // TF
+    tf_static_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
+    tf_buffer_ = std::make_unique<tf2_ros::Buffer>(nh_->get_clock());
+    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+
     initFlightControllerInterface();
 
     health_check_timer_ = nh_->create_wall_timer(100ms, std::bind(&TaskManager::checkHealth, this));
@@ -220,14 +235,23 @@ TaskManager::~TaskManager(){
     if (offline_ && save_pcd_) {
         if (pcl_save_->size() > 0) {
             std::string file_name = "utm.pcd";
-            std::string all_points_dir(ros::package::getPath("task_manager") + "/PCD/");
-            if (!boost::filesystem::exists(all_points_dir)) {
-                boost::filesystem::create_directory(all_points_dir);
+            std::string task_manager_dir;
+            std::string package_name = "task_manager";
+            try {
+                task_manager_dir = ament_index_cpp::get_package_share_directory("task_manager");
+                RCLCPP_INFO(nh_->get_logger(), "Package '%s' found at: %s", package_name.c_str(), task_manager_dir.c_str());
+            } catch (const std::exception & e) {
+                RCLCPP_ERROR(nh_->get_logger(), "Could not find package '%s': %s", package_name.c_str(), e.what());
             }
-            all_points_dir += file_name;
+            std::string pcd_save_dir = task_manager_dir + "/PCD/";
+
+            if (!boost::filesystem::exists(pcd_save_dir)) {
+                boost::filesystem::create_directory(pcd_save_dir);
+            }
+            pcd_save_dir += file_name;
             pcl::PCDWriter pcd_writer;
             std::cout << "current scan saved to /PCD/" << file_name<<std::endl;
-            pcd_writer.writeBinary(all_points_dir, *pcl_save_);
+            pcd_writer.writeBinary(pcd_save_dir, *pcl_save_);
         }
         else {
             std::cout << "No pointclouds to save" << std::endl;
@@ -267,7 +291,7 @@ void TaskManager::runTaskManager() {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Preflight checks passed, ready to arm");
                 updateCurrentTask(Task::READY);
             } 
-            else if (nh_->get_clock()->now() - last_preflight_check_log_stamp_ > rclcpp::Duration(10.0)) {
+            else if (nh_->get_clock()->now() - last_preflight_check_log_stamp_ > rclcpp::Duration(10.0, 0)) {
                 logEvent(EventType::FLIGHT_CONTROL, Severity::MEDIUM,
                          "Preflight check failed due to " + flight_controller_interface_.getPreflightCheckReasons());
                 last_preflight_check_log_stamp_ = nh_->get_clock()->now();
@@ -336,13 +360,12 @@ void TaskManager::runTaskManager() {
         }
         case Task::EXPLORING: {            
             // Check action client status to see if complete
-            rclcpp_action::GoalStatus goal_state = explore_action_client_.async_get_result();
-            if (goal_state.status == rclcpp_action::GoalStatus::STATUS_ABORTED || 
-                goal_state.status == rclcpp_action::GoalStatus::STATUS_CANCELED ||
-                goal_state.status == rclcpp_action::GoalStatus::STATUS_SUCCEEDED
-                ) {
+            auto status = explore_action_goal_handle_->get_status();
+            if (status == rclcpp_action::GoalStatus::STATUS_ABORTED || 
+                status == rclcpp_action::GoalStatus::STATUS_CANCELED ||
+                status == rclcpp_action::GoalStatus::STATUS_SUCCEEDED) {
 
-                logEvent(EventType::STATE_MACHINE, Severity::LOW, "Initiating RTL_88 due to exploration " + goal_state.toString());
+                logEvent(EventType::STATE_MACHINE, Severity::LOW, "Initiating RTL_88 due to exploration action code " + status);
                 hello_decco_manager_.updateFlightStatus("COMPLETED");
                 startRtl88();
             }
@@ -439,7 +462,7 @@ void TaskManager::startExploration() {
     current_explore_goal_.min_altitude = min_altitude_;
     current_explore_goal_.max_altitude = max_altitude_;
 
-    explore_action_client_.wait_for_action_server();
+    explore_action_client_->wait_for_action_server();
 
     // Start with a rotation command in case no frontiers immediately processed, will be overridden with first exploration goal
     geometry_msgs::msg::Twist vel;
@@ -448,9 +471,12 @@ void TaskManager::startExploration() {
     vel.angular.z = M_PI_2; // PI/2 rad/s
     local_vel_pub_->publish(vel);
 
-    explore_action_client_.async_send_goal(current_explore_goal_);
+    if (!explore_action_client_->wait_for_action_server()) {
+        RCLCPP_WARN(nh_->get_logger(), "Explore action client not available after waiting");
+    }
+    explore_action_client_->async_send_goal(current_explore_goal_);
 
-    logEvent(EventType::STATE_MACHINE, Severity::LOW, "Sent explore goal");
+    logEvent(EventType::STATE_MACHINE, Severity::LOW, "Sending explore goal");
     hello_decco_manager_.updateFlightStatus("ACTIVE");
 
     updateCurrentTask(Task::EXPLORING);
@@ -501,7 +527,7 @@ void TaskManager::checkHealth() {
     health_checks_.slam_ok = now - last_slam_pos_stamp_ < slam_timeout_;
     health_checks_.path_ok = now - last_path_planner_stamp_ < path_timeout_;
     health_checks_.costmap_ok = now - last_costmap_stamp_ < costmap_timeout_;
-    health_checks_.explore_ok = explore_action_client_.wait_for_action_server(explore_timeout_);
+    health_checks_.explore_ok = explore_action_client_->wait_for_action_server(explore_timeout_);
     health_checks_.mapir_ok = now - last_mapir_stamp_ < mapir_timeout_;
     health_checks_.attollo_ok = now - last_attollo_stamp_ < attollo_timeout_;
     health_checks_.thermal_ok = now - last_thermal_stamp_ < thermal_timeout_;
@@ -649,7 +675,7 @@ bool TaskManager::initialized() {
     slam_to_map_tf_.transform = slam2_tf;
 
     // Send transform and stop timer
-    static_tf_broadcaster_.sendTransform(map_to_slam_tf_);
+    tf_static_broadcaster_->sendTransform(map_to_slam_tf_);
 
     map_tf_timer_.reset();
     map_tf_init_ = true;
@@ -675,7 +701,7 @@ bool TaskManager::initialized() {
     utm2map_tf_.transform.rotation.y = 0;
     utm2map_tf_.transform.rotation.z = 0;
     utm2map_tf_.transform.rotation.w = 1;
-    static_tf_broadcaster_.sendTransform(utm2map_tf_);
+    tf_static_broadcaster_->sendTransform(utm2map_tf_);
     utm_tf_init_ = true;
 
     logEvent(EventType::INFO, Severity::LOW, "Got global position, UTM zone, and map yaw");
@@ -683,7 +709,8 @@ bool TaskManager::initialized() {
     return true;
 }
 
-bool TaskManager::convert2Geo(messages_88::srv::Geopoint::Request& req, messages_88::srv::Geopoint::Response& resp) {
+bool TaskManager::convert2Geo(const std::shared_ptr<messages_88::srv::Geopoint::Request> req,
+                              const std::shared_ptr<messages_88::srv::Geopoint::Response> resp) {
     // Sanity check UTM
     if (home_utm_zone_ != flight_controller_interface_.getUTMZone()) {
         logEvent(EventType::INFO, Severity::LOW, "UTM zones crossed. Home UTM: " + std::to_string(home_utm_zone_) + 
@@ -694,16 +721,16 @@ bool TaskManager::convert2Geo(messages_88::srv::Geopoint::Request& req, messages
     geometry_msgs::msg::PointStamped in, out;
     in.header.frame_id = slam_map_frame_;
     in.header.stamp = nh_->get_clock()->now();
-    in.point.x = req.slam_position.x;
-    in.point.y = req.slam_position.y;
-    in.point.z = req.slam_position.z;
-    tf_buffer_.transform(in, out, "utm");
-    resp.utm_position.x = out.point.x;
-    resp.utm_position.y = out.point.y;
+    in.point.x = req->slam_position.x;
+    in.point.y = req->slam_position.y;
+    in.point.z = req->slam_position.z;
+    tf_buffer_->transform(in, out, "utm");
+    resp->utm_position.x = out.point.x;
+    resp->utm_position.y = out.point.y;
     double lat, lon;
     decco_utilities::utmToLL(out.point.x, out.point.y, home_utm_zone_, lat, lon);
-    resp.latitude = lat;
-    resp.longitude = lon;
+    resp->latitude = lat;
+    resp->longitude = lon;
     return true;
 }
 
@@ -728,11 +755,11 @@ void TaskManager::heartbeatTimerCallback() {
     rclcpp::Time now_time = nh_->get_clock()->now();
     float interval = (now_time - last_ui_heartbeat_stamp_).seconds();
     // TODO needs also check if drone state is in air/action
-    if (interval > ui_hb_threshold_) {
-        messages_88::srv::Emergency emergency;
-        // TODO fill in pause msg
-        // emergency_client_.call(emergency);
-    }
+    // if (interval > ui_hb_threshold_) {
+    //     messages_88::srv::Emergency emergency;
+    //     // TODO fill in pause msg
+    //     // emergency_client_.call(emergency);
+    // }
 }
 
 // Publish the ODID messages that require updates
@@ -758,9 +785,9 @@ void TaskManager::uiHeartbeatCallback(const json &msg) {
 
 bool TaskManager::pauseOperations() {
     // TODO figure out how to pause and restart
-    actionlib::SimpleClientGoalState goal_state = explore_action_client_.getState();
-    if (goal_state == actionlib::SimpleClientGoalState::ACTIVE) {
-        explore_action_client_.cancelAllGoals();
+    auto status = explore_action_goal_handle_->get_status();
+    if (status == rclcpp_action::GoalStatus::STATUS_EXECUTING) {
+        explore_action_client_->async_cancel_all_goals();
     }
     return true;
 }
@@ -809,14 +836,14 @@ void TaskManager::startBag() {
     if (bag_active_) {
         return;
     }
-    logEvent(EventType::INFO, Severity::LOW, "Bag starting, dir: " + burn_dir_);
-    bag_recorder::Rosbag start_bag_msg;
-    start_bag_msg.data_dir = burn_dir_;
-    start_bag_msg.bag_name = "decco";
-    start_bag_msg.config = record_config_name_;
-    start_bag_msg.header.stamp = nh_->get_clock()->now();
-    start_record_pub_->publish(start_bag_msg);
-    bag_active_ = true;
+    // logEvent(EventType::INFO, Severity::LOW, "Bag starting, dir: " + burn_dir_);
+    // bag_recorder::Rosbag start_bag_msg;
+    // start_bag_msg.data_dir = burn_dir_;
+    // start_bag_msg.bag_name = "decco";
+    // start_bag_msg.config = record_config_name_;
+    // start_bag_msg.header.stamp = nh_->get_clock()->now();
+    // start_record_pub_->publish(start_bag_msg);
+    // bag_active_ = true;
 }
 
 void TaskManager::stopBag() {
@@ -838,8 +865,8 @@ bool TaskManager::polygonDistanceOk(geometry_msgs::msg::PoseStamped &target, geo
     // Medium check, computes distance to nearest point on 2 most likely polygon edges
     // Polygon is already in map coordinates, i.e., expressed in meters from UAS home
     double min_dist = DBL_MAX;
-    int closest_point_ind = 0;
-    for (int ii=0; ii < map_region.points.size(); ii++) {
+    unsigned closest_point_ind = 0;
+    for (unsigned ii=0; ii < map_region.points.size(); ii++) {
         double d = std::pow(map_region.points.at(ii).x, 2) + std::pow(map_region.points.at(ii).y, 2);
         if (d < min_dist) {
             min_dist = d;
@@ -848,7 +875,7 @@ bool TaskManager::polygonDistanceOk(geometry_msgs::msg::PoseStamped &target, geo
     }
     // Find line intersection with each segment connecting to closest point
     geometry_msgs::msg::Point32 point1, point2, closest_point = map_region.points.at(closest_point_ind);
-    int ind1, ind2;
+    unsigned ind1, ind2;
     if (closest_point_ind == 0) {
         ind1 = map_region.points.size() - 1;
     }
@@ -982,7 +1009,7 @@ void TaskManager::slamPoseCallback(const geometry_msgs::msg::PoseStamped::Shared
 
     geometry_msgs::msg::TransformStamped tf;
     try {
-        tf = tf_buffer_.lookupTransform(mavros_map_frame_, slam_map_frame_, tf2::TimePointZero);
+        tf = tf_buffer_->lookupTransform(mavros_map_frame_, slam_map_frame_, tf2::TimePointZero);
     } catch (tf2::TransformException & ex) {
         RCLCPP_WARN_THROTTLE(nh_->get_logger(), *nh_->get_clock(), 10000, "Cannot publish vision pose as map<>slam_map tf not yet available");
         return;
@@ -1059,7 +1086,7 @@ void TaskManager::pointcloudCallback(const sensor_msgs::msg::PointCloud2::Shared
 }
 
 void TaskManager::livoxCallback(const livox_ros_driver2::msg::CustomMsg::SharedPtr msg) {
-    last_lidar_stamp_ =  msg->header.stamp;
+    last_lidar_stamp_ = msg->header.stamp;
 }
 
 void TaskManager::mapirCallback(const sensor_msgs::msg::Image::SharedPtr msg) {
@@ -1085,6 +1112,35 @@ void TaskManager::goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr 
 void TaskManager::mapYawCallback(const std_msgs::msg::Float64::SharedPtr msg) {
     map_yaw_ = msg->data;
     RCLCPP_INFO(nh_->get_logger(), "Got map yaw: %f", map_yaw_ * 180 / M_PI);
+}
+
+void TaskManager::explore_goal_response_callback(const ExploreGoalHandle::SharedPtr & goal_handle) {
+    if (!goal_handle) {
+      logEvent(INFO, MEDIUM, "Explore goal rejected by server");
+    } else {
+      RCLCPP_INFO(nh_->get_logger(), "Goal accepted by server, waiting for result");
+      explore_action_goal_handle_ = goal_handle;
+    }
+}
+
+void TaskManager::explore_feedback_callback(ExploreGoalHandle::SharedPtr, const std::shared_ptr<const Explore::Feedback> feedback) {
+    // TODO?
+}
+
+void TaskManager::explore_result_callback(const ExploreGoalHandle::WrappedResult & result) {
+    switch (result.code) {
+      case rclcpp_action::ResultCode::SUCCEEDED:
+        break;
+      case rclcpp_action::ResultCode::ABORTED:
+        logEvent(INFO, MEDIUM, "Goal was aborted");
+        return;
+      case rclcpp_action::ResultCode::CANCELED:
+        logEvent(INFO, MEDIUM, "Goal was canceled");
+        return;
+      default:
+        logEvent(INFO, MEDIUM, "Unknown goal result code");
+        return;
+    }
 }
 
 void TaskManager::packageFromTymbal(const std_msgs::msg::String::SharedPtr msg) {
@@ -1137,7 +1193,7 @@ void TaskManager::acceptFlight(json flight) {
 }
 
 void TaskManager::setpointResponse(json &json_msg) {
-    // ATM, nh_ response is purely a testing function. 
+    // ATM, this response is purely a testing function. 
     startBag();
 }
 
@@ -1175,17 +1231,17 @@ void TaskManager::altitudesResponse(json &json_msg) {
     float default_altitude = json_msg["default_altitude"];
 
     // Set altitude params in all nodes that use them
-    ros::param::set("/task_manager/max_alt", max_altitude);
-    ros::param::set("/task_manager/min_alt", min_altitude);
-    ros::param::set("/task_manager/default_alt", default_altitude);
+    nh_->set_parameter(rclcpp::Parameter("/task_manager/max_alt", max_altitude));
+    nh_->set_parameter(rclcpp::Parameter("/task_manager/min_alt", min_altitude));
+    nh_->set_parameter(rclcpp::Parameter("/task_manager/default_alt", default_altitude));
 
     // It's simpler just to set the task manager altitude data here instead of re-fetching the param dynamically
     max_altitude_ = max_altitude;
     min_altitude_ = min_altitude;
     target_altitude_ = default_altitude;
 
-    ros::param::set("/path_planning_node/search/max_alt", max_altitude);
-    ros::param::set("/path_planning_node/search/min_alt", min_altitude);
+    nh_->set_parameter(rclcpp::Parameter("/path_planning_node/search/max_alt", max_altitude));
+    nh_->set_parameter(rclcpp::Parameter("/path_planning_node/search/min_alt", min_altitude));
 }
 
 void TaskManager::remoteIDResponse(json &json) {

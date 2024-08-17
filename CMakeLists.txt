@@ -9,6 +9,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 
 find_package(rclcpp_action REQUIRED)
@@ -18,6 +19,7 @@ find_package(libmavconn REQUIRED)
 find_package(mavros REQUIRED)
 find_package(mavros_msgs REQUIRED)
 find_package(messages_88 REQUIRED)
+find_package(nav2_costmap_2d REQUIRED)
 find_package(pcl_ros REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -26,6 +28,7 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(visualization_msgs REQUIRED)
 
+set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};/usr/share/cmake/geographiclib")
 find_package(GeographicLib REQUIRED)
 find_package(PCL REQUIRED)
 
@@ -50,12 +53,15 @@ add_executable(task_manager
 )
 
 ament_target_dependencies(task_manager
-  messages_88
-  pcl_ros
   rclcpp
-  std_msgs
+  ament_index_cpp
   libmavconn
   livox_ros_driver2
+  nav2_costmap_2d
+  messages_88
+  pcl_ros
+  std_msgs
+  visualization_msgs
 )
 
 install(TARGETS
