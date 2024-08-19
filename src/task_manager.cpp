@@ -22,15 +22,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 using std::placeholders::_1;
 using namespace std::chrono_literals;
 
-inline static bool operator==(const geometry_msgs::msg::Point& one,
-                              const geometry_msgs::msg::Point& two)
-{
-  double dx = one.x - two.x;
-  double dy = one.y - two.y;
-  double dist = sqrt(dx * dx + dy * dy);
-  return dist < 1.0; // Goal reached if within a meter
-}
-
 namespace task_manager
 {
 TaskManager::TaskManager(const std::shared_ptr<rclcpp::Node> nh)
@@ -179,7 +170,7 @@ TaskManager::TaskManager(const std::shared_ptr<rclcpp::Node> nh)
       std::bind(&TaskManager::explore_result_callback, this, std::placeholders::_1);
 
     // Geo/map state services
-    // geopoint_service_ = nh_->create_service<messages_88::srv::Geopoint>("/slam2geo", &TaskManager::convert2Geo);
+    // geopoint_service_ = nh_->create_service<messages_88::srv::Geopoint>("slam2geo", &TaskManager::convert2Geo);
 
     // MAVROS
     local_pos_pub_ = nh_->create_publisher<geometry_msgs::msg::PoseStamped>(goal_topic, 10);
@@ -192,10 +183,6 @@ TaskManager::TaskManager(const std::shared_ptr<rclcpp::Node> nh)
     odid_self_id_pub_ = nh_->create_publisher<mavros_msgs::msg::SelfID>("/mavros/open_drone_id/self_id", 10);
     odid_system_pub_ = nh_->create_publisher<mavros_msgs::msg::System>("/mavros/open_drone_id/system", 10);
     odid_system_update_pub_ = nh_->create_publisher<mavros_msgs::msg::SystemUpdate>("/mavros/open_drone_id/system_update", 10);
-    odid_timer_ = nh_->create_wall_timer(1s, std::bind(&TaskManager::odidTimerCallback, nh_));
-
-    // Heartbeat timer
-    heartbeat_timer_ = nh_->create_wall_timer(1s, std::bind(&TaskManager::heartbeatTimerCallback, nh_));
 
     // Recording
     // start_record_pub_ = nh_->create_publisher<bag_recorder::msg::Rosbag>("/record/start", 5);
@@ -226,9 +213,11 @@ TaskManager::TaskManager(const std::shared_ptr<rclcpp::Node> nh)
 
     initFlightControllerInterface();
 
+    // Start timers
     health_check_timer_ = nh_->create_wall_timer(100ms, std::bind(&TaskManager::checkHealth, this));
-
     task_manager_timer_ = nh_->create_wall_timer(std::chrono::duration<float>(task_manager_loop_duration_), std::bind(&TaskManager::runTaskManager, this));
+    heartbeat_timer_ = nh_->create_wall_timer(1s, std::bind(&TaskManager::heartbeatTimerCallback, this));
+    odid_timer_ = nh_->create_wall_timer(1s, std::bind(&TaskManager::odidTimerCallback, this));
 }
 
 TaskManager::~TaskManager(){
@@ -373,7 +362,10 @@ void TaskManager::runTaskManager() {
             break;
         }
         case Task::RTL_88: {
-            if (flight_controller_interface_.getCurrentLocalPosition().pose.position == home_pos_.pose.position) {
+            bool at_home_position = decco_utilities::isInAcceptanceRadius(flight_controller_interface_.getCurrentLocalPosition().pose.position,
+                                                                          home_pos_.pose.position,
+                                                                          1.0);
+            if (at_home_position) {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "RTL_88 completed, landing");
                 startLanding();
             }
@@ -752,8 +744,8 @@ void TaskManager::heartbeatTimerCallback() {
     };
     hello_decco_manager_.packageToTymbalHD("decco_heartbeat", j);
 
-    rclcpp::Time now_time = nh_->get_clock()->now();
-    float interval = (now_time - last_ui_heartbeat_stamp_).seconds();
+    // rclcpp::Time now_time = nh_->get_clock()->now();
+    // float interval = (now_time - last_ui_heartbeat_stamp_).seconds();
     // TODO needs also check if drone state is in air/action
     // if (interval > ui_hb_threshold_) {
     //     messages_88::srv::Emergency emergency;
@@ -1055,7 +1047,7 @@ void TaskManager::registeredPclCallback(const sensor_msgs::msg::PointCloud2::Sha
     pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud(new pcl::PointCloud<pcl::PointXYZI>());
     pcl::fromROSMsg (*msg, *reg_cloud);
 
-    pcl_ros::transformPointCloud(*reg_cloud, *map_cloud, map_to_slam_tf_.transform);
+    pcl_ros::transformPointCloud(*reg_cloud, *map_cloud, map_to_slam_tf_);
 
     sensor_msgs::msg::PointCloud2 map_cloud_ros;
     pcl::toROSMsg(*map_cloud, map_cloud_ros);
@@ -1066,7 +1058,7 @@ void TaskManager::registeredPclCallback(const sensor_msgs::msg::PointCloud2::Sha
         pcl::PointCloud<pcl::PointXYZI>::Ptr cloud = map_cloud;
         // if (save_pcd_frame_ == "utm") {
             pcl::PointCloud<pcl::PointXYZI>::Ptr utm_cloud(new pcl::PointCloud<pcl::PointXYZI>());
-            pcl_ros::transformPointCloud(*map_cloud, *utm_cloud, utm2map_tf_.transform);
+            pcl_ros::transformPointCloud(*map_cloud, *utm_cloud, utm2map_tf_);
             cloud = utm_cloud;
         // }
         *pcl_save_ += *cloud;

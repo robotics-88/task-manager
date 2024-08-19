@@ -7,6 +7,7 @@ Author: Gus Meyer <gus@robotics88.com>
 #define DECCO_UTILITIES_H_
 
 #include "rclcpp/rclcpp.hpp"
+#include "geometry_msgs/msg/point.hpp"
 #include "geometry_msgs/msg/polygon.hpp"
 
 #include <GeographicLib/GeoCoords.hpp>
@@ -29,6 +30,12 @@ namespace decco_utilities
         double dist_y = point_b.y - point_a.y;
 
         return sqrt(dist_x * dist_x + dist_y * dist_y);
+    }
+
+    template<typename T, typename T2>
+    bool isInAcceptanceRadius(const T point_a, const T point_b, T2 acceptance_radius)
+    {
+        return distance(point_b, point_a) <= acceptance_radius; // Goal reached if within a meter
     }
 
     // Determines if line segment between point_a and point_b has an orthogonal line segment that intersects the "origin" point
