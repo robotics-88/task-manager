@@ -41,16 +41,14 @@ include_directories(
 include_directories(
   ${GeographicLib_INCLUDE_DIRS}
 	${PCL_INCLUDE_DIRS}
-  include
 )
 
-add_executable(task_manager
+add_library(task_manager SHARED
   src/decco_utilities.cpp
   src/flight_controller_interface.cpp
   src/hello_decco_manager.cpp
   src/task_manager.cpp
-  src/task_manager_node.cpp
-)
+  )
 
 ament_target_dependencies(task_manager
   rclcpp
@@ -64,13 +62,25 @@ ament_target_dependencies(task_manager
   visualization_msgs
 )
 
-install(TARGETS
-  task_manager
-  DESTINATION lib/${PROJECT_NAME})
-
 target_link_libraries(task_manager 
   ${GeographicLib_LIBRARIES}
 	${PCL_LIBRARIES}
+)
+
+add_executable(task_manager_node
+  src/task_manager_node.cpp
+)
+target_link_libraries(task_manager_node task_manager)
+
+install(TARGETS
+  task_manager
+  task_manager_node
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}
 )
 
 #############

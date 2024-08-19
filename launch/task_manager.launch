@@ -23,7 +23,7 @@
     <arg name="min_alt" default="2.0"/>
     <arg name="max_alt" default="10.0"/>
     <arg name="max_dist_to_polygon" default="500"/>
-    <arg name="flightleg_area_acres" default="3"/> <!-- 1 acre = 4046 m2-->
+    <arg name="flightleg_area_acres" default="3.0"/> <!-- 1 acre = 4046 m2-->
 
     <!-- Health topics -->
     <arg name="path_planner_topic" default="/kd_pointcloud_accumulated"/>
@@ -34,60 +34,60 @@
     <arg name="mapir_rgb_topic" default="/mapir_rgb/image_rect_color"/>
     <arg name="rosbag_topic" default="/record/heartbeat"/>
 
-    <arg name="thermal_topic" default="/thermal_cam/image_rect_color" if="$(eval thermal_type == 0)"/>
-    <arg name="thermal_topic" default="/seek_thermal/image_rect_color" if="$(eval thermal_type == 1)"/>
+    <!-- <arg name="thermal_topic" default="/thermal_cam/image_rect_color" if="$(eval thermal_type == 0)"/>
+    <arg name="thermal_topic" default="/seek_thermal/image_rect_color" if="$(eval thermal_type == 1)"/> -->
 
      <!-- Record -->
     <arg name="do_slam" default="true"/>
     <arg name="do_record" default="true"/>
-    <arg name="user" value="$(env USER)"/>
-    <arg name="data_directory" default="/home/$(arg user)/src/bags/"/>
+    <!-- <arg name="user" value="$(env USER)"/> -->
+    <!-- <arg name="data_directory" default="/home/$(var user)/logs/ros_logs/"/> -->
     <arg name="save_pcd" default="false"/>
 
     <arg name="simulate" default="false"/>
     <arg name="offline" default="false"/>
 
-    <node pkg="task_manager" type="task_manager" name="task_manager" output="screen">
-        <param name="do_slam" value="$(arg do_slam)"/>
-        <param name="enable_autonomy" value="$(arg enable_autonomy)"/>
-        <param name="use_failsafes" value="$(arg use_failsafes)"/>
-        <param name="goal_topic" value="$(arg goal_topic)"/>
-        <param name="do_record" value="$(arg do_record)"/>
-        <param name="data_directory" value="$(arg data_directory)"/>
-        <param name="mavros_map_frame" value="$(arg mavros_map_frame)"/>
-        <param name="base_frame" value="$(arg base_frame)"/>
-        <param name="slam_map_frame" value="$(arg slam_map_frame)"/>
-        <param name="path_planner_topic" value="$(arg path_planner_topic)"/>
-        <param name="slam_pose_topic" value="$(arg slam_pose_topic)"/>
-        <param name="costmap_topic" value="$(arg costmap_topic)"/>
-        <param name="lidar_topic" value="$(arg lidar_topic)"/>
-        <param name="mapir_topic" value="$(arg mapir_topic)"/>
-        <param name="mapir_rgb_topic" value="$(arg mapir_rgb_topic)"/>
-        <param name="attollo_topic" value="$(arg attollo_topic)"/>
-        <param name="thermal_topic" value="$(arg thermal_topic)"/>
-        <param name="rosbag_topic" value="$(arg rosbag_topic)"/>
-        <param name="default_alt" value="$(arg default_alt)"/>
-        <param name="min_alt" value="$(arg min_alt)"/>
-        <param name="max_alt" value="$(arg max_alt)"/>
-        <param name="max_dist_to_polygon" value="$(arg max_dist_to_polygon)"/>
-        <param name="flightleg_area_acres" value="$(arg flightleg_area_acres)"/>
-        <param name="all_stream_rate" value="5"/>
-        <param name="imu_rate" value="120"/>
-        <param name="local_pos_rate" value="60"/>
-        <param name="simulate" value="$(arg simulate)"/>
-        <param name="offline" value="$(arg offline)"/>
-        <param name="save_pcd" value="$(arg save_pcd)"/>
-        <param name="battery_size" value="5.2"/> <!-- Battery size in amp hours -->
-        <param name="estimated_current" value="20"/> <!-- Starting estimate for current consumption -->
-        <param name="estimated_drone_speed" value="2.0"/> <!-- m/s -->
+    <node pkg="task_manager" exec="task_manager_node" namespace="task_manager" output="screen">
+        <param name="do_slam" value="$(var do_slam)"/>
+        <param name="enable_autonomy" value="$(var enable_autonomy)"/>
+        <param name="use_failsafes" value="$(var use_failsafes)"/>
+        <param name="goal_topic" value="$(var goal_topic)"/>
+        <param name="do_record" value="$(var do_record)"/>
+        <!-- <param name="data_directory" value="$(var data_directory)"/> -->
+        <param name="mavros_map_frame" value="$(var mavros_map_frame)"/>
+        <param name="base_frame" value="$(var base_frame)"/>
+        <param name="slam_map_frame" value="$(var slam_map_frame)"/>
+        <param name="path_planner_topic" value="$(var path_planner_topic)"/>
+        <param name="slam_pose_topic" value="$(var slam_pose_topic)"/>
+        <param name="costmap_topic" value="$(var costmap_topic)"/>
+        <param name="lidar_topic" value="$(var lidar_topic)"/>
+        <param name="mapir_topic" value="$(var mapir_topic)"/>
+        <param name="mapir_rgb_topic" value="$(var mapir_rgb_topic)"/>
+        <param name="attollo_topic" value="$(var attollo_topic)"/>
+        <!-- <param name="thermal_topic" value="$(var thermal_topic)"/> -->
+        <param name="rosbag_topic" value="$(var rosbag_topic)"/>
+        <param name="default_alt" value="$(var default_alt)"/>
+        <param name="min_alt" value="$(var min_alt)"/>
+        <param name="max_alt" value="$(var max_alt)"/>
+        <param name="max_dist_to_polygon" value="$(var max_dist_to_polygon)"/>
+        <param name="flightleg_area_acres" value="$(var flightleg_area_acres)"/>
+        <param name="all_stream_rate" value="5.0"/>
+        <param name="imu_rate" value="120.0"/>
+        <param name="local_pos_rate" value="60.0"/>
+        <param name="simulate" value="$(var simulate)"/>
+        <param name="offline" value="$(var offline)"/>
+        <param name="save_pcd" value="$(var save_pcd)"/>
+        <param name="battery_size" value="5.2"/> 
+        <param name="estimated_current" value="20.0"/> 
+        <param name="estimated_drone_speed" value="2.0"/>
         <param name="battery_failsafe_safety_factor" value="2.0"/>
-        <param name="do_mapir" value="$(arg do_mapir)"/>
-        <param name="do_mapir_rgb" value="$(arg do_mapir_rgb)"/>
-        <param name="do_attollo" value="$(arg do_attollo)"/>
-        <param name="do_thermal_cam" value="$(arg do_thermal_cam)"/>
-        <param name="lidar_type" value="$(arg lidar_type)"/>
-        <param name="lidar_pitch" value="$(arg lidar_pitch)"/>
-        <param name="lidar_x" value="$(arg lidar_x)"/>
-        <param name="lidar_z" value="$(arg lidar_z)"/>
+        <param name="do_mapir" value="$(var do_mapir)"/>
+        <param name="do_mapir_rgb" value="$(var do_mapir_rgb)"/>
+        <param name="do_attollo" value="$(var do_attollo)"/>
+        <param name="do_thermal_cam" value="$(var do_thermal_cam)"/>
+        <param name="lidar_type" value="$(var lidar_type)"/>
+        <param name="lidar_pitch" value="$(var lidar_pitch)"/>
+        <param name="lidar_x" value="$(var lidar_x)"/>
+        <param name="lidar_z" value="$(var lidar_z)"/>
     </node>
 </launch>

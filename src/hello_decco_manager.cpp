@@ -32,8 +32,8 @@ HelloDeccoManager::HelloDeccoManager(const std::shared_ptr<rclcpp::Node> nh)
     , slam_map_frame_("slam_map")
     , flightleg_area_m2_(2023.0)
 {
-    double flightleg_acres;
-    nh_->declare_parameter("flightleg_area_acres", flightleg_acres);
+    nh_->declare_parameter("flightleg_area_acres", 3.0);
+    double flightleg_acres = nh_->get_parameter("flightleg_area_acres").as_double();
     flightleg_area_m2_ = 4046.86 * flightleg_acres;
     nh_->declare_parameter("mavros_map_frame", mavros_map_frame_);
     nh_->declare_parameter("slam_map_frame", slam_map_frame_);
