@@ -42,8 +42,10 @@ namespace flight_controller_interface {
 class FlightControllerInterface
 {
     public:
-        explicit FlightControllerInterface(const std::shared_ptr<rclcpp::Node> nh);
+        FlightControllerInterface(const std::shared_ptr<rclcpp::Node>& node);
         ~FlightControllerInterface();
+
+        void initialize();
 
         // State access methods
         void setAutonomyEnabled(bool enabled);
@@ -95,10 +97,15 @@ class FlightControllerInterface
         float calculateBatteryPercentage(float voltage);
         // float findValidRoot(float a, float b, float c);
 
+        std::string land_mode_ = "LAND";
+        std::string brake_mode_ = "BRAKE";
+        std::string guided_mode_ = "GUIDED";
+        std::string rtl_mode_ = "RTL";
 
     private:
 
-        const std::shared_ptr<rclcpp::Node> nh_;
+        // Main node object
+        const std::shared_ptr<rclcpp::Node> node_;
 
         bool offline_;
         bool simulate_;
@@ -109,7 +116,6 @@ class FlightControllerInterface
 
         // Control defaults
         float target_altitude_;
-        bool ardupilot_;
         bool compass_received_;
 
         // Subscribers
@@ -132,12 +138,6 @@ class FlightControllerInterface
         rclcpp::Client<mavros_msgs::srv::CommandBool>::SharedPtr arming_client_;
         rclcpp::Client<mavros_msgs::srv::SetMode>::SharedPtr set_mode_client_;
         rclcpp::Client<mavros_msgs::srv::CommandTOL>::SharedPtr takeoff_client_;
-
-        // Mavros modes
-        std::string land_mode_;
-        std::string brake_mode_;
-        std::string guided_mode_;
-        std::string rtl_mode_;
 
         // General private data
         sensor_msgs::msg::NavSatFix current_ll_;

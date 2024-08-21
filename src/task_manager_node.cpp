@@ -8,14 +8,15 @@ Author: Erin Linebarger <erin@robotics88.com>
 int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv);
-  rclcpp::executors::MultiThreadedExecutor exec(rclcpp::ExecutorOptions(), 2);
 
-  rclcpp::NodeOptions node_options;
-  std::shared_ptr <rclcpp::Node> nh = rclcpp::Node::make_shared("task_manager_node", node_options);
-  task_manager::TaskManager task_manager(nh);
-  exec.add_node(nh);
 
-  exec.spin();
+  auto node = std::make_shared<task_manager::TaskManager>();
+  node->initialize();
+
+  rclcpp::executors::SingleThreadedExecutor executor;
+  executor.add_node(node);
+  executor.spin();
+  
   rclcpp::shutdown();
   return 0;
 }

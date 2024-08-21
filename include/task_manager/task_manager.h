@@ -62,11 +62,11 @@ namespace task_manager {
  * @class TaskManager
  * @brief The TaskManager manages the task queue (e.g., navigate to polygon, explore, handle emergency). Handles comms to/from UI, including task assignment, starting capabilities, and safety features based on drone status.
  */
-class TaskManager
+class TaskManager : public rclcpp::Node
 {
     public:
 
-        explicit TaskManager(const std::shared_ptr<rclcpp::Node> nh);
+        TaskManager();
         ~TaskManager();
 
         enum Task
@@ -99,6 +99,8 @@ class TaskManager
             HIGH
         };
 
+        void initialize();
+
         void runTaskManager();
 
         Task getCurrentTask();
@@ -128,8 +130,8 @@ class TaskManager
         rclcpp::TimerBase::SharedPtr health_check_timer_;
 
         // Subclasses
-        hello_decco_manager::HelloDeccoManager hello_decco_manager_;
-        flight_controller_interface::FlightControllerInterface flight_controller_interface_;
+        std::shared_ptr<hello_decco_manager::HelloDeccoManager> hello_decco_manager_;
+        std::shared_ptr<flight_controller_interface::FlightControllerInterface> flight_controller_interface_;
 
         // Publishers
         rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                 health_pub_;
@@ -209,7 +211,6 @@ class TaskManager
         rclcpp::TimerBase::SharedPtr health_pub_timer_;
         rclcpp::Duration health_check_pub_duration_;
         rclcpp::Time last_health_pub_stamp_;
-
         rclcpp::Time last_preflight_check_log_stamp_;
 
         // Flags to control various behavior
@@ -307,12 +308,6 @@ class TaskManager
         // Goal details
         geometry_msgs::msg::Point current_target_;
 
-        // Mavros modes
-        std::string land_mode_;
-        std::string brake_mode_;
-        std::string guided_mode_;
-        std::string rtl_mode_;
-
         Task current_task_;
         rclcpp::TimerBase::SharedPtr status_timer_;
 
@@ -353,7 +348,6 @@ class TaskManager
         std::string getTaskString(Task task);
         std::string getEventTypeString(EventType type);
         std::string getSeverityString(Severity sev);
-        void initFlightControllerInterface();
         bool convert2Geo(const std::shared_ptr<messages_88::srv::Geopoint::Request> req,
                          const std::shared_ptr<messages_88::srv::Geopoint::Response> resp);
         void logEvent(EventType type, Severity sev, std::string description);

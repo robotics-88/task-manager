@@ -31,7 +31,7 @@ namespace hello_decco_manager {
 class HelloDeccoManager
 {
     public:
-        explicit HelloDeccoManager(const std::shared_ptr<rclcpp::Node> nh);
+        HelloDeccoManager(const std::shared_ptr<rclcpp::Node>& node);
         ~HelloDeccoManager();
 
         void acceptFlight(json msgJson, bool &geofence_ok);
@@ -55,7 +55,7 @@ class HelloDeccoManager
         }
 
     private:
-        const std::shared_ptr<rclcpp::Node> nh_;
+        const std::shared_ptr<rclcpp::Node> node_;
 
         enum FlightStatus {
             NOT_STARTED,
@@ -71,7 +71,6 @@ class HelloDeccoManager
 
         // Frames/TF
         std::string mavros_map_frame_;
-        std::string slam_map_frame_;
         double utm_x_offset_;
         double utm_y_offset_;
         int utm_zone_;
