@@ -14,16 +14,24 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 #include "geometry_msgs/msg/polygon.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
-#include "mavros_msgs/srv/command_bool.hpp"
-#include "mavros_msgs/srv/command_tol.hpp"
+
 #include "mavros_msgs/msg/home_position.hpp"
-#include "mavros_msgs/srv/set_mode.hpp"
 #include "mavros_msgs/msg/state.hpp"
 #include "mavros_msgs/msg/status_text.hpp"
+#include "mavros_msgs/msg/sys_status.hpp"
+#include "mavros_msgs/srv/command_bool.hpp"
+#include "mavros_msgs/srv/command_tol.hpp"
+#include "mavros_msgs/srv/message_interval.hpp"
+#include "mavros_msgs/srv/set_mode.hpp"
+#include "mavros_msgs/srv/stream_rate.hpp"
+#include "mavros_msgs/srv/waypoint_clear.hpp"
+
 #include "messages_88/action/explore.hpp"
 #include "messages_88/action/nav_to_point.hpp"
 #include "messages_88/msg/battery.hpp"
 #include "messages_88/srv/geopoint.hpp"
+
+#include "rcl_interfaces/srv/set_parameters.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 #include "sensor_msgs/msg/nav_sat_fix.hpp"
@@ -39,10 +47,10 @@ namespace flight_controller_interface {
  * @class FlightControllerInterface
  * @brief Manages task and flight state of drone.
  */
-class FlightControllerInterface
+class FlightControllerInterface : public rclcpp::Node
 {
     public:
-        FlightControllerInterface(const std::shared_ptr<rclcpp::Node>& node);
+        FlightControllerInterface();
         ~FlightControllerInterface();
 
         void initialize();
@@ -78,7 +86,7 @@ class FlightControllerInterface
         void imuCallback(const sensor_msgs::msg::Imu::SharedPtr msg);
         void compassCallback(const std_msgs::msg::Float64::SharedPtr  msg);
         void batteryCallback(const sensor_msgs::msg::BatteryState::SharedPtr msg);
-        // void sysStatusCallback(const mavros_msgs::msg::SysStatus::SharedPtr msg);
+        void sysStatusCallback(const mavros_msgs::msg::SysStatus::SharedPtr msg);
         void statusCallback(const mavros_msgs::msg::State::SharedPtr  msg);
         void statusTextCallback(const mavros_msgs::msg::StatusText::SharedPtr  msg);
 
@@ -88,7 +96,7 @@ class FlightControllerInterface
         bool takeOff();
 
         // safety/validity checking
-        void initializeDrone();
+        void initializeFlightController();
         void initUTM(double &utm_x, double &utm_y);
         void checkMsgRates();
         void requestMavlinkStreams();
@@ -102,10 +110,10 @@ class FlightControllerInterface
         std::string guided_mode_ = "GUIDED";
         std::string rtl_mode_ = "RTL";
 
-    private:
 
-        // Main node object
-        const std::shared_ptr<rclcpp::Node> node_;
+        void fakeTimer();
+
+    private:
 
         bool offline_;
         bool simulate_;
@@ -126,7 +134,7 @@ class FlightControllerInterface
         rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr mavros_imu_subscriber_;
         rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr mavros_compass_subscriber_;
         rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr mavros_battery_subscriber_;
-        // rclcpp::Subscription<mavros_msgs::msg::SysStatus>::SharedPtr mavros_sys_status_subscriber_;
+        rclcpp::Subscription<mavros_msgs::msg::SysStatus>::SharedPtr mavros_sys_status_subscriber_;
         rclcpp::Subscription<mavros_msgs::msg::StatusText>::SharedPtr mavros_status_text_subscriber_;
 
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr slam_pose_subscriber_;
@@ -134,10 +142,6 @@ class FlightControllerInterface
         // Publishers
         rclcpp::Publisher<messages_88::msg::Battery>::SharedPtr battery_pub_; // Publisher mostly for debug
 
-        // Mavros service clients
-        rclcpp::Client<mavros_msgs::srv::CommandBool>::SharedPtr arming_client_;
-        rclcpp::Client<mavros_msgs::srv::SetMode>::SharedPtr set_mode_client_;
-        rclcpp::Client<mavros_msgs::srv::CommandTOL>::SharedPtr takeoff_client_;
 
         // General private data
         sensor_msgs::msg::NavSatFix current_ll_;
@@ -197,7 +201,6 @@ class FlightControllerInterface
 
         // Initialization check stuff
         bool drone_initialized_;
-        unsigned check_msg_rates_counter_;
         unsigned compass_wait_counter_;
         unsigned attempts_;
         rclcpp::TimerBase::SharedPtr drone_init_timer_;
@@ -217,7 +220,6 @@ class FlightControllerInterface
             { "EK3_SRC1_YAW", 1 },
             { "VISO_TYPE", 0 },
         };
-
 };
 
 }

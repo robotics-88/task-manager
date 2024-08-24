@@ -73,7 +73,7 @@
         <param name="flightleg_area_acres" value="$(var flightleg_area_acres)"/>
         <param name="all_stream_rate" value="5.0"/>
         <param name="imu_rate" value="120.0"/>
-        <param name="local_pos_rate" value="60.0"/>
+        <param name="local_pos_rate" value="65.0"/>
         <param name="simulate" value="$(var simulate)"/>
         <param name="offline" value="$(var offline)"/>
         <param name="save_pcd" value="$(var save_pcd)"/>

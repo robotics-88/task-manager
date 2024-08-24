@@ -21,10 +21,10 @@ using namespace std::chrono_literals;
 
 namespace task_manager
 {
-TaskManager::TaskManager() : Node("task_manager")
+TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightControllerInterface> fci) : Node("task_manager")
     , current_task_(Task::INITIALIZING)
     , hello_decco_manager_(nullptr)
-    , flight_controller_interface_(nullptr)
+    , flight_controller_interface_(fci)
     , task_manager_loop_duration_(1.0)
     , simulate_(false)
     , offline_(false)
@@ -222,9 +222,6 @@ void TaskManager::initialize() {
 
     // We can only create these pointers with `shared_from_this()` outside of the main constructor. 
     hello_decco_manager_ = std::make_shared<hello_decco_manager::HelloDeccoManager>(shared_from_this());
-    flight_controller_interface_ = std::make_shared<flight_controller_interface::FlightControllerInterface>(shared_from_this());
-
-    flight_controller_interface_->initialize();
     flight_controller_interface_->setAutonomyEnabled(enable_autonomy_);
 
     // Start timers
@@ -535,7 +532,7 @@ void TaskManager::checkHealth() {
     health_checks_.slam_ok = now - last_slam_pos_stamp_ < slam_timeout_;
     health_checks_.path_ok = now - last_path_planner_stamp_ < path_timeout_;
     health_checks_.costmap_ok = now - last_costmap_stamp_ < costmap_timeout_;
-    health_checks_.explore_ok = explore_action_client_->wait_for_action_server(explore_timeout_);
+    health_checks_.explore_ok = false; //explore_action_client_->wait_for_action_server(explore_timeout_);
     health_checks_.mapir_ok = now - last_mapir_stamp_ < mapir_timeout_;
     health_checks_.attollo_ok = now - last_attollo_stamp_ < attollo_timeout_;
     health_checks_.thermal_ok = now - last_thermal_stamp_ < thermal_timeout_;
@@ -634,8 +631,8 @@ bool TaskManager::initialized() {
     // Get roll, pitch for map stabilization
     geometry_msgs::msg::Quaternion init_orientation;
     logEvent(EventType::INFO, Severity::LOW, "Initializing IMU");
-    while (!flight_controller_interface_->getAveragedOrientation(init_orientation)) {
-        rclcpp::Rate(1.0).sleep();
+    if (!flight_controller_interface_->getAveragedOrientation(init_orientation)) {
+        return false;
     }
     tf2::Quaternion quatmav(init_orientation.x, init_orientation.y, init_orientation.z, init_orientation.w);
     tf2::Matrix3x3 m(quatmav);
@@ -689,9 +686,9 @@ bool TaskManager::initialized() {
     map_tf_init_ = true;
 
     logEvent(EventType::INFO, Severity::LOW, "Waiting for global position");
-    while (home_utm_zone_ < 0) {
-        home_utm_zone_ = flight_controller_interface_->getUTMZone();
-        rclcpp::Rate(1.0).sleep();
+    home_utm_zone_ = flight_controller_interface_->getUTMZone();
+    if (home_utm_zone_ < 0) {
+        return false;
     }
     RCLCPP_INFO(this->get_logger(), "Got global, UTM zone: %d. LL : (%f, %f)", home_utm_zone_, flight_controller_interface_->getCurrentGlobalPosition().latitude, flight_controller_interface_->getCurrentGlobalPosition().longitude);
     double utm_x, utm_y;

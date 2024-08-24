@@ -66,7 +66,7 @@ class TaskManager : public rclcpp::Node
 {
     public:
 
-        TaskManager();
+        TaskManager(std::shared_ptr<flight_controller_interface::FlightControllerInterface> fci);
         ~TaskManager();
 
         enum Task
