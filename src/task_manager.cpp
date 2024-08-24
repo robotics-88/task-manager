@@ -21,10 +21,10 @@ using namespace std::chrono_literals;
 
 namespace task_manager
 {
-TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightControllerInterface> fci) : Node("task_manager")
+TaskManager::TaskManager() : Node("task_manager")
     , current_task_(Task::INITIALIZING)
     , hello_decco_manager_(nullptr)
-    , flight_controller_interface_(fci)
+    , flight_controller_interface_(nullptr)
     , task_manager_loop_duration_(1.0)
     , simulate_(false)
     , offline_(false)
@@ -222,6 +222,7 @@ void TaskManager::initialize() {
 
     // We can only create these pointers with `shared_from_this()` outside of the main constructor. 
     hello_decco_manager_ = std::make_shared<hello_decco_manager::HelloDeccoManager>(shared_from_this());
+    flight_controller_interface_ = std::make_shared<flight_controller_interface::FlightControllerInterface>(shared_from_this());
     flight_controller_interface_->setAutonomyEnabled(enable_autonomy_);
 
     // Start timers

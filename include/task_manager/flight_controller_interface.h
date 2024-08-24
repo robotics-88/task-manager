@@ -47,13 +47,11 @@ namespace flight_controller_interface {
  * @class FlightControllerInterface
  * @brief Manages task and flight state of drone.
  */
-class FlightControllerInterface : public rclcpp::Node
+class FlightControllerInterface
 {
     public:
-        FlightControllerInterface();
+        FlightControllerInterface(const std::shared_ptr<rclcpp::Node>& node);
         ~FlightControllerInterface();
-
-        void initialize();
 
         // State access methods
         void setAutonomyEnabled(bool enabled);
@@ -114,6 +112,8 @@ class FlightControllerInterface : public rclcpp::Node
         void fakeTimer();
 
     private:
+
+        const std::shared_ptr<rclcpp::Node> node_;
 
         bool offline_;
         bool simulate_;
@@ -192,7 +192,6 @@ class FlightControllerInterface : public rclcpp::Node
         unsigned imu_count_;
         float local_pos_rate_;
         unsigned local_pos_count_;
-        float stream_rate_modifier_;
         float battery_rate_;
         unsigned battery_count_;
 
