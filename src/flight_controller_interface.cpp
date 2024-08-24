@@ -194,12 +194,14 @@ void FlightControllerInterface::initializeFlightController() {
             RCLCPP_INFO(node_->get_logger(), "Mavlink streaming rates OK");
         }
         else {
-            if (attempts_ == 5) {
+            if (attempts_ == 0) 
+                requestMavlinkStreams();
+            else if (attempts_ >= 10) {
                 RCLCPP_ERROR(node_->get_logger(), "MAVlink stream rates failed, not initializing FCU");
                 drone_init_timer_.reset();
                 return;
             }
-            requestMavlinkStreams();
+            
             attempts_++;
             return;
         }
@@ -245,30 +247,30 @@ void FlightControllerInterface::initializeFlightController() {
 
         auto result = mission_clear_client->async_send_request(mission_clear_req);
 
-        RCLCPP_INFO(node_->get_logger(), "Sent mission clear");
+        // TODO figure out why spin_until_future_complete never returns
 
-        if (rclcpp::spin_until_future_complete(mission_clear_node, result) ==
-            rclcpp::FutureReturnCode::SUCCESS)
-        {
-            RCLCPP_INFO(node_->get_logger(), "Got mission clear res");
-            if (result.get()->success) {
-                RCLCPP_INFO(node_->get_logger(), "Mission clear complete");
-                mission_clear_ok_ = true;
-                attempts_ = 0;
-            }
-            else {
-                if (attempts_ > 3) {
-                    RCLCPP_ERROR(node_->get_logger(), "Mission clear unsuccessful after 3 attempts, not initializing drone");
-                    drone_init_timer_.reset();
-                    return;
-                }
-                attempts_++;
-                return;
-            }
+        // if (rclcpp::spin_until_future_complete(mission_clear_node, result) ==
+        //     rclcpp::FutureReturnCode::SUCCESS)
+        // {
+        //     RCLCPP_INFO(node_->get_logger(), "Got mission clear res");
+        //     if (result.get()->success) {
+        //         RCLCPP_INFO(node_->get_logger(), "Mission clear complete");
+        //         mission_clear_ok_ = true;
+        //         attempts_ = 0;
+        //     }
+        //     else {
+        //         if (attempts_ > 3) {
+        //             RCLCPP_ERROR(node_->get_logger(), "Mission clear unsuccessful after 3 attempts, not initializing drone");
+        //             drone_init_timer_.reset();
+        //             return;
+        //         }
+        //         attempts_++;
+        //         return;
+        //     }
             
-        } else {
-            RCLCPP_ERROR(node_->get_logger(), "Failed to call service /mavros/mission/clear");
-        }
+        // } else {
+        //     RCLCPP_ERROR(node_->get_logger(), "Failed to call service /mavros/mission/clear");
+        // }
     }
 
     // // Set heading source to compass. Also acts as check on whether parameter fetch is complete
@@ -411,7 +413,7 @@ void FlightControllerInterface::requestMavlinkStreams() {
     auto streamrate_req = std::make_shared<mavros_msgs::srv::StreamRate::Request>(); 
     streamrate_req->stream_id = 0;
     streamrate_req->message_rate = all_stream_rate_;
-    streamrate_req->on_off = 1;
+    streamrate_req->on_off = true;
     auto streamrate_res = streamrate_client->async_send_request(streamrate_req);
     if (rclcpp::spin_until_future_complete(streamrate_node, streamrate_res) ==
         rclcpp::FutureReturnCode::SUCCESS)
