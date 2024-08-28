@@ -16,10 +16,11 @@ find_package(rclcpp_action REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(livox_ros_driver2 REQUIRED)
 find_package(libmavconn REQUIRED)
+find_package(map_msgs REQUIRED)
+find_package(mavlink REQUIRED)
 find_package(mavros REQUIRED)
 find_package(mavros_msgs REQUIRED)
 find_package(messages_88 REQUIRED)
-find_package(nav2_costmap_2d REQUIRED)
 find_package(pcl_ros REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -39,6 +40,7 @@ include_directories(
 
 ## Specify additional locations of header files
 include_directories(
+  ${mavlink_INCLUDE_DIRS}
   ${GeographicLib_INCLUDE_DIRS}
 	${PCL_INCLUDE_DIRS}
 )
@@ -55,7 +57,7 @@ ament_target_dependencies(task_manager
   ament_index_cpp
   libmavconn
   livox_ros_driver2
-  nav2_costmap_2d
+  map_msgs
   messages_88
   pcl_ros
   std_msgs

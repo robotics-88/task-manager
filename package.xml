@@ -10,10 +10,11 @@
   <maintainer email="erin@robotics88.com">Erin Linebarger</maintainer>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <build_depend>mavlink</build_depend>
 
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>
-  <depend>nav2_costmap_2d</depend>
+  <depend>map_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>libmavconn</depend>
   <depend>livox_ros_driver2</depend>

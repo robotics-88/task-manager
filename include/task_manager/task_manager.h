@@ -13,7 +13,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 
 //#include "bag_recorder/msg/rosbag.hpp"
-#include "nav2_costmap_2d/costmap_2d.hpp"
 #include "geometry_msgs/msg/polygon.h"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
