@@ -33,11 +33,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "messages_88/msg/frontier.hpp"
 #include "messages_88/msg/task_status.hpp"
 #include "messages_88/srv/emergency.hpp"
-#include "messages_88/srv/init_drone_state.hpp"
 #include "messages_88/srv/geopoint.hpp"
-#include "messages_88/srv/get_position.hpp"
-#include "messages_88/srv/prepare_drone.hpp"
-#include "messages_88/srv/prepare_explore.hpp"
 #include "messages_88/srv/save.hpp"
 
 #include "pcl_conversions/pcl_conversions.h"
