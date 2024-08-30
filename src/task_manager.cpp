@@ -135,6 +135,45 @@ void TaskManager::initialize() {
     this->declare_parameter("lidar_x", lidar_x_);
     this->declare_parameter("lidar_z", lidar_z_);
 
+    // Now get parameters
+    this->get_parameter("enable_autonomy", enable_autonomy_);
+    this->get_parameter("use_failsafes", use_failsafes_);
+    this->get_parameter("default_alt", target_altitude_);
+    this->get_parameter("min_alt", min_altitude_);
+    this->get_parameter("max_alt", max_altitude_);
+    this->get_parameter("max_dist_to_polygon", max_dist_to_polygon_);
+    this->get_parameter("goal_topic", goal_topic);
+    this->get_parameter("do_slam", do_slam_);
+    this->get_parameter("do_record", do_record_);
+    this->get_parameter("mavros_map_frame", mavros_map_frame_);
+    this->get_parameter("base_frame", mavros_base_frame_);
+    this->get_parameter("slam_map_frame", slam_map_frame_);
+    this->get_parameter("path_planner_topic", path_planner_topic_);
+    this->get_parameter("slam_pose_topic", slam_pose_topic_);
+    this->get_parameter("costmap_topic", costmap_topic_);
+    this->get_parameter("lidar_topic", lidar_topic_);
+    this->get_parameter("attollo_topic", attollo_topic_);
+    this->get_parameter("mapir_topic", mapir_topic_);
+    this->get_parameter("mapir_rgb_topic", mapir_rgb_topic_);
+    this->get_parameter("thermal_topic", thermal_topic_);
+    this->get_parameter("rosbag_topic", rosbag_topic_);
+    this->get_parameter("offline", offline_);
+    this->get_parameter("save_pcd", save_pcd_);
+    this->get_parameter("simulate", simulate_);
+    this->get_parameter("data_directory", burn_dir_prefix_);
+    this->get_parameter("explicit_global", explicit_global_params_);
+    this->get_parameter("estimated_drone_speed", estimated_drone_speed_);
+    estimated_drone_speed_ = estimated_drone_speed_ < 1 ? 1.0 : estimated_drone_speed_; // this protects against a later potential div by 0
+    this->get_parameter("battery_failsafe_safety_factor", battery_failsafe_safety_factor_);
+    this->get_parameter("do_mapir", do_mapir_);
+    this->get_parameter("do_mapir_rgb", do_mapir_rgb_);
+    this->get_parameter("do_attollo", do_attollo_);
+    this->get_parameter("do_thermal_cam", do_thermal_);
+    this->get_parameter("lidar_type", lidar_type);
+    this->get_parameter("lidar_pitch", lidar_pitch_);
+    this->get_parameter("lidar_x", lidar_x_);
+    this->get_parameter("lidar_z", lidar_z_);
+
     // SLAM pose sub
     slam_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(slam_pose_topic_, 10, std::bind(&TaskManager::slamPoseCallback, this, _1));
 
@@ -261,8 +300,6 @@ TaskManager::~TaskManager(){
 }
 
 void TaskManager::runTaskManager() {
-
-    RCLCPP_INFO(this->get_logger(), "Running task manager");
 
     // Check arm status and make sure bag recording is happening properly.
     checkArmStatus();

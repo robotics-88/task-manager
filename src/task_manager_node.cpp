@@ -15,7 +15,15 @@ int main(int argc, char** argv)
   rclcpp::executors::SingleThreadedExecutor executor;
   executor.add_node(tm_node);
   executor.spin();
+  try {
+    executor.spin();
+  } catch (const std::exception &e) {
+      RCLCPP_ERROR(tm_node->get_logger(), "Exception in executor spin: %s", e.what());
+  } catch (...) {
+      RCLCPP_ERROR(tm_node->get_logger(), "Unknown exception in executor spin");
+  }
   
   rclcpp::shutdown();
+  RCLCPP_INFO(tm_node->get_logger(), "Shutting down task manager node");
   return 0;
 }

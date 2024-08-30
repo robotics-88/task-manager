@@ -73,6 +73,13 @@ FlightControllerInterface::FlightControllerInterface(const std::shared_ptr<rclcp
     node_->declare_parameter("imu_rate", imu_rate_);
     node_->declare_parameter("local_pos_rate", local_pos_rate_);
     node_->declare_parameter("all_stream_rate", all_stream_rate_);
+    
+    node_->get_parameter("battery_size", battery_size_);
+    node_->get_parameter("estimated_current", estimated_current_);
+    node_->get_parameter("imu_rate", imu_rate_);
+    node_->get_parameter("local_pos_rate", local_pos_rate_);
+    node_->get_parameter("all_stream_rate", all_stream_rate_);
+
 
     // Change arducopter param map if using slam pos src
     if (!node_->get_parameter("do_slam", do_slam_))
