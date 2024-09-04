@@ -85,6 +85,10 @@ install(DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}
 )
 
+install(DIRECTORY include/
+  DESTINATION include
+)
+
 #############
 ## Testing ##
 #############
@@ -139,5 +143,7 @@ if(BUILD_TESTING)
   # )
 
 endif()
-  
+
+ament_export_include_directories(include)
+
 ament_package()

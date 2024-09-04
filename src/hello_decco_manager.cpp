@@ -9,7 +9,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "mavros_msgs/srv/waypoint_push.hpp"
 #include "visualization_msgs/msg/marker.hpp"
 
-#include "decco_utilities.h"
+#include "task_manager/decco_utilities.h"
 
 #include <GeographicLib/Constants.hpp>
 #include <GeographicLib/GeoCoords.hpp>
