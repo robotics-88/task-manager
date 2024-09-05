@@ -45,7 +45,7 @@
     <arg name="simulate" default="false"/>
     <arg name="offline" default="false"/>
 
-    <node pkg="task_manager" exec="task_manager_node" namespace="task_manager" output="screen">
+    <node pkg="task_manager" exec="task_manager_node" output="screen">
         <param name="do_slam" value="$(var do_slam)"/>
         <param name="enable_autonomy" value="$(var enable_autonomy)"/>
         <param name="use_failsafes" value="$(var use_failsafes)"/>
