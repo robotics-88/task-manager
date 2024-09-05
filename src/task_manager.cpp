@@ -681,12 +681,12 @@ bool TaskManager::initialized() {
 
     // If using tilted lidar, add the lidar pitch to the map to slam tf, since
     // the lidar is used as the basis for the slam map frame
-    pitch += lidar_pitch_;
+    pitch += -lidar_pitch_;
 
 
-    double offset_x = lidar_x_;
+    double offset_x = -lidar_x_;
     double offset_y = 0.0;
-    double offset_z = lidar_z_;
+    double offset_z = -lidar_z_;
 
     // Fill in data
     map_to_slam_tf_.header.frame_id = mavros_map_frame_;
