@@ -80,15 +80,15 @@ TaskManager::TaskManager() : Node("task_manager")
     , last_health_pub_stamp_(0, 0, RCL_ROS_TIME)
     , last_preflight_check_log_stamp_(0, 0, RCL_ROS_TIME)
     , last_ui_heartbeat_stamp_(0, 0, RCL_ROS_TIME)
-    , lidar_timeout_(rclcpp::Duration(0.5, 0))
-    , slam_timeout_(rclcpp::Duration(0.5, 0))
-    , path_timeout_(rclcpp::Duration(0.5, 0))
-    , costmap_timeout_(rclcpp::Duration(3.0, 0))
+    , lidar_timeout_(rclcpp::Duration::from_seconds(0.5))
+    , slam_timeout_(rclcpp::Duration::from_seconds(0.5))
+    , path_timeout_(rclcpp::Duration::from_seconds(0.5))
+    , costmap_timeout_(rclcpp::Duration::from_seconds(3.0))
     , explore_timeout_(1s)
-    , mapir_timeout_(rclcpp::Duration(1.0, 0))
-    , attollo_timeout_(rclcpp::Duration(1.0, 0))
-    , thermal_timeout_(rclcpp::Duration(1.0, 0))
-    , rosbag_timeout_(rclcpp::Duration(1.0, 0))
+    , mapir_timeout_(rclcpp::Duration::from_seconds(1.0))
+    , attollo_timeout_(rclcpp::Duration::from_seconds(1.0))
+    , thermal_timeout_(rclcpp::Duration::from_seconds(1.0))
+    , rosbag_timeout_(rclcpp::Duration::from_seconds(1.0))
 {
 }
 
@@ -331,7 +331,7 @@ void TaskManager::runTaskManager() {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Preflight checks passed, ready to arm");
                 updateCurrentTask(Task::READY);
             } 
-            else if (this->get_clock()->now() - last_preflight_check_log_stamp_ > rclcpp::Duration(10.0, 0)) {
+            else if (this->get_clock()->now() - last_preflight_check_log_stamp_ > rclcpp::Duration::from_seconds(10.0)) {
                 logEvent(EventType::FLIGHT_CONTROL, Severity::MEDIUM,
                          "Preflight check failed due to " + flight_controller_interface_->getPreflightCheckReasons());
                 last_preflight_check_log_stamp_ = this->get_clock()->now();

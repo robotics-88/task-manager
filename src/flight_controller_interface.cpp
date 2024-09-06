@@ -121,11 +121,13 @@ FlightControllerInterface::FlightControllerInterface(const std::shared_ptr<rclcp
         requestMavlinkStreams();
 
         // Param fetch takes about 45 seconds in sim, 15 seconds on drone
-        double approx_time_to_fetch = simulate_ ? 45 : 15;
+        int approx_time_to_fetch = simulate_ ? 45 : 15;
 
         RCLCPP_INFO(node_->get_logger(), "Flight controller interface waiting %is for param fetch to complete", (int)approx_time_to_fetch);
-        rclcpp::Rate(1.0 / approx_time_to_fetch).sleep();
-
+        for (unsigned i = 0; i < approx_time_to_fetch; i++) {
+            rclcpp::Rate(1.0).sleep();
+        }
+        
         // Now we can initialize
         attempts_ = 0;
         RCLCPP_INFO(node_->get_logger(), "Initializing flight controller");
@@ -851,11 +853,12 @@ bool FlightControllerInterface::arm() {
     }
 
     std::shared_ptr<rclcpp::Node> arm_node = rclcpp::Node::make_shared("arm_client");
-    auto arm_client = arm_node->create_client<mavros_msgs::srv::CommandBool>("/mavros/cmd/arm");
+    auto arm_client = arm_node->create_client<mavros_msgs::srv::CommandBool>("/mavros/cmd/arming");
 
     auto arm_cmd_req = std::make_shared<mavros_msgs::srv::CommandBool::Request>();
     arm_cmd_req->value = true;
     auto result = arm_client->async_send_request(arm_cmd_req);
+
     if (rclcpp::spin_until_future_complete(arm_node, result) ==
             rclcpp::FutureReturnCode::SUCCESS
             && result.get()->success){
@@ -867,12 +870,10 @@ bool FlightControllerInterface::arm() {
         return false;
     }
 
-    return false;
+    return true;
 }
 
 bool FlightControllerInterface::takeOff() {
-
-    RCLCPP_INFO(node_->get_logger(), "Requesting takeoff");
 
     if (!in_guided_mode_) {
         RCLCPP_WARN(node_->get_logger(), "Not taking off. Not in guided mode");
@@ -894,30 +895,28 @@ bool FlightControllerInterface::takeOff() {
         }
     }
 
-    std::shared_ptr<rclcpp::Node> takeoff_node = rclcpp::Node::make_shared("takeoff_client");
-    auto takeoff_client = takeoff_node->create_client<mavros_msgs::srv::CommandTOL>("/mavros/cmd/takeoff");
-
-    auto takeoff_req = std::make_shared<mavros_msgs::srv::CommandTOL::Request>();
-
     if (!node_->get_parameter("/task_manager/default_alt", target_altitude_))
         RCLCPP_WARN(node_->get_logger(), "Flight controller interface cannot get default altitude param");
 
     RCLCPP_INFO(node_->get_logger(), "Requesting takeoff to %fm", target_altitude_);
+    std::shared_ptr<rclcpp::Node> takeoff_node = rclcpp::Node::make_shared("takeoff_client");
+    auto takeoff_client = takeoff_node->create_client<mavros_msgs::srv::CommandTOL>("/mavros/cmd/takeoff");
+    auto takeoff_req = std::make_shared<mavros_msgs::srv::CommandTOL::Request>();
+
     takeoff_req->altitude = target_altitude_;
     auto result = takeoff_client->async_send_request(takeoff_req);
-    result.wait_for(5s); // TODO fix this with something better
-    // if (rclcpp::spin_until_future_complete(takeoff_node, result) ==
-    //         rclcpp::FutureReturnCode::SUCCESS
-    //         && result.get()->success) {
-    //     RCLCPP_INFO(node_->get_logger(), "Vehicle takeoff succeeded");
-    //     return true;
-    // }
-    // else {
-    //     RCLCPP_WARN(node_->get_logger(), "Vehicle takeoff failed");
-    //     return false;
-    // }
+    if (rclcpp::spin_until_future_complete(takeoff_node, result) ==
+            rclcpp::FutureReturnCode::SUCCESS
+            && result.get()->success) {
+        RCLCPP_INFO(node_->get_logger(), "Vehicle takeoff succeeded");
+        return true;
+    }
+    else {
+        RCLCPP_WARN(node_->get_logger(), "Vehicle takeoff failed");
+        return false;
+    }
 
-    return true;
+    return false;
 }
 
 float FlightControllerInterface::calculateBatteryPercentage(float voltage) {
