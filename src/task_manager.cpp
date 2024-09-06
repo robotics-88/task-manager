@@ -1278,8 +1278,8 @@ void TaskManager::altitudesResponse(json &json_msg) {
 void TaskManager::remoteIDResponse(json &json) {
 
     // Unpack JSON here for convenience
-    std::string uas_id_str = json["uas_id"].is_null() ? "" : json["uas_id"];
-    std::string operator_id_str = json["operator_id"].is_null() ? "" : json["operator_id"];
+    int uas_id_str = json["uas_id"].is_number_integer() ? (int)json["uas_id"] : 0;
+    int operator_id_str = json["operator_id"].is_number_integer() ? (int)json["operator_id"] : 0;
     float operator_latitude = json["operator_latitude"].is_number_float() ? (float)json["operator_latitude"] : 0.f;
     float operator_longitude = json["operator_longitude"].is_number_float() ? (float)json["operator_longitude"] : 0.f;
     float operator_altitude_geo = json["operator_altitude_geo"].is_number_float() ? (float)json["operator_altitude_geo"] : 0.f;
@@ -1291,16 +1291,16 @@ void TaskManager::remoteIDResponse(json &json) {
         basic_id.header.stamp = this->get_clock()->now();
         basic_id.id_type = mavros_msgs::msg::BasicID::MAV_ODID_ID_TYPE_CAA_REGISTRATION_ID;
         basic_id.ua_type = mavros_msgs::msg::BasicID::MAV_ODID_UA_TYPE_HELICOPTER_OR_MULTIROTOR;
-        basic_id.uas_id = uas_id_str;
+        basic_id.uas_id = std::to_string(uas_id_str);
         odid_basic_id_pub_->publish(basic_id);
 
         // Operator ID
         mavros_msgs::msg::OperatorID operator_id;
         operator_id.header.stamp = this->get_clock()->now();
         operator_id.operator_id_type = mavros_msgs::msg::OperatorID::MAV_ODID_OPERATOR_ID_TYPE_CAA;
-        operator_id.operator_id = operator_id_str;
+        operator_id.operator_id = std::to_string(operator_id_str);
         odid_operator_id_pub_->publish(operator_id);
-        operator_id_ = operator_id_str;
+        operator_id_ = std::to_string(operator_id_str);
 
         // System
         // this should probably just be published at startup, and System Update published here
