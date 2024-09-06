@@ -842,7 +842,7 @@ void TaskManager::checkArmStatus() {
         logEvent(EventType::INFO, Severity::LOW, "Manually set armed state to true");
         is_armed_ = true;
     }
-    if (is_armed_ && !bag_active_) {
+    if (is_armed_ && !bag_active_ && !simulate_) {
         logEvent(EventType::INFO, Severity::LOW, "Armed but bag not active"); 
         startBag();
     }
