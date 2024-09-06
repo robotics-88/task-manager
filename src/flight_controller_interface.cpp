@@ -905,18 +905,19 @@ bool FlightControllerInterface::takeOff() {
     RCLCPP_INFO(node_->get_logger(), "Requesting takeoff to %fm", target_altitude_);
     takeoff_req->altitude = target_altitude_;
     auto result = takeoff_client->async_send_request(takeoff_req);
-    if (rclcpp::spin_until_future_complete(takeoff_node, result) ==
-            rclcpp::FutureReturnCode::SUCCESS
-            && result.get()->success) {
-        RCLCPP_INFO(node_->get_logger(), "Vehicle takeoff succeeded");
-        return true;
-    }
-    else {
-        RCLCPP_WARN(node_->get_logger(), "Vehicle takeoff failed");
-        return false;
-    }
+    result.wait_for(5s); // TODO fix this with something better
+    // if (rclcpp::spin_until_future_complete(takeoff_node, result) ==
+    //         rclcpp::FutureReturnCode::SUCCESS
+    //         && result.get()->success) {
+    //     RCLCPP_INFO(node_->get_logger(), "Vehicle takeoff succeeded");
+    //     return true;
+    // }
+    // else {
+    //     RCLCPP_WARN(node_->get_logger(), "Vehicle takeoff failed");
+    //     return false;
+    // }
 
-    return false;
+    return true;
 }
 
 float FlightControllerInterface::calculateBatteryPercentage(float voltage) {

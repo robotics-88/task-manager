@@ -371,15 +371,16 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::msg::Polygon &pol
     // Run geofence rosservice call for mavros to upload geofence wps to autopilot
     auto result = mavros_geofence_client_->async_send_request(request);
 
-    if (rclcpp::spin_until_future_complete(node_, result) ==
-        rclcpp::FutureReturnCode::SUCCESS)
-    {
-        return true;
-    }
-    else {
-        RCLCPP_WARN(node_->get_logger(), "Geofence push service call failed");
-        return false;
-    }
+    // TODO insert a different wait call
+    // if (rclcpp::spin_until_future_complete(node_, result) ==
+    //     rclcpp::FutureReturnCode::SUCCESS)
+    // {
+    //     return true;
+    // }
+    // else {
+    //     RCLCPP_WARN(node_->get_logger(), "Geofence push service call failed");
+    //     return false;
+    // }
 }
 
 int HelloDeccoManager::polygonNumFlights(const geometry_msgs::msg::Polygon &polygon) {

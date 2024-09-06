@@ -248,8 +248,8 @@ void TaskManager::initialize() {
     // Task status pub
     task_pub_ = this->create_publisher<messages_88::msg::TaskStatus>("task_status", 10);
     goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(goal_topic, 10, std::bind(&TaskManager::goalCallback, this, _1));
-    task_msg_.enable_autonomy = false;
-    task_msg_.enable_exploration = false;
+    task_msg_.enable_autonomy = enable_autonomy_;
+    task_msg_.enable_exploration = true;
 
     // tymbal subscriber
     tymbal_sub_ = this->create_subscription<std_msgs::msg::String>("/tymbal/to_decco", 10, std::bind(&TaskManager::packageFromTymbal, this, _1));
