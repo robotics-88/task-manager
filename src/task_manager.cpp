@@ -55,6 +55,7 @@ TaskManager::TaskManager() : Node("task_manager")
     , mapir_topic_("/mapir_rgn/image_rect_color")
     , mapir_rgb_topic_("/mapir_rgn/image_rect_color")
     , rosbag_topic_("/record/heartbeat")
+    , explore_action_result_(rclcpp_action::ResultCode::UNKNOWN)
     , is_armed_(false)
     , in_autonomous_flight_(false)
     , explicit_global_params_(false)
@@ -321,6 +322,7 @@ void TaskManager::runTaskManager() {
                     updateCurrentTask(Task::PREFLIGHT_CHECK);
                 }
             }
+            explore_action_result_ = rclcpp_action::ResultCode::UNKNOWN;
             break;
         }
         case Task::PREFLIGHT_CHECK: {
@@ -398,14 +400,13 @@ void TaskManager::runTaskManager() {
             }
             break;
         }
-        case Task::EXPLORING: {            
+        case Task::EXPLORING: {   
             // Check action client status to see if complete
-            auto status = explore_action_goal_handle_->get_status();
-            if (status == rclcpp_action::GoalStatus::STATUS_ABORTED || 
-                status == rclcpp_action::GoalStatus::STATUS_CANCELED ||
-                status == rclcpp_action::GoalStatus::STATUS_SUCCEEDED) {
+            if (explore_action_result_ == rclcpp_action::ResultCode::ABORTED || 
+                explore_action_result_ == rclcpp_action::ResultCode::CANCELED ||
+                explore_action_result_ == rclcpp_action::ResultCode::SUCCEEDED) {
 
-                logEvent(EventType::STATE_MACHINE, Severity::LOW, "Initiating RTL_88 due to exploration action code " + status);
+                logEvent(EventType::STATE_MACHINE, Severity::LOW, "Initiating RTL_88 due to exploration action stopped. "); // TODO add result parsing to string
                 hello_decco_manager_->updateFlightStatus("COMPLETED");
                 startRtl88();
             }
@@ -570,7 +571,7 @@ void TaskManager::checkHealth() {
     health_checks_.slam_ok = now - last_slam_pos_stamp_ < slam_timeout_;
     health_checks_.path_ok = now - last_path_planner_stamp_ < path_timeout_;
     health_checks_.costmap_ok = now - last_costmap_stamp_ < costmap_timeout_;
-    health_checks_.explore_ok = false; //explore_action_client_->wait_for_action_server(explore_timeout_);
+    health_checks_.explore_ok = explore_action_client_.get()->action_server_is_ready();
     health_checks_.mapir_ok = now - last_mapir_stamp_ < mapir_timeout_;
     health_checks_.attollo_ok = now - last_attollo_stamp_ < attollo_timeout_;
     health_checks_.thermal_ok = now - last_thermal_stamp_ < thermal_timeout_;
@@ -1159,7 +1160,8 @@ void TaskManager::explore_feedback_callback(ExploreGoalHandle::SharedPtr, const 
 }
 
 void TaskManager::explore_result_callback(const ExploreGoalHandle::WrappedResult & result) {
-    switch (result.code) {
+    explore_action_result_ = (rclcpp_action::ResultCode) result.code;
+    switch (explore_action_result_) {
       case rclcpp_action::ResultCode::SUCCEEDED:
         break;
       case rclcpp_action::ResultCode::ABORTED:

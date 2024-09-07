@@ -287,6 +287,7 @@ class TaskManager : public rclcpp::Node
         messages_88::action::Explore_Goal current_explore_goal_;
         rclcpp_action::Client<Explore>::SharedPtr explore_action_client_;
         rclcpp_action::ClientGoalHandle<Explore>::SharedPtr explore_action_goal_handle_;
+        rclcpp_action::ResultCode explore_action_result_;
         void explore_goal_response_callback(const ExploreGoalHandle::SharedPtr & goal_handle);
         void explore_feedback_callback(ExploreGoalHandle::SharedPtr, const std::shared_ptr<const Explore::Feedback> feedback);
         void explore_result_callback(const ExploreGoalHandle::WrappedResult & result);
