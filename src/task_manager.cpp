@@ -311,15 +311,20 @@ void TaskManager::runTaskManager() {
         case Task::INITIALIZING: {
             if (initialized()) {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Drone initialized");
-                flight_controller_interface_->setMode(flight_controller_interface_->guided_mode_);
+                if (!offline_) {
+                    flight_controller_interface_->setMode(flight_controller_interface_->guided_mode_);
 
-                if (flight_controller_interface_->getDroneReadyToArm()){
-                    logEvent(EventType::STATE_MACHINE, Severity::LOW, "Preflight checks passed, ready to arm");
-                    updateCurrentTask(Task::READY);
+                    if (flight_controller_interface_->getDroneReadyToArm()){
+                        logEvent(EventType::STATE_MACHINE, Severity::LOW, "Preflight checks passed, ready to arm");
+                        updateCurrentTask(Task::READY);
+                    }
+                    else {
+                        logEvent(EventType::STATE_MACHINE, Severity::LOW, "Waiting for preflight checks to pass");
+                        updateCurrentTask(Task::PREFLIGHT_CHECK);
+                    }
                 }
                 else {
-                    logEvent(EventType::STATE_MACHINE, Severity::LOW, "Waiting for preflight checks to pass");
-                    updateCurrentTask(Task::PREFLIGHT_CHECK);
+                    updateCurrentTask(Task::READY);
                 }
             }
             explore_action_result_ = rclcpp_action::ResultCode::UNKNOWN;
