@@ -833,11 +833,15 @@ void TaskManager::uiHeartbeatCallback(const json &msg) {
 }
 
 bool TaskManager::pauseOperations() {
+
     // TODO figure out how to pause and restart
-    auto status = explore_action_goal_handle_->get_status();
-    if (status == rclcpp_action::GoalStatus::STATUS_EXECUTING) {
-        explore_action_client_->async_cancel_all_goals();
+    if (explore_action_goal_handle_) {
+        auto status = explore_action_goal_handle_->get_status();
+        if (status == rclcpp_action::GoalStatus::STATUS_EXECUTING) {
+            explore_action_client_->async_cancel_all_goals();
+        }
     }
+
     return true;
 }
 
@@ -1168,7 +1172,8 @@ void TaskManager::explore_result_callback(const ExploreGoalHandle::WrappedResult
     explore_action_result_ = (rclcpp_action::ResultCode) result.code;
     switch (explore_action_result_) {
       case rclcpp_action::ResultCode::SUCCEEDED:
-        break;
+        logEvent(INFO, LOW, "Goal succeeded");
+        return;
       case rclcpp_action::ResultCode::ABORTED:
         logEvent(INFO, MEDIUM, "Goal was aborted");
         return;
