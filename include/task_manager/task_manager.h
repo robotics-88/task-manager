@@ -92,6 +92,11 @@ class TaskManager : public rclcpp::Node
             INFO
         };
 
+        enum SurveyType {
+            SUB,
+            SUPER
+        };
+
         enum Severity {
             LOW,
             MEDIUM,
@@ -282,6 +287,7 @@ class TaskManager : public rclcpp::Node
 
         std::vector<geometry_msgs::msg::PoseStamped> lawnmower_points_;
         bool lawnmower_started_;
+        SurveyType survey_type_;
         
         geometry_msgs::msg::PoseStamped goal_;
         double estimated_drone_speed_;

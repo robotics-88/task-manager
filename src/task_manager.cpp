@@ -96,6 +96,7 @@ TaskManager::TaskManager() : Node("task_manager")
 }
 
 void TaskManager::initialize() {
+    std::cout << "TM entered init" << std::endl;
 
     this->declare_parameter("enable_autonomy", enable_autonomy_);
     this->declare_parameter("use_failsafes", use_failsafes_);
@@ -426,14 +427,16 @@ void TaskManager::runTaskManager() {
             break;
         }
         case Task::LAWNMOWER: {
-            if (lawnmower_points_.empty()) {
+            if (lawnmower_started_ && lawnmower_points_.empty()) {
                 updateCurrentTask(Task::RTL_88);
             }
             else {
                 if (lawnmower_started_ && !lawnmowerGoalComplete()) {
+                    // std::cout << "Waiting for goal complete" << std::cout;
                     break;
                 }
                 else {
+                    std::cout << "Getting a goal" << std::endl;
                     getLawnmowerGoal();
                     setpoint_pub_->publish(goal_);
                     lawnmower_started_ = true;
@@ -528,6 +531,10 @@ void TaskManager::startTransit() {
 }
 
 void TaskManager::startExploration() {
+    if (survey_type_ == SurveyType::SUPER) {
+        updateCurrentTask(Task::LAWNMOWER);
+        return;
+    }
 
     current_explore_goal_.polygon = map_polygon_;
     current_explore_goal_.altitude = target_altitude_;
@@ -1071,6 +1078,7 @@ std::string TaskManager::getTaskString(Task task) {
         case Task::MANUAL_FLIGHT:          return "MANUAL_FLIGHT";
         case Task::PAUSE:                  return "PAUSE";
         case Task::EXPLORING:              return "EXPLORING";
+        case Task::LAWNMOWER:              return "LAWNMOWER";
         case Task::IN_TRANSIT:             return "IN_TRANSIT";
         case Task::RTL_88:                 return "RTL_88";
         case Task::TAKING_OFF:             return "TAKING_OFF";
@@ -1296,10 +1304,13 @@ void TaskManager::acceptFlight(json flight) {
     std::string type = flight["type"];
     if (type == "PERI") {
         getLawnmowerPattern(map_polygon_, lawnmower_points_);
+        visualizeLawnmower();
+        survey_type_ = SurveyType::SUPER;
         std::cout << "lawnmower starting. " << std::endl;
-        updateCurrentTask(Task::LAWNMOWER);
     }
-
+    else {
+        survey_type_ = SurveyType::SUB;
+    }
 
     needs_takeoff_ = true;
 
