@@ -15,6 +15,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <ament_index_cpp/get_package_share_directory.hpp>
 
 #include "task_manager/decco_utilities.h"
+#include "task_manager/LawnmowerPattern.h"
 
 using std::placeholders::_1;
 using namespace std::chrono_literals;
@@ -46,6 +47,7 @@ TaskManager::TaskManager() : Node("task_manager")
     , bag_active_(false)
     , record_config_file_("")
     , cmd_history_("")
+    , lawnmower_started_(false)
     , health_check_pub_duration_(rclcpp::Duration(5.0, 0))
     , path_planner_topic_("/kd_pointcloud_accumulated")
     , costmap_topic_("/costmap_node/costmap/costmap_updates")
@@ -225,8 +227,11 @@ void TaskManager::initialize() {
 
     // MAVROS
     local_pos_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(goal_topic, 10);
+    setpoint_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/setpoint_position/local", rclcpp::SensorDataQoS());
     local_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/mavros/setpoint_velocity/cmd_vel_unstamped", 10);
     vision_pose_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/vision_pose/pose", 10);
+
+    marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/lawnmower", 10);
 
     // Remote ID
     odid_basic_id_pub_ = this->create_publisher<mavros_msgs::msg::BasicID>("/mavros/open_drone_id/basic_id", 10);
@@ -418,6 +423,22 @@ void TaskManager::runTaskManager() {
                 startRtl88();
             }
 
+            break;
+        }
+        case Task::LAWNMOWER: {
+            if (lawnmower_points_.empty()) {
+                updateCurrentTask(Task::RTL_88);
+            }
+            else {
+                if (lawnmower_started_ && !lawnmowerGoalComplete()) {
+                    break;
+                }
+                else {
+                    getLawnmowerGoal();
+                    setpoint_pub_->publish(goal_);
+                    lawnmower_started_ = true;
+                }
+            }
             break;
         }
         case Task::RTL_88: {
@@ -1272,8 +1293,91 @@ void TaskManager::acceptFlight(json flight) {
         return;
     }
 
+    std::string type = flight["type"];
+    if (type == "PERI") {
+        getLawnmowerPattern(map_polygon_, lawnmower_points_);
+        std::cout << "lawnmower starting. " << std::endl;
+        updateCurrentTask(Task::LAWNMOWER);
+    }
+
+
     needs_takeoff_ = true;
 
+}
+
+// TODO where should this live?
+void TaskManager::getLawnmowerPattern(const geometry_msgs::msg::Polygon &polygon, std::vector<geometry_msgs::msg::PoseStamped> &lawnmower_points) {
+    std::vector<lawnmower::Point> polygon_points;
+    for (int ii = 0; ii < polygon.points.size(); ii++) {
+        lawnmower::Point pt;
+        pt.x = polygon.points.at(ii).x;
+        pt.y = polygon.points.at(ii).y;
+        polygon_points.push_back(pt);
+    }
+    std::vector<lawnmower::Point> points = lawnmower::generateLawnmowerPattern(polygon_points, 5);
+    geometry_msgs::msg::PoseStamped pose_stamped;
+    pose_stamped.header.frame_id = mavros_map_frame_;
+    pose_stamped.header.stamp = this->get_clock()->now();
+    for (int ii = 0; ii < points.size(); ii++) {
+        geometry_msgs::msg::Pose pose;
+        pose.position.x = points.at(ii).x;
+        pose.position.y = points.at(ii).y;
+        pose_stamped.pose = pose;
+        lawnmower_points.push_back(pose_stamped);
+    }
+}
+
+// TODO remove this once confirmed
+void TaskManager::visualizeLawnmower()
+{
+  std_msgs::msg::ColorRGBA red;
+  red.r = 1.0;
+  red.g = 0;
+  red.b = 0;
+  red.a = 0.5;
+
+  visualization_msgs::msg::MarkerArray markers_msg;
+  std::vector<visualization_msgs::msg::Marker>& markers = markers_msg.markers;
+  visualization_msgs::msg::Marker m;
+
+  m.header.frame_id = mavros_map_frame_;
+  m.header.stamp = this->get_clock()->now();
+  m.ns = "lawnmower";
+  m.color = red;
+  // lives forever
+  m.lifetime = rclcpp::Duration(0.0, 0.0);
+  m.frame_locked = true;
+
+  m.action = visualization_msgs::msg::Marker::ADD;
+  int id = 0;
+  for (auto& frontier : lawnmower_points_) {
+    m.type = visualization_msgs::msg::Marker::SPHERE;
+    m.id = id;
+    m.pose.position = frontier.pose.position;
+    m.pose.orientation.w = 1.0;
+    double scale = 1.5;
+    m.scale.x = scale;
+    m.scale.y = scale;
+    m.scale.z = scale;
+    m.points = {};
+    m.color = red;
+    markers.push_back(m);
+    ++id;
+  }
+
+  marker_pub_->publish(markers_msg);
+}
+
+void TaskManager::getLawnmowerGoal() {
+    goal_ = lawnmower_points_.at(0);
+    lawnmower_points_.erase(lawnmower_points_.begin());
+}
+
+bool TaskManager::lawnmowerGoalComplete() {
+    geometry_msgs::msg::PoseStamped current_pos = flight_controller_interface_->getCurrentSlamPosition();
+    double dist_sq = std::pow(current_pos.pose.position.x - goal_.pose.position.x, 2) + std::pow(current_pos.pose.position.y - goal_.pose.position.y, 2);
+    double min_dist = std::pow(2, 2); // within 2m
+    return dist_sq < min_dist;
 }
 
 void TaskManager::setpointResponse(json &json_msg) {

@@ -18,6 +18,8 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 
+#include "visualization_msgs/msg/marker_array.hpp"
+
 
 #include "livox_ros_driver2/msg/custom_msg.hpp"
 
@@ -73,6 +75,7 @@ class TaskManager : public rclcpp::Node
             MANUAL_FLIGHT,
             PAUSE,
             EXPLORING,
+            LAWNMOWER,
             IN_TRANSIT,
             RTL_88,
             TAKING_OFF,
@@ -135,6 +138,7 @@ class TaskManager : public rclcpp::Node
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr       vision_pose_publisher_;
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr         pointcloud_repub_;
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr       local_pos_pub_;
+        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr       setpoint_pub_;
         rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr             local_vel_pub_;
         rclcpp::Publisher<mavros_msgs::msg::BasicID>::SharedPtr             odid_basic_id_pub_;
         rclcpp::Publisher<mavros_msgs::msg::OperatorID>::SharedPtr          odid_operator_id_pub_;
@@ -144,6 +148,7 @@ class TaskManager : public rclcpp::Node
         rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                 stop_record_pub_;
         rclcpp::Publisher<messages_88::msg::TaskStatus>::SharedPtr          task_pub_;
         rclcpp::Publisher<sensor_msgs::msg::NavSatFix>::SharedPtr           global_pose_pub_;
+        rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr  marker_pub_;
 
         // Subscriptions
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr      path_planner_sub_;
@@ -274,6 +279,9 @@ class TaskManager : public rclcpp::Node
         rclcpp::TimerBase::SharedPtr mode_monitor_timer_;
         std::string cmd_history_;
         messages_88::msg::TaskStatus task_msg_;
+
+        std::vector<geometry_msgs::msg::PoseStamped> lawnmower_points_;
+        bool lawnmower_started_;
         
         geometry_msgs::msg::PoseStamped goal_;
         double estimated_drone_speed_;
@@ -347,6 +355,10 @@ class TaskManager : public rclcpp::Node
         bool convert2Geo(const std::shared_ptr<messages_88::srv::Geopoint::Request> req,
                          const std::shared_ptr<messages_88::srv::Geopoint::Response> resp);
         void logEvent(EventType type, Severity sev, std::string description);
+        void getLawnmowerPattern(const geometry_msgs::msg::Polygon &polygon, std::vector<geometry_msgs::msg::PoseStamped> &lawnmower_points);
+        void getLawnmowerGoal();
+        bool lawnmowerGoalComplete();
+        void visualizeLawnmower();
 
 
         // mapversation methods
