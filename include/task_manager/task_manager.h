@@ -12,7 +12,8 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "rclcpp_action/rclcpp_action.hpp"
 
 
-//#include "bag_recorder/msg/rosbag.hpp"
+#include "bag_recorder_2/srv/record.hpp"
+
 #include "geometry_msgs/msg/polygon.h"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
@@ -140,7 +141,6 @@ class TaskManager : public rclcpp::Node
         rclcpp::Publisher<mavros_msgs::msg::SelfID>::SharedPtr              odid_self_id_pub_;
         rclcpp::Publisher<mavros_msgs::msg::System>::SharedPtr              odid_system_pub_;
         rclcpp::Publisher<mavros_msgs::msg::SystemUpdate>::SharedPtr        odid_system_update_pub_;
-        // rclcpp::Publisher<bag_recorder::msg::Rosbag>::SharedPtr             start_record_pub_;
         rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                 stop_record_pub_;
         rclcpp::Publisher<messages_88::msg::TaskStatus>::SharedPtr          task_pub_;
         rclcpp::Publisher<sensor_msgs::msg::NavSatFix>::SharedPtr           global_pose_pub_;
@@ -264,7 +264,7 @@ class TaskManager : public rclcpp::Node
         // Record
         bool do_record_;
         bool bag_active_;
-        std::string record_config_name_;
+        std::string record_config_file_;
 
         // Drone state params
         geometry_msgs::msg::PoseStamped slam_pose_;

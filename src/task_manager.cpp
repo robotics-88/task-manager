@@ -44,7 +44,7 @@ TaskManager::TaskManager() : Node("task_manager")
     , ui_hb_threshold_(5.0)
     , do_record_(true)
     , bag_active_(false)
-    , record_config_name_("r88_default")
+    , record_config_file_("")
     , cmd_history_("")
     , health_check_pub_duration_(rclcpp::Duration(5.0, 0))
     , path_planner_topic_("/kd_pointcloud_accumulated")
@@ -122,6 +122,7 @@ void TaskManager::initialize() {
     this->declare_parameter("save_pcd", save_pcd_);
     this->declare_parameter("simulate", simulate_);
     this->declare_parameter("data_directory", burn_dir_prefix_);
+    this->declare_parameter("record_config_file", record_config_file_);
     this->declare_parameter("explicit_global", explicit_global_params_);
     this->declare_parameter("estimated_drone_speed", estimated_drone_speed_);
     estimated_drone_speed_ = estimated_drone_speed_ < 1 ? 1.0 : estimated_drone_speed_; // this protects against a later potential div by 0
@@ -162,6 +163,7 @@ void TaskManager::initialize() {
     this->get_parameter("save_pcd", save_pcd_);
     this->get_parameter("simulate", simulate_);
     this->get_parameter("data_directory", burn_dir_prefix_);
+    this->get_parameter("record_config_file", record_config_file_);
     this->get_parameter("explicit_global", explicit_global_params_);
     this->get_parameter("estimated_drone_speed", estimated_drone_speed_);
     estimated_drone_speed_ = estimated_drone_speed_ < 1 ? 1.0 : estimated_drone_speed_; // this protects against a later potential div by 0
@@ -852,7 +854,7 @@ void TaskManager::checkArmStatus() {
         logEvent(EventType::INFO, Severity::LOW, "Manually set armed state to true");
         is_armed_ = true;
     }
-    if (is_armed_ && !bag_active_ && !simulate_) {
+    if (is_armed_ && !bag_active_ && do_record_) {
         logEvent(EventType::INFO, Severity::LOW, "Armed but bag not active"); 
         startBag();
     }
@@ -877,25 +879,64 @@ void TaskManager::startBag() {
     if (bag_active_) {
         return;
     }
-    // logEvent(EventType::INFO, Severity::LOW, "Bag starting, dir: " + burn_dir_);
-    // bag_recorder::Rosbag start_bag_msg;
-    // start_bag_msg.data_dir = burn_dir_;
-    // start_bag_msg.bag_name = "decco";
-    // start_bag_msg.config = record_config_name_;
-    // start_bag_msg.header.stamp = this->get_clock()->now();
-    // start_record_pub_->publish(start_bag_msg);
-    // bag_active_ = true;
+    logEvent(EventType::INFO, Severity::LOW, "Bag starting, dir: " + burn_dir_);
+
+    std::shared_ptr<rclcpp::Node> bag_record_node = rclcpp::Node::make_shared("bag_record_client");
+    auto bag_recorder_client = bag_record_node->create_client<bag_recorder_2::srv::Record>("/bag_recorder/record");
+    auto req = std::make_shared<bag_recorder_2::srv::Record::Request>();
+
+    if (!bag_recorder_client->wait_for_service(1s)) {
+        RCLCPP_INFO(this->get_logger(), "Bag recorder not available. Not recording bag.");
+        return;
+    }
+
+    req->start = true;
+    req->config_file = record_config_file_;
+    req->data_directory = burn_dir_;
+
+    auto result = bag_recorder_client->async_send_request(req);
+    if (rclcpp::spin_until_future_complete(bag_record_node, result) ==
+        rclcpp::FutureReturnCode::SUCCESS)
+    {
+        if (!result.get()->success) {
+            RCLCPP_WARN(this->get_logger(), "Failed to start bag");
+        }
+        else {
+            bag_active_ = true;
+        }
+    } else {
+        RCLCPP_ERROR(this->get_logger(), "Failed to call service /bag_recorder/record");
+    }
 }
 
 void TaskManager::stopBag() {
     if (!bag_active_) {
         return;
     }
-    logEvent(EventType::INFO, Severity::LOW, "Stopping bag");
-    std_msgs::msg::String stop_msg;
-    stop_msg.data = record_config_name_;
-    stop_record_pub_->publish(stop_msg);
-    bag_active_ = false;
+    std::shared_ptr<rclcpp::Node> bag_record_node = rclcpp::Node::make_shared("bag_record_client");
+    auto bag_recorder_client = bag_record_node->create_client<bag_recorder_2::srv::Record>("/bag_recorder/record");
+    auto req = std::make_shared<bag_recorder_2::srv::Record::Request>();
+
+    if (!bag_recorder_client->wait_for_service(1s)) {
+        RCLCPP_INFO(this->get_logger(), "Bag recorder client not available. Not stop bag.");
+        return;
+    }
+
+    req->start = false;
+
+    auto result = bag_recorder_client->async_send_request(req);
+    if (rclcpp::spin_until_future_complete(bag_record_node, result) ==
+        rclcpp::FutureReturnCode::SUCCESS)
+    {
+        if (!result.get()->success) {
+            RCLCPP_WARN(this->get_logger(), "Failed to stop bag");
+        }
+        else {
+            bag_active_ = false;
+        }
+    } else {
+        RCLCPP_ERROR(this->get_logger(), "Failed to call service /bag_recorder/record");
+    }
 }
 
 bool TaskManager::polygonDistanceOk(geometry_msgs::msg::PoseStamped &target, geometry_msgs::msg::Polygon &map_region) {

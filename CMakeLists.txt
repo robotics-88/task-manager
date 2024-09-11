@@ -13,6 +13,7 @@ find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 
 find_package(rclcpp_action REQUIRED)
+find_package(bag_recorder_2 REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(livox_ros_driver2 REQUIRED)
 find_package(libmavconn REQUIRED)
@@ -55,6 +56,7 @@ add_library(task_manager SHARED
 ament_target_dependencies(task_manager
   rclcpp
   ament_index_cpp
+  bag_recorder_2
   libmavconn
   livox_ros_driver2
   map_msgs
