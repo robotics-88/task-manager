@@ -1380,6 +1380,16 @@ void TaskManager::visualizeLawnmower()
 
 void TaskManager::getLawnmowerGoal() {
     goal_ = lawnmower_points_.at(0);
+
+    // Determine heading
+    geometry_msgs::msg::PoseStamped current_pos = flight_controller_interface_->getCurrentLocalPosition();
+    double x_diff = goal_.pose.position.x - current_pos.pose.position.x;
+    double y_diff = goal_.pose.position.y - current_pos.pose.position.y;
+    double yaw_target = atan2(y_diff, x_diff);
+    tf2::Quaternion setpoint_q;
+    setpoint_q.setRPY(0.0, 0.0, yaw_target);
+    tf2::convert(setpoint_q, goal_.pose.orientation);
+    
     lawnmower_points_.erase(lawnmower_points_.begin());
 }
 

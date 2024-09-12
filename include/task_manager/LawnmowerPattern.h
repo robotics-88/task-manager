@@ -40,19 +40,31 @@ std::vector<Point> generateLawnmowerPattern(const std::vector<Point>& polygon, d
     bool direction = true;  // true for left-to-right, false for right-to-left
     
     for (double y = minY; y <= maxY; y += legSpacing) {
+        bool found_first_in = false;
+        Point last_point;
         if (direction) {
             for (double x = minX; x <= maxX; x += legSpacing) {
                 Point p = {x, y};
-                if (isPointInPolygon(polygon, p)) {
+                if (isPointInPolygon(polygon, p) && !found_first_in) {
                     pattern.push_back(p);
+                    found_first_in = true;
                 }
+                else if (!isPointInPolygon(polygon, p) && found_first_in) {
+                    pattern.push_back(last_point);
+                }
+                last_point = p;
             }
         } else {
             for (double x = maxX; x >= minX; x -= legSpacing) {
                 Point p = {x, y};
-                if (isPointInPolygon(polygon, p)) {
+                if (isPointInPolygon(polygon, p) && !found_first_in) {
                     pattern.push_back(p);
+                    found_first_in = true;
                 }
+                else if (!isPointInPolygon(polygon, p) && found_first_in) {
+                    pattern.push_back(last_point);
+                }
+                last_point = p;
             }
         }
         direction = !direction;  // Alternate direction for the next row
