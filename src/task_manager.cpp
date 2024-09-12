@@ -227,9 +227,13 @@ void TaskManager::initialize() {
     // Geo/map state services
     // geopoint_service_ = this->create_service<messages_88::srv::Geopoint>("slam2geo", &TaskManager::convert2Geo);
 
-    // MAVROS
-    local_pos_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(goal_topic, 10);
-    setpoint_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/setpoint_position/local", rclcpp::SensorDataQoS());
+    // If running slam, pass goals through path planner, which receives goal_topic and plans a path. 
+    // Otherwise, send direct setpoint to mavros. 
+    if (do_slam_)
+        position_setpoint_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(goal_topic, 10);
+    else
+        position_setpoint_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/setpoint_position/local", rclcpp::SensorDataQoS());
+
     local_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/mavros/setpoint_velocity/cmd_vel_unstamped", 10);
     vision_pose_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/vision_pose/pose", 10);
 
@@ -437,7 +441,7 @@ void TaskManager::runTaskManager() {
                 }
                 else {
                     getLawnmowerGoal();
-                    setpoint_pub_->publish(goal_);
+                    position_setpoint_pub_->publish(goal_);
                     lawnmower_started_ = true;
                 }
             }
@@ -524,7 +528,7 @@ void TaskManager::startTransit() {
     current_target_ = initial_transit_point_.pose.position;
     initial_transit_point_.header.frame_id = slam_map_frame_;
     initial_transit_point_.header.stamp = this->get_clock()->now();
-    local_pos_pub_->publish(initial_transit_point_);
+    position_setpoint_pub_->publish(initial_transit_point_);
 
     updateCurrentTask(Task::IN_TRANSIT);
 }
@@ -567,7 +571,7 @@ void TaskManager::startRtl88() {
         flight_controller_interface_->setMode(flight_controller_interface_->guided_mode_);
     }
 
-    local_pos_pub_->publish(home_pos_);
+    position_setpoint_pub_->publish(home_pos_);
     updateCurrentTask(Task::RTL_88);
 }
 
