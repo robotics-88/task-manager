@@ -49,8 +49,10 @@ std::vector<Point> generateLawnmowerPattern(const std::vector<Point>& polygon, d
                     pattern.push_back(p);
                     found_first_in = true;
                 }
-                else if (!isPointInPolygon(polygon, p) && found_first_in) {
-                    pattern.push_back(last_point);
+                else if ((!isPointInPolygon(polygon, p) && found_first_in) || (x + legSpacing > maxX)) {
+                    if (isPointInPolygon(polygon, last_point)) {
+                        pattern.push_back(last_point);
+                    }
                 }
                 last_point = p;
             }
@@ -61,8 +63,11 @@ std::vector<Point> generateLawnmowerPattern(const std::vector<Point>& polygon, d
                     pattern.push_back(p);
                     found_first_in = true;
                 }
-                else if (!isPointInPolygon(polygon, p) && found_first_in) {
-                    pattern.push_back(last_point);
+                else if ((!isPointInPolygon(polygon, p) && found_first_in) || (x - legSpacing < minX)) {
+                    if (isPointInPolygon(polygon, last_point)) {
+                        pattern.push_back(last_point);
+                    }
+                    break;
                 }
                 last_point = p;
             }
