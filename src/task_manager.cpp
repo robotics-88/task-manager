@@ -435,7 +435,6 @@ void TaskManager::runTaskManager() {
                     break;
                 }
                 else {
-                    std::cout << "Getting a goal" << std::endl;
                     getLawnmowerGoal();
                     setpoint_pub_->publish(goal_);
                     lawnmower_started_ = true;
@@ -637,11 +636,11 @@ void TaskManager::checkFailsafes() {
     // Check for failsafe landing conditions
     std::string failsafe_reason = "";
     bool need_failsafe_landing = false;
-    if (!health_checks_.slam_ok) {
+    if (!health_checks_.slam_ok && do_slam_) {
         failsafe_reason += "SLAM unhealthy, ";
         need_failsafe_landing = true;
     }
-    if (!health_checks_.path_ok) {
+    if (!health_checks_.path_ok && do_slam_) {
         failsafe_reason += "Path unhealthy, ";
         need_failsafe_landing = true;
     }
@@ -1323,7 +1322,7 @@ void TaskManager::getLawnmowerPattern(const geometry_msgs::msg::Polygon &polygon
         pt.y = polygon.points.at(ii).y;
         polygon_points.push_back(pt);
     }
-    std::vector<lawnmower::Point> points = lawnmower::generateLawnmowerPattern(polygon_points, 5);
+    std::vector<lawnmower::Point> points = lawnmower::generateLawnmowerPattern(polygon_points, 10);
     geometry_msgs::msg::PoseStamped pose_stamped;
     pose_stamped.header.frame_id = mavros_map_frame_;
     pose_stamped.header.stamp = this->get_clock()->now();
@@ -1384,9 +1383,9 @@ void TaskManager::getLawnmowerGoal() {
 }
 
 bool TaskManager::lawnmowerGoalComplete() {
-    geometry_msgs::msg::PoseStamped current_pos = flight_controller_interface_->getCurrentSlamPosition();
+    geometry_msgs::msg::PoseStamped current_pos = flight_controller_interface_->getCurrentLocalPosition();
     double dist_sq = std::pow(current_pos.pose.position.x - goal_.pose.position.x, 2) + std::pow(current_pos.pose.position.y - goal_.pose.position.y, 2);
-    double min_dist = std::pow(2, 2); // within 2m
+    double min_dist = std::pow(3, 2); // within 2m
     return dist_sq < min_dist;
 }
 
@@ -1429,17 +1428,17 @@ void TaskManager::altitudesResponse(json &json_msg) {
     float default_altitude = json_msg["default_altitude"];
 
     // Set altitude params in all nodes that use them
-    this->set_parameter(rclcpp::Parameter("/task_manager/max_alt", max_altitude));
-    this->set_parameter(rclcpp::Parameter("/task_manager/min_alt", min_altitude));
-    this->set_parameter(rclcpp::Parameter("/task_manager/default_alt", default_altitude));
+    this->set_parameter(rclcpp::Parameter("max_alt", max_altitude));
+    this->set_parameter(rclcpp::Parameter("min_alt", min_altitude));
+    this->set_parameter(rclcpp::Parameter("default_alt", default_altitude));
 
     // It's simpler just to set the task manager altitude data here instead of re-fetching the param dynamically
     max_altitude_ = max_altitude;
     min_altitude_ = min_altitude;
     target_altitude_ = default_altitude;
 
-    this->set_parameter(rclcpp::Parameter("/path_planning_node/search/max_alt", max_altitude));
-    this->set_parameter(rclcpp::Parameter("/path_planning_node/search/min_alt", min_altitude));
+    // this->set_parameter(rclcpp::Parameter("/path_planning_node/search/max_alt", max_altitude));
+    // this->set_parameter(rclcpp::Parameter("/path_planning_node/search/min_alt", min_altitude));
 }
 
 void TaskManager::remoteIDResponse(json &json) {

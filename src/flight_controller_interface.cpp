@@ -896,7 +896,7 @@ bool FlightControllerInterface::takeOff() {
         }
     }
 
-    if (!node_->get_parameter("/task_manager/default_alt", target_altitude_))
+    if (!node_->get_parameter("default_alt", target_altitude_))
         RCLCPP_WARN(node_->get_logger(), "Flight controller interface cannot get default altitude param");
 
     RCLCPP_INFO(node_->get_logger(), "Requesting takeoff to %fm", target_altitude_);
