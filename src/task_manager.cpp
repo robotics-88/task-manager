@@ -427,7 +427,8 @@ void TaskManager::runTaskManager() {
         }
         case Task::LAWNMOWER: {
             if (lawnmower_started_ && lawnmower_points_.empty()) {
-                updateCurrentTask(Task::RTL_88);
+                logEvent(EventType::STATE_MACHINE, Severity::LOW, "Lawnmower complete, doing RTL_88");
+                startRtl88();
             }
             else {
                 if (lawnmower_started_ && !lawnmowerGoalComplete()) {
