@@ -70,14 +70,15 @@ void HelloDeccoManager::packageToTymbalPuddle(std::string topic, json gossip) {
     tymbal_puddle_pub_->publish(msg_string); // tymbal to Hello Decco
 }
 
-void HelloDeccoManager::flightReceipt() {
+void HelloDeccoManager::flightReceipt(const int id) {
     json msg;
-    msg["data"] = "received";
+    msg["id"] = id;
     packageToTymbalHD("flight_confirm", msg);
 }
 
 void HelloDeccoManager::acceptFlight(json msgJson, bool &geofence_ok) {
-    flightReceipt();
+    int id = msgJson["id"];
+    flightReceipt(id);
     // Parse data
     flight_json_ = msgJson;
     RCLCPP_INFO(node_->get_logger(), "Flight received");
