@@ -329,8 +329,8 @@ class TaskManager : public rclcpp::Node
 
         // Burn unit handling
         int current_index_;
-        std::string burn_dir_prefix_;
-        std::string burn_dir_;
+        std::string data_directory_;
+        std::string burn_unit_name_;
 
         rclcpp::Service<messages_88::srv::Geopoint>::SharedPtr geopoint_service_;
 

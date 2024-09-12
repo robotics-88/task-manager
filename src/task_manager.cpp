@@ -46,6 +46,7 @@ TaskManager::TaskManager() : Node("task_manager")
     , do_record_(true)
     , bag_active_(false)
     , record_config_file_("")
+    , burn_unit_name_("")
     , cmd_history_("")
     , lawnmower_started_(false)
     , health_check_pub_duration_(rclcpp::Duration(5.0, 0))
@@ -124,7 +125,7 @@ void TaskManager::initialize() {
     this->declare_parameter("offline", offline_);
     this->declare_parameter("save_pcd", save_pcd_);
     this->declare_parameter("simulate", simulate_);
-    this->declare_parameter("data_directory", burn_dir_prefix_);
+    this->declare_parameter("data_directory", data_directory_);
     this->declare_parameter("record_config_file", record_config_file_);
     this->declare_parameter("explicit_global", explicit_global_params_);
     this->declare_parameter("estimated_drone_speed", estimated_drone_speed_);
@@ -165,7 +166,7 @@ void TaskManager::initialize() {
     this->get_parameter("offline", offline_);
     this->get_parameter("save_pcd", save_pcd_);
     this->get_parameter("simulate", simulate_);
-    this->get_parameter("data_directory", burn_dir_prefix_);
+    this->get_parameter("data_directory", data_directory_);
     this->get_parameter("record_config_file", record_config_file_);
     this->get_parameter("explicit_global", explicit_global_params_);
     this->get_parameter("estimated_drone_speed", estimated_drone_speed_);
@@ -242,8 +243,6 @@ void TaskManager::initialize() {
     odid_system_update_pub_ = this->create_publisher<mavros_msgs::msg::SystemUpdate>("/mavros/open_drone_id/system_update", 10);
 
     // Recording
-    // start_record_pub_ = this->create_publisher<bag_recorder::msg::Rosbag>("/record/start", 5);
-    stop_record_pub_ = this->create_publisher<std_msgs::msg::String>("/record/stop", 5);
     if (offline_) {
         map_yaw_sub_ = this->create_subscription<std_msgs::msg::Float64>("map_yaw", 10, std::bind(&TaskManager::mapYawCallback, this, _1));
         if (save_pcd_) {
@@ -907,7 +906,7 @@ void TaskManager::startBag() {
     if (bag_active_) {
         return;
     }
-    logEvent(EventType::INFO, Severity::LOW, "Bag starting, dir: " + burn_dir_);
+    logEvent(EventType::INFO, Severity::LOW, "Bag starting, dir: " + data_directory_);
 
     std::shared_ptr<rclcpp::Node> bag_record_node = rclcpp::Node::make_shared("bag_record_client");
     auto bag_recorder_client = bag_record_node->create_client<bag_recorder_2::srv::Record>("/bag_recorder/record");
@@ -920,7 +919,7 @@ void TaskManager::startBag() {
 
     req->start = true;
     req->config_file = record_config_file_;
-    req->data_directory = burn_dir_;
+    req->data_directory = data_directory_ + burn_unit_name_;
 
     auto result = bag_recorder_client->async_send_request(req);
     if (rclcpp::spin_until_future_complete(bag_record_node, result) ==
@@ -1284,8 +1283,7 @@ void TaskManager::acceptFlight(json flight) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Not ready for flight, try again after initialized");
         return;
     }
-    std::string name = flight["burnUnitName"];
-    burn_dir_ = burn_dir_prefix_ + name + "/";
+    burn_unit_name_ = flight["burnUnitName"];    
 
     hello_decco_manager_->setDroneLocationLocal(slam_pose_);
     bool geofence_ok;
