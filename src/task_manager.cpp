@@ -1331,6 +1331,7 @@ void TaskManager::getLawnmowerPattern(const geometry_msgs::msg::Polygon &polygon
         geometry_msgs::msg::Pose pose;
         pose.position.x = points.at(ii).x;
         pose.position.y = points.at(ii).y;
+        pose.position.z = target_altitude_;
         pose_stamped.pose = pose;
         lawnmower_points.push_back(pose_stamped);
     }
