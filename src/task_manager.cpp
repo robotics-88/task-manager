@@ -525,8 +525,7 @@ void TaskManager::startTakeoff() {
 void TaskManager::startTransit() {    
     padNavTarget(initial_transit_point_);
 
-    current_target_ = initial_transit_point_.pose.position;
-    initial_transit_point_.header.frame_id = slam_map_frame_;
+    initial_transit_point_.header.frame_id = mavros_map_frame_;
     initial_transit_point_.header.stamp = this->get_clock()->now();
     position_setpoint_pub_->publish(initial_transit_point_);
 
@@ -972,7 +971,7 @@ void TaskManager::stopBag() {
 
 bool TaskManager::polygonDistanceOk(geometry_msgs::msg::PoseStamped &target, geometry_msgs::msg::Polygon &map_region) {
 
-    if (decco_utilities::isInside(map_polygon_, flight_controller_interface_->getCurrentSlamPosition().pose.position))
+    if (decco_utilities::isInside(map_polygon_, flight_controller_interface_->getCurrentLocalPosition().pose.position))
         return true;
 
     // Medium check, computes distance to nearest point on 2 most likely polygon edges
@@ -1048,6 +1047,7 @@ bool TaskManager::polygonDistanceOk(geometry_msgs::msg::PoseStamped &target, geo
         target_position.y = closest_point.y;
     }
     target.pose.position = target_position;
+    target.pose.position.z = target_altitude_;
 
     if (min_dist > std::pow(max_dist_to_polygon_, 2)) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, 
@@ -1070,7 +1070,6 @@ void TaskManager::padNavTarget(geometry_msgs::msg::PoseStamped &target) {
     double normed_dif_y = dif_y / norm;
     target.pose.position.x += normed_dif_x * padding;
     target.pose.position.y += normed_dif_y * padding;
-
 }
 
 std::string TaskManager::getTaskString(Task task) {

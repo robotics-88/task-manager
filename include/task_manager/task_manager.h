@@ -314,9 +314,6 @@ class TaskManager : public rclcpp::Node
         int last_rid_updated_timestamp_;
         std::string operator_id_;
 
-        // Goal details
-        geometry_msgs::msg::Point current_target_;
-
         Task current_task_;
         rclcpp::TimerBase::SharedPtr status_timer_;
 
