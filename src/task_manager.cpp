@@ -1005,7 +1005,7 @@ bool TaskManager::polygonDistanceOk(geometry_msgs::msg::PoseStamped &target, geo
 
     // Compute intersections
 
-    geometry_msgs::msg::Point drone_location_64 = flight_controller_interface_->getCurrentSlamPosition().pose.position;
+    geometry_msgs::msg::Point drone_location_64 = flight_controller_interface_->getCurrentLocalPosition().pose.position;
     geometry_msgs::msg::Point32 drone_location;
     drone_location.x = drone_location_64.x;
     drone_location.y = drone_location_64.y;
