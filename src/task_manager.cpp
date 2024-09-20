@@ -225,7 +225,7 @@ void TaskManager::initialize() {
       std::bind(&TaskManager::explore_result_callback, this, std::placeholders::_1);
 
     // Geo/map state services
-    // geopoint_service_ = this->create_service<messages_88::srv::Geopoint>("slam2geo", &TaskManager::convert2Geo);
+    geopoint_service_ = this->create_service<messages_88::srv::Geopoint>("slam2geo", std::bind(&TaskManager::convert2Geo, this, _1, std::placeholders::_2, std::placeholders::_3));
 
     // If running slam, pass goals through path planner, which receives goal_topic and plans a path. 
     // Otherwise, send direct setpoint to mavros. 
@@ -790,9 +790,11 @@ bool TaskManager::initialized() {
     return true;
 }
 
-bool TaskManager::convert2Geo(const std::shared_ptr<messages_88::srv::Geopoint::Request> req,
-                              const std::shared_ptr<messages_88::srv::Geopoint::Response> resp) {
+bool TaskManager::convert2Geo(const std::shared_ptr<rmw_request_id_t>/*request_header*/,
+                                const std::shared_ptr<messages_88::srv::Geopoint::Request> req,
+                                const std::shared_ptr<messages_88::srv::Geopoint::Response> resp) {
     // Sanity check UTM
+    std::cout << "got geo request in TM" << std::endl;
     if (home_utm_zone_ != flight_controller_interface_->getUTMZone()) {
         logEvent(EventType::INFO, Severity::LOW, "UTM zones crossed. Home UTM: " + std::to_string(home_utm_zone_) + 
                                                  "Now UTM: " + std::to_string(flight_controller_interface_->getUTMZone()));

@@ -354,7 +354,8 @@ class TaskManager : public rclcpp::Node
         std::string getTaskString(Task task);
         std::string getEventTypeString(EventType type);
         std::string getSeverityString(Severity sev);
-        bool convert2Geo(const std::shared_ptr<messages_88::srv::Geopoint::Request> req,
+        bool convert2Geo(const std::shared_ptr<rmw_request_id_t>/*request_header*/,
+                         const std::shared_ptr<messages_88::srv::Geopoint::Request> req,
                          const std::shared_ptr<messages_88::srv::Geopoint::Response> resp);
         void logEvent(EventType type, Severity sev, std::string description);
         void getLawnmowerPattern(const geometry_msgs::msg::Polygon &polygon, std::vector<geometry_msgs::msg::PoseStamped> &lawnmower_points);
