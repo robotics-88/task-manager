@@ -20,6 +20,7 @@
   <depend>livox_ros_driver2</depend>
   <depend>mavros</depend>
   <depend>bag_recorder_2</depend>
+  <depend>cv_bridge</depend>
   <depend>messages_88</depend>
   <depend>pcl_conversions</depend>
   <depend>pcl_ros</depend>

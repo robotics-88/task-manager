@@ -17,8 +17,13 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "std_msgs/msg/string.hpp"
 #include "visualization_msgs/msg/marker.hpp"
 
+#include <cv_bridge/cv_bridge.h>               // cv_bridge converts between ROS 2 image messages and OpenCV image representations.
+#include <opencv2/opencv.hpp>                  // We include everything about OpenCV as we don't care much about compilation time at the moment.
+
 #include "ConcavePolygon.h"
 #include "CentroidSplitter.h"
+
+#include "task_manager/Elevation2Ros.h"
 
 #include "task_manager/json.hpp"
 using json = nlohmann::json;
@@ -54,6 +59,9 @@ class HelloDeccoManager
             return map_region_;
         }
 
+        bool getElevationChunk(const double utm_x, const double utm_y, const int width, const int height, sensor_msgs::msg::Image::SharedPtr &chunk, double &max, double &min);
+        bool getElevationValue(const double utm_x, const double utm_y, double &value);
+
     private:
         const std::shared_ptr<rclcpp::Node> node_;
 
@@ -85,6 +93,9 @@ class HelloDeccoManager
         unsigned long start_time_;
         unsigned long end_time_;
 
+        // Elevation
+        elevation2ros::Elevation2Ros elevation_source_;
+
         // MAVROS geofence publisher
         rclcpp::Client<mavros_msgs::srv::WaypointPush>::SharedPtr mavros_geofence_client_;
 
@@ -96,6 +107,7 @@ class HelloDeccoManager
 
         void flightReceipt(const int id);
         void polygonInitializer(const geometry_msgs::msg::Polygon &msg, bool make_legs, bool &geofence_ok);
+        void elevationInitializer();
 
         // Polygon mgmt
         bool polygonToGeofence(const geometry_msgs::msg::Polygon &polygon);

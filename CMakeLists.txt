@@ -14,6 +14,7 @@ find_package(rclcpp REQUIRED)
 
 find_package(rclcpp_action REQUIRED)
 find_package(bag_recorder_2 REQUIRED)
+find_package(cv_bridge REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(livox_ros_driver2 REQUIRED)
 find_package(libmavconn REQUIRED)
@@ -33,6 +34,7 @@ find_package(visualization_msgs REQUIRED)
 set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};/usr/share/cmake/geographiclib")
 find_package(GeographicLib REQUIRED)
 find_package(PCL REQUIRED)
+find_package(OpenCV REQUIRED)
 
 include_directories(
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -56,6 +58,7 @@ add_library(task_manager SHARED
 ament_target_dependencies(task_manager
   rclcpp
   ament_index_cpp
+  cv_bridge
   bag_recorder_2
   libmavconn
   livox_ros_driver2
@@ -69,6 +72,7 @@ ament_target_dependencies(task_manager
 target_link_libraries(task_manager 
   ${GeographicLib_LIBRARIES}
 	${PCL_LIBRARIES}
+  ${OpenCV_LIBRARIES}
 )
 
 add_executable(task_manager_node

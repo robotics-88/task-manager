@@ -11,6 +11,8 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 #include "task_manager/decco_utilities.h"
 
+#include <ament_index_cpp/get_package_share_directory.hpp>
+
 #include <GeographicLib/Constants.hpp>
 #include <GeographicLib/GeoCoords.hpp>
 #include <GeographicLib/Geodesic.hpp>
@@ -84,9 +86,34 @@ void HelloDeccoManager::acceptFlight(json msgJson, bool &geofence_ok) {
     RCLCPP_INFO(node_->get_logger(), "Flight received");
     geometry_msgs::msg::Polygon poly = polygonFromJson(flight_json_["subpolygon"]);
     polygonInitializer(poly, false, geofence_ok);
+    elevationInitializer();
 
     packageToTymbalHD("burn_unit_receive", flight_json_);
 
+}
+
+void HelloDeccoManager::elevationInitializer() {
+    // TODO get tif from HD, for now assumes stored in dem/<burn unit name>
+    std::string burn_unit_name = flight_json_["burnUnitName"];
+    std::string tif_name = ament_index_cpp::get_package_share_directory("task_manager") + "/dem/bigilly2.tif";// + burn_unit_name;
+    elevation_source_.init(tif_name);
+}
+
+bool HelloDeccoManager::getElevationChunk(const double utm_x, const double utm_y, const int width, const int height, sensor_msgs::msg::Image::SharedPtr &chunk, double &max, double &min) {
+    cv::Mat mat;
+    bool worked = elevation_source_.getElevationChunk(utm_x, utm_y, width, height, mat);
+    if (worked) {
+        cv::Point minLoc, maxLoc;
+        cv::minMaxLoc(mat, &min, &max, &minLoc, &maxLoc);
+        std_msgs::msg::Header header;
+        header.frame_id = "world";
+        sensor_msgs::msg::Image::SharedPtr chunk = cv_bridge::CvImage(header, "bgr8", mat).toImageMsg();
+    }
+    return worked;
+}
+
+bool HelloDeccoManager::getElevationValue(const double utm_x, const double utm_y, double &value) {
+    value = elevation_source_.getElevation(utm_x, utm_y);
 }
 
 void HelloDeccoManager::polygonInitializer(const geometry_msgs::msg::Polygon &msg, bool make_legs, bool &geofence_ok) {

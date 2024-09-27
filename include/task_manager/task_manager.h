@@ -14,6 +14,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 #include "bag_recorder_2/srv/record.hpp"
 
+// #include "geometry_msgs/msg/point.h"
 #include "geometry_msgs/msg/polygon.h"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
@@ -38,6 +39,8 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "messages_88/srv/emergency.hpp"
 #include "messages_88/srv/geopoint.hpp"
 #include "messages_88/srv/save.hpp"
+#include "messages_88/srv/set_float.hpp"
+#include "messages_88/srv/get_map_data.hpp"
 
 #include "pcl_conversions/pcl_conversions.h"
 #include "pcl_ros/transforms.hpp"
@@ -238,8 +241,13 @@ class TaskManager : public rclcpp::Node
 
         // Control defaults
         float target_altitude_;
+        float target_agl_;
         float min_altitude_;
+        float min_agl_;
         float max_altitude_;
+        float max_agl_;
+        float altitude_offset_;
+        double home_elevation_;
         double max_dist_to_polygon_;
 
         // TF
@@ -329,6 +337,7 @@ class TaskManager : public rclcpp::Node
         std::string burn_unit_name_;
 
         rclcpp::Service<messages_88::srv::Geopoint>::SharedPtr geopoint_service_;
+        rclcpp::Service<messages_88::srv::GetMapData>::SharedPtr elevation_map_service_;
 
         // Task methods
         void updateCurrentTask(Task task);
@@ -354,15 +363,21 @@ class TaskManager : public rclcpp::Node
         std::string getTaskString(Task task);
         std::string getEventTypeString(EventType type);
         std::string getSeverityString(Severity sev);
-        bool convert2Geo(const std::shared_ptr<rmw_request_id_t>/*request_header*/,
-                         const std::shared_ptr<messages_88::srv::Geopoint::Request> req,
-                         const std::shared_ptr<messages_88::srv::Geopoint::Response> resp);
         void logEvent(EventType type, Severity sev, std::string description);
         void getLawnmowerPattern(const geometry_msgs::msg::Polygon &polygon, std::vector<geometry_msgs::msg::PoseStamped> &lawnmower_points);
         void getLawnmowerGoal();
         bool lawnmowerGoalComplete();
         void visualizeLawnmower();
 
+        // Service server callbacks and helpers
+        bool convert2Geo(const std::shared_ptr<rmw_request_id_t>/*request_header*/,
+                         const std::shared_ptr<messages_88::srv::Geopoint::Request> req,
+                         const std::shared_ptr<messages_88::srv::Geopoint::Response> resp);
+        void map2UtmPoint(geometry_msgs::msg::PointStamped &in, geometry_msgs::msg::PointStamped &out);
+        bool getMapData(const std::shared_ptr<rmw_request_id_t>/*request_header*/,
+                        const std::shared_ptr<messages_88::srv::GetMapData::Request> req,
+                        const std::shared_ptr<messages_88::srv::GetMapData::Response> resp);
+        void setAltitudeOffset();
 
         // mapversation methods
         void setpointResponse(json &json_msg);

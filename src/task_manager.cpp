@@ -12,6 +12,8 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <boost/uuid/uuid_io.hpp>
 #include <float.h>
 
+#include <sensor_msgs/msg/image.hpp>
+
 #include <ament_index_cpp/get_package_share_directory.hpp>
 
 #include "task_manager/decco_utilities.h"
@@ -34,8 +36,13 @@ TaskManager::TaskManager() : Node("task_manager")
     , enable_autonomy_(false)
     , use_failsafes_(false)
     , target_altitude_(2.0)
+    , target_agl_(2.0)
     , min_altitude_(2.0)
+    , min_agl_(2.0)
     , max_altitude_(10.0)
+    , max_agl_(10.0)
+    , altitude_offset_(0.0)
+    , home_elevation_(0.0)
     , max_dist_to_polygon_(300.0)
     , map_tf_init_(false)
     , home_utm_zone_(-1)
@@ -226,6 +233,7 @@ void TaskManager::initialize() {
 
     // Geo/map state services
     geopoint_service_ = this->create_service<messages_88::srv::Geopoint>("slam2geo", std::bind(&TaskManager::convert2Geo, this, _1, std::placeholders::_2, std::placeholders::_3));
+    elevation_map_service_ = this->create_service<messages_88::srv::GetMapData>("get_map_data", std::bind(&TaskManager::getMapData, this, _1, std::placeholders::_2, std::placeholders::_3));
 
     // If running slam, pass goals through path planner, which receives goal_topic and plans a path. 
     // Otherwise, send direct setpoint to mavros. 
@@ -770,6 +778,7 @@ bool TaskManager::initialized() {
     double utm_x, utm_y;
     flight_controller_interface_->initUTM(utm_x, utm_y);
     hello_decco_manager_->setUtm(utm_x, utm_y, home_utm_zone_);
+    hello_decco_manager_->getElevationValue(utm_x, utm_y, home_elevation_);
     RCLCPP_INFO(this->get_logger(), "UTM offsets: (%f, %f)", utm_x, utm_y);
     RCLCPP_INFO(this->get_logger(), "Map yaw: %f", map_yaw_ * 180 / M_PI);
     utm2map_tf_.header.frame_id = "utm";
@@ -790,6 +799,12 @@ bool TaskManager::initialized() {
     return true;
 }
 
+void TaskManager::map2UtmPoint(geometry_msgs::msg::PointStamped &in, geometry_msgs::msg::PointStamped &out) {
+    in.header.frame_id = slam_map_frame_;
+    in.header.stamp = this->get_clock()->now();
+    tf_buffer_->transform(in, out, "utm");
+}
+
 bool TaskManager::convert2Geo(const std::shared_ptr<rmw_request_id_t>/*request_header*/,
                                 const std::shared_ptr<messages_88::srv::Geopoint::Request> req,
                                 const std::shared_ptr<messages_88::srv::Geopoint::Response> resp) {
@@ -802,12 +817,10 @@ bool TaskManager::convert2Geo(const std::shared_ptr<rmw_request_id_t>/*request_h
         // TODO decide what to do about it
     }
     geometry_msgs::msg::PointStamped in, out;
-    in.header.frame_id = slam_map_frame_;
-    in.header.stamp = this->get_clock()->now();
     in.point.x = req->slam_position.x;
     in.point.y = req->slam_position.y;
     in.point.z = req->slam_position.z;
-    tf_buffer_->transform(in, out, "utm");
+    map2UtmPoint(in, out);
     resp->utm_position.x = out.point.x;
     resp->utm_position.y = out.point.y;
     double lat, lon;
@@ -815,6 +828,35 @@ bool TaskManager::convert2Geo(const std::shared_ptr<rmw_request_id_t>/*request_h
     resp->latitude = lat;
     resp->longitude = lon;
     return true;
+}
+
+bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_header*/,
+                             const std::shared_ptr<messages_88::srv::GetMapData::Request> req,
+                             const std::shared_ptr<messages_88::srv::GetMapData::Response> resp){
+    geometry_msgs::msg::Point map_point = req->map_position;
+    int width = req->width;
+    int height = req->height;
+    geometry_msgs::msg::PointStamped in, out;
+    in.point = map_point;
+    map2UtmPoint(in, out);
+    sensor_msgs::msg::Image::SharedPtr chunk;
+    double max, min;
+    bool worked = hello_decco_manager_->getElevationChunk(out.point.x, out.point.y, req->width, req->height, chunk, max, min);
+    resp->success = worked;
+    if (!worked) {
+        logEvent(EventType::INFO, Severity::HIGH, "Failed to get elevation data! Cannot proceed in terrain.");
+        return false;
+    }
+    resp->tif_mat = *chunk;
+    resp->max_altitude = max;
+
+    if (req->adjust_params) {
+        altitude_offset_ = max - home_elevation_;
+        resp->home_offset = altitude_offset_;
+        target_altitude_ = target_agl_  + altitude_offset_;
+        resp->target_altitude = target_altitude_;
+        setAltitudeOffset();
+    }
 }
 
 void TaskManager::heartbeatTimerCallback() {
@@ -1444,22 +1486,24 @@ void TaskManager::altitudesResponse(json &json_msg) {
         return;
     }
 
-    float max_altitude = json_msg["max_altitude"];
-    float min_altitude = json_msg["min_altitude"];
-    float default_altitude = json_msg["default_altitude"];
+    max_agl_ = json_msg["max_altitude"];
+    min_agl_ = json_msg["min_altitude"];
+    target_agl_= json_msg["default_altitude"];
 
     // Set altitude params in all nodes that use them
-    this->set_parameter(rclcpp::Parameter("max_alt", max_altitude));
-    this->set_parameter(rclcpp::Parameter("min_alt", min_altitude));
-    this->set_parameter(rclcpp::Parameter("default_alt", default_altitude));
-
-    // It's simpler just to set the task manager altitude data here instead of re-fetching the param dynamically
-    max_altitude_ = max_altitude;
-    min_altitude_ = min_altitude;
-    target_altitude_ = default_altitude;
+    this->set_parameter(rclcpp::Parameter("max_alt", max_agl_ + altitude_offset_));
+    this->set_parameter(rclcpp::Parameter("min_alt", min_agl_ + altitude_offset_));
+    this->set_parameter(rclcpp::Parameter("default_alt", target_agl_ + altitude_offset_));
 
     // this->set_parameter(rclcpp::Parameter("/path_planning_node/search/max_alt", max_altitude));
     // this->set_parameter(rclcpp::Parameter("/path_planning_node/search/min_alt", min_altitude));
+}
+
+void TaskManager::setAltitudeOffset() {
+    // Set altitude params in all nodes that use them
+    this->set_parameter(rclcpp::Parameter("max_alt", max_agl_ + altitude_offset_));
+    this->set_parameter(rclcpp::Parameter("min_alt", min_agl_ + altitude_offset_));
+    this->set_parameter(rclcpp::Parameter("default_alt", target_agl_ + altitude_offset_));
 }
 
 void TaskManager::remoteIDResponse(json &json) {

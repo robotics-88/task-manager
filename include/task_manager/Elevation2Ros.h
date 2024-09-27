@@ -1,0 +1,233 @@
+#ifndef ELEVATION_2_ROS_H_
+#define ELEVATION_2_ROS_H_
+
+#include <vector>
+#include <cmath>
+#include <map>
+#include <iostream>
+#include <filesystem>
+
+#include <opencv2/opencv.hpp>
+#include <opencv2/imgproc.hpp>
+
+#include <gdal/gdal_priv.h>
+#include <gdal/gdal.h>
+#include <gdal/gdalwarper.h>
+#include <gdal/ogr_p.h>
+#include <gdal/ogr_spatialref.h>
+
+namespace elevation2ros
+{
+
+class Elevation2Ros
+{
+    cv::Mat dem_cv;
+    cv::Mat slope_cv;
+    double resolution_m = 1.0;
+    double ul_y_utm;
+    double ul_x_utm;
+
+public:
+    Elevation2Ros() {}
+
+    bool init(const std::string &tif_name) 
+    {
+        // Load mat
+        dem_cv = cv::imread(tif_name, cv::IMREAD_LOAD_GDAL | cv::IMREAD_ANYDEPTH );
+        // Get coords with GDAL
+        GDALAllRegister();
+        GDALDataset* hSrcDS = static_cast<GDALDataset*>(GDALOpen(tif_name.c_str(), GA_ReadOnly));
+        if (hSrcDS == nullptr){
+            std::cout << "Topography data set is null in gdal" << std::endl;
+            return false;
+        }
+
+        // Transform from NAD83 to UTM
+        std::string out_file = tif_name.substr(0, tif_name.find(".")) + "_utm.tif";
+        GDALDataset* hDstDS;
+        if (!std::filesystem::exists(out_file)) {
+            makeOutputFile(hSrcDS, out_file);
+            hDstDS = static_cast<GDALDataset*>(GDALOpen(out_file.c_str(), GA_Update ));
+
+            // Setup warp options.
+            GDALWarpOptions *psWarpOptions = GDALCreateWarpOptions();
+            psWarpOptions->hSrcDS = hSrcDS;
+            psWarpOptions->hDstDS = hDstDS;
+            psWarpOptions->nBandCount = 1;
+            psWarpOptions->panSrcBands =
+                (int *) CPLMalloc(sizeof(int) * psWarpOptions->nBandCount );
+            psWarpOptions->panSrcBands[0] = 1;
+            psWarpOptions->panDstBands =
+                (int *) CPLMalloc(sizeof(int) * psWarpOptions->nBandCount );
+            psWarpOptions->panDstBands[0] = 1;
+            psWarpOptions->pfnProgress = GDALTermProgress;
+
+            // Establish reprojection transformer.
+            psWarpOptions->pTransformerArg =
+                GDALCreateGenImgProjTransformer( hSrcDS,
+                                                GDALGetProjectionRef(hSrcDS),
+                                                hDstDS,
+                                                GDALGetProjectionRef(hDstDS),
+                                                FALSE, 0.0, 1 );
+            psWarpOptions->pfnTransformer = GDALGenImgProjTransform;
+
+            // Initialize and execute the warp operation.
+            GDALWarpOperation oOperation;
+            oOperation.Initialize( psWarpOptions );
+            oOperation.ChunkAndWarpImage( 0, 0,
+                                        GDALGetRasterXSize( hDstDS ),
+                                        GDALGetRasterYSize( hDstDS ) );
+            GDALDestroyGenImgProjTransformer( psWarpOptions->pTransformerArg );
+            GDALDestroyWarpOptions( psWarpOptions );
+        }
+        else {
+            hDstDS = static_cast<GDALDataset*>(GDALOpen(out_file.c_str(), GA_ReadOnly ));
+        }
+
+        std::vector<double> geotransform(6);
+        if(hDstDS->GetGeoTransform(geotransform.data())!=CE_None){
+            std::cout << "Could not get a geotransform!" << std::endl;
+            return false;
+        }
+        int x = 0;
+        int y = 0;
+        // Upper left coords
+        double easting=geotransform[0];// + x*geotransform[1] + y*geotransform[2]; // Longitude
+        double northing=geotransform[3];// + x*geotransform[4] + y*geotransform[5]; // Latitude
+        std::cout << "explore topog got UL UTM east/north: " << easting << ", " << northing << std::endl;
+        ul_x_utm = easting;
+        ul_y_utm = northing;
+
+        GDALClose( hDstDS );
+        GDALClose( hSrcDS );
+
+        initializeValleys();
+        
+        return true;
+    }
+
+    bool getElevationChunk(const double utm_x, const double utm_y, const int width, const int height, cv::Mat &chunk) {
+        int pixel_r, pixel_c;
+        pixel_c = utm_x - ul_x_utm;
+        pixel_r = dem_cv.rows - floor(ul_y_utm - utm_y);
+        bool cols_outofbounds = pixel_c < 0 || pixel_c >= dem_cv.cols;
+        bool rows_outofbounds = pixel_r < 0 || pixel_r >= dem_cv.rows;
+        if (cols_outofbounds || rows_outofbounds ) {
+            // TODO should extend to checking if ROI is out of bounds
+            std::cout << "Pixels or rows out of bounds in get tif chunk" << std::endl;
+            return false;
+        }
+        else {
+            // value = dem_cv.at<float>(pixel_r, pixel_c);
+            int start_r = pixel_r - floor(height / 2);
+            int start_c = pixel_c - floor(width / 2);
+            int len_r = height - floor(height / 2);
+            int len_c = width - floor(width / 2);
+            cv::Rect roi(start_r, start_c, len_r, len_c);
+            cv::Mat submat = dem_cv(roi);
+            chunk = submat.clone(); // Required to protect the original mat data
+            return true;
+        }
+    }
+
+    double getElevation(const double utm_x, const double utm_y) {
+        double value;
+        getMapValue(utm_x, utm_y, dem_cv, value);
+        return value;
+    }
+
+    double getSlope(const double utm_x, const double utm_y) {
+        double value;
+        getMapValue(utm_x, utm_y, slope_cv, value);
+        return value;
+    }
+
+private:
+    void makeOutputFile(GDALDataset* hSrcDS, std::string filename) {
+        GDALDriverH hDriver;
+        GDALDataType eDT;
+        GDALDatasetH hDstDS;
+
+        // Create output with same datatype as first input band.
+        eDT = GDALGetRasterDataType(GDALGetRasterBand(hSrcDS,1));
+
+        // Get output driver (GeoTIFF format)
+        hDriver = GDALGetDriverByName( "GTiff" );
+        CPLAssert( hDriver != NULL );
+    
+        // Get Source coordinate system.
+        const char *pszSrcWKT;
+        char *pszDstWKT = NULL;
+        pszSrcWKT = GDALGetProjectionRef( hSrcDS );
+        CPLAssert( pszSrcWKT != NULL && strlen(pszSrcWKT) > 0 );
+
+        // Setup output coordinate system that is UTM 11 WGS84.
+        OGRSpatialReference oSRS;
+        oSRS.SetUTM( 19, TRUE ); // TODO make map manager in TM and get correct zone
+        oSRS.SetWellKnownGeogCS( "WGS84" );
+        oSRS.exportToWkt( &pszDstWKT );
+
+        // Create a transformer that maps from source pixel/line coordinates
+        // to destination georeferenced coordinates (not destination
+        // pixel line).  We do that by omitting the destination dataset
+        // handle (setting it to NULL).
+        void *hTransformArg;
+        hTransformArg =
+            GDALCreateGenImgProjTransformer( hSrcDS, pszSrcWKT, NULL, pszDstWKT,
+                                            FALSE, 0, 1 );
+        CPLAssert( hTransformArg != NULL );
+
+        // Get approximate output georeferenced bounds and resolution for file.
+        double adfDstGeoTransform[6];
+        int nPixels=0, nLines=0;
+        CPLErr eErr;
+        eErr = GDALSuggestedWarpOutput( hSrcDS,
+                                        GDALGenImgProjTransform, hTransformArg,
+                                        adfDstGeoTransform, &nPixels, &nLines );
+        CPLAssert( eErr == CE_None );
+        GDALDestroyGenImgProjTransformer( hTransformArg );
+
+        // Create the output file.
+        hDstDS = GDALCreate( hDriver, filename.c_str(), nPixels, nLines,
+                            GDALGetRasterCount(hSrcDS), eDT, NULL );
+        CPLAssert( hDstDS != NULL );
+
+        // Write out the projection definition.
+        GDALSetProjection( hDstDS, pszDstWKT );
+        GDALSetGeoTransform( hDstDS, adfDstGeoTransform );
+        GDALClose(hDstDS);
+    }
+
+    bool getMapValue(const double utm_x, const double utm_y, const cv::Mat &mat, double &value) {
+        int pixel_r, pixel_c;
+        pixel_c = utm_x - ul_x_utm;
+        pixel_r = mat.rows - floor(ul_y_utm - utm_y);
+        bool cols_outofbounds = pixel_c < 0 || pixel_c >= mat.cols;
+        bool rows_outofbounds = pixel_r < 0 || pixel_r >= mat.rows;
+        if (cols_outofbounds || rows_outofbounds ) {
+            std::cout << "Pixels or rows out of bounds in get tif value" << std::endl;
+            return false;
+        }
+        else {
+            value = mat.at<float>(pixel_r, pixel_c);
+            return true;
+        }
+    }
+
+    void initializeValleys() {
+        // Pixelwise scores of slope magnitude, ignoring slope direction
+        cv::Mat sobelx, sobely;
+        cv::Sobel(dem_cv, sobelx, CV_32F, 1, 0);
+        cv::Sobel(dem_cv, sobely, CV_32F, 0, 1);
+
+        cv::Mat xsqr = sobelx.mul(sobelx);
+        cv::Mat ysqr = sobelx.mul(sobely);
+        cv::Mat xysum = xsqr + ysqr;
+        cv::sqrt(xysum, slope_cv);
+    }
+
+};
+
+}
+
+#endif // ELEVATION_2_ROS_H_
