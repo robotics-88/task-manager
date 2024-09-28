@@ -13,6 +13,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <float.h>
 
 #include <sensor_msgs/msg/image.hpp>
+#include "rcl_interfaces/srv/set_parameters_atomically.hpp"
 
 #include <ament_index_cpp/get_package_share_directory.hpp>
 
@@ -35,8 +36,8 @@ TaskManager::TaskManager() : Node("task_manager")
     , utm_tf_init_(false)
     , enable_autonomy_(false)
     , use_failsafes_(false)
-    , target_altitude_(2.0)
-    , target_agl_(2.0)
+    , target_altitude_(3.0)
+    , target_agl_(3.0)
     , min_altitude_(2.0)
     , min_agl_(2.0)
     , max_altitude_(10.0)
@@ -855,7 +856,7 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
         resp->home_offset = altitude_offset_;
         target_altitude_ = target_agl_  + altitude_offset_;
         resp->target_altitude = target_altitude_;
-        setAltitudeOffset();
+        setAltitudeParams(max_agl_ + altitude_offset_, min_agl_ + altitude_offset_, target_agl_ + altitude_offset_);
     }
 }
 
@@ -1491,19 +1492,44 @@ void TaskManager::altitudesResponse(json &json_msg) {
     target_agl_= json_msg["default_altitude"];
 
     // Set altitude params in all nodes that use them
+    setAltitudeParams(max_agl_ + altitude_offset_, min_agl_ + altitude_offset_, target_agl_ + altitude_offset_);
+
+    // TODO verify but I think can remove this. only sets values for this node anyways.
     this->set_parameter(rclcpp::Parameter("max_alt", max_agl_ + altitude_offset_));
     this->set_parameter(rclcpp::Parameter("min_alt", min_agl_ + altitude_offset_));
     this->set_parameter(rclcpp::Parameter("default_alt", target_agl_ + altitude_offset_));
-
-    // this->set_parameter(rclcpp::Parameter("/path_planning_node/search/max_alt", max_altitude));
-    // this->set_parameter(rclcpp::Parameter("/path_planning_node/search/min_alt", min_altitude));
 }
 
-void TaskManager::setAltitudeOffset() {
+void TaskManager::setAltitudeParams(const double max, const double min, const double target) {
     // Set altitude params in all nodes that use them
-    this->set_parameter(rclcpp::Parameter("max_alt", max_agl_ + altitude_offset_));
-    this->set_parameter(rclcpp::Parameter("min_alt", min_agl_ + altitude_offset_));
-    this->set_parameter(rclcpp::Parameter("default_alt", target_agl_ + altitude_offset_));
+    auto parameter = rcl_interfaces::msg::Parameter();
+    auto request = std::make_shared<rcl_interfaces::srv::SetParametersAtomically::Request>();
+
+    auto client = this->create_client<rcl_interfaces::srv::SetParametersAtomically>("universal_altitude_params"); // E.g.: serviceName = "/turtlesim/set_parameters_atomically"
+
+    parameter.name = "max_alt";  // E.g.: parameter_name = "background_b"
+    parameter.value.type = 3;          //  bool = 1,    int = 2,        float = 3,     string = 4
+    parameter.value.double_value = max; // .bool_value, .integer_value, .double_value, .string_value
+    request->parameters.push_back(parameter);
+
+    parameter.name = "min_alt";  // E.g.: parameter_name = "background_b"
+    parameter.value.type = 3;          //  bool = 1,    int = 2,        float = 3,     string = 4
+    parameter.value.double_value = min; // .bool_value, .integer_value, .double_value, .string_value
+    request->parameters.push_back(parameter);
+
+    parameter.name = "default_alt";  // E.g.: parameter_name = "background_b"
+    parameter.value.type = 3;          //  bool = 1,    int = 2,        float = 3,     string = 4
+    parameter.value.double_value = target; // .bool_value, .integer_value, .double_value, .string_value
+    request->parameters.push_back(parameter);
+
+    while (!client->wait_for_service(1s)) {
+        if (!rclcpp::ok()) {
+        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Interrupted while waiting for the service. Exiting.");
+        return;
+        }
+        RCLCPP_INFO_STREAM(this->get_logger(), "universal altitude param service not available, waiting again..."); 
+    }
+    auto result = client->async_send_request(request);
 }
 
 void TaskManager::remoteIDResponse(json &json) {
