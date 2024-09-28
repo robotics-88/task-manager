@@ -39,7 +39,7 @@ class HelloDeccoManager
         HelloDeccoManager(const std::shared_ptr<rclcpp::Node>& node);
         ~HelloDeccoManager();
 
-        void acceptFlight(json msgJson, bool &geofence_ok);
+        void acceptFlight(json msgJson, bool &geofence_ok, double &home_elevation);
         void updateFlightStatus(std::string flight_status);
         void setUtm(double utm_x, double utm_y, int zone) {
             utm_x_offset_ = -utm_x;

@@ -1331,11 +1331,10 @@ void TaskManager::acceptFlight(json flight) {
         return;
     }
     burn_unit_name_ = flight["burnUnitName"];
-    hello_decco_manager_->getHomeElevation(home_elevation_);
 
     hello_decco_manager_->setDroneLocationLocal(slam_pose_);
     bool geofence_ok;
-    hello_decco_manager_->acceptFlight(flight, geofence_ok);
+    hello_decco_manager_->acceptFlight(flight, geofence_ok, home_elevation_);
 
     if (!geofence_ok) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Geofence invalid, not setting geofence");

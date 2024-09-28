@@ -79,15 +79,16 @@ void HelloDeccoManager::flightReceipt(const int id) {
     packageToTymbalHD("flight_confirm", msg);
 }
 
-void HelloDeccoManager::acceptFlight(json msgJson, bool &geofence_ok) {
+void HelloDeccoManager::acceptFlight(json msgJson, bool &geofence_ok, double &home_elevation) {
     int id = msgJson["id"];
     flightReceipt(id);
     // Parse data
     flight_json_ = msgJson;
     RCLCPP_INFO(node_->get_logger(), "Flight received");
-    geometry_msgs::msg::Polygon poly = polygonFromJson(flight_json_["subpolygon"]);
+    geometry_msgs::msg::Polygon poly = polygonFromJson(flight_json_["subpolygon"]["coordinates"][0]);
     polygonInitializer(poly, false, geofence_ok);
     elevationInitializer();
+    getHomeElevation(home_elevation);
 
     packageToTymbalHD("burn_unit_receive", flight_json_);
 
@@ -95,7 +96,9 @@ void HelloDeccoManager::acceptFlight(json msgJson, bool &geofence_ok) {
 
 void HelloDeccoManager::elevationInitializer() {
     // TODO get tif from HD, for now assumes stored in dem/<burn unit name>
+    std::cout << "about to tinit eelv" << std::endl;
     std::string burn_unit_name = static_cast<std::string>(flight_json_["burnUnitName"]);
+    std::cout << "flight accepted hdm, bu name " << burn_unit_name << std::endl;
     std::string tif_name = ament_index_cpp::get_package_share_directory("task_manager") + "/dem/" + burn_unit_name + ".tif";
     elevation_source_.init(tif_name);
     elevation_init_ = true;
@@ -169,8 +172,8 @@ geometry_msgs::msg::Polygon HelloDeccoManager::polygonFromJson(json jsonPolygon)
     geometry_msgs::msg::Polygon polygon;
     for (auto& element : jsonPolygon) {
         geometry_msgs::msg::Point32 pt;
-        pt.x = element[0];
-        pt.y = element[1];
+        pt.y = element[0];
+        pt.x = element[1];
         polygon.points.push_back(pt);
     }
     return polygon;
