@@ -95,8 +95,8 @@ void HelloDeccoManager::acceptFlight(json msgJson, bool &geofence_ok) {
 
 void HelloDeccoManager::elevationInitializer() {
     // TODO get tif from HD, for now assumes stored in dem/<burn unit name>
-    // std::string burn_unit_name = flight_json_["burnUnitName"];
-    std::string tif_name = ament_index_cpp::get_package_share_directory("task_manager") + "/dem/bigilly2.tif";// + burn_unit_name;
+    std::string burn_unit_name = static_cast<std::string>(flight_json_["burnUnitName"]);
+    std::string tif_name = ament_index_cpp::get_package_share_directory("task_manager") + "/dem/" + burn_unit_name + ".tif";
     elevation_source_.init(tif_name);
     elevation_init_ = true;
 }
@@ -115,6 +115,13 @@ bool HelloDeccoManager::getElevationChunk(const double utm_x, const double utm_y
         sensor_msgs::msg::Image::SharedPtr chunk = cv_bridge::CvImage(header, "bgr8", mat).toImageMsg();
     }
     return worked;
+}
+
+bool HelloDeccoManager::getHomeElevation(double &value) {
+    if (!elevation_init_) {
+        elevationInitializer();
+    }
+    value = elevation_source_.getElevation(utm_x_offset_, utm_y_offset_);
 }
 
 bool HelloDeccoManager::getElevationValue(const double utm_x, const double utm_y, double &value) {

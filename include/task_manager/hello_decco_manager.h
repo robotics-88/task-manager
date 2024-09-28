@@ -61,6 +61,7 @@ class HelloDeccoManager
 
         bool getElevationChunk(const double utm_x, const double utm_y, const int width, const int height, sensor_msgs::msg::Image &chunk, double &max, double &min);
         bool getElevationValue(const double utm_x, const double utm_y, double &value);
+        bool getHomeElevation(double &value);
 
     private:
         const std::shared_ptr<rclcpp::Node> node_;

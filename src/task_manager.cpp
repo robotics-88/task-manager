@@ -779,7 +779,6 @@ bool TaskManager::initialized() {
     double utm_x, utm_y;
     flight_controller_interface_->initUTM(utm_x, utm_y);
     hello_decco_manager_->setUtm(utm_x, utm_y, home_utm_zone_);
-    hello_decco_manager_->getElevationValue(utm_x, utm_y, home_elevation_);
     RCLCPP_INFO(this->get_logger(), "UTM offsets: (%f, %f)", utm_x, utm_y);
     RCLCPP_INFO(this->get_logger(), "Map yaw: %f", map_yaw_ * 180 / M_PI);
     utm2map_tf_.header.frame_id = "utm";
@@ -1331,7 +1330,8 @@ void TaskManager::acceptFlight(json flight) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Not ready for flight, try again after initialized");
         return;
     }
-    burn_unit_name_ = flight["burnUnitName"];    
+    burn_unit_name_ = flight["burnUnitName"];
+    hello_decco_manager_->getHomeElevation(home_elevation_);
 
     hello_decco_manager_->setDroneLocationLocal(slam_pose_);
     bool geofence_ok;
