@@ -59,7 +59,7 @@ class HelloDeccoManager
             return map_region_;
         }
 
-        bool getElevationChunk(const double utm_x, const double utm_y, const int width, const int height, sensor_msgs::msg::Image::SharedPtr &chunk, double &max, double &min);
+        bool getElevationChunk(const double utm_x, const double utm_y, const int width, const int height, sensor_msgs::msg::Image &chunk, double &max, double &min);
         bool getElevationValue(const double utm_x, const double utm_y, double &value);
 
     private:
@@ -95,6 +95,7 @@ class HelloDeccoManager
 
         // Elevation
         elevation2ros::Elevation2Ros elevation_source_;
+        bool elevation_init_;
 
         // MAVROS geofence publisher
         rclcpp::Client<mavros_msgs::srv::WaypointPush>::SharedPtr mavros_geofence_client_;

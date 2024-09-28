@@ -23,7 +23,6 @@ class Elevation2Ros
 {
     cv::Mat dem_cv;
     cv::Mat slope_cv;
-    double resolution_m = 1.0;
     double ul_y_utm;
     double ul_x_utm;
 
@@ -38,54 +37,54 @@ public:
         GDALAllRegister();
         GDALDataset* hSrcDS = static_cast<GDALDataset*>(GDALOpen(tif_name.c_str(), GA_ReadOnly));
         if (hSrcDS == nullptr){
-            std::cout << "Topography data set is null in gdal" << std::endl;
+            std::cout << "Topography data set is null in gdal, name was: " << tif_name << std::endl;
             return false;
         }
 
         // Transform from NAD83 to UTM
-        std::string out_file = tif_name.substr(0, tif_name.find(".")) + "_utm.tif";
-        GDALDataset* hDstDS;
-        if (!std::filesystem::exists(out_file)) {
-            makeOutputFile(hSrcDS, out_file);
-            hDstDS = static_cast<GDALDataset*>(GDALOpen(out_file.c_str(), GA_Update ));
+        // std::string out_file = tif_name.substr(0, tif_name.find(".")) + "_utm.tif";
+        // GDALDataset* hDstDS;
+        // if (!std::filesystem::exists(out_file)) {
+        //     makeOutputFile(hSrcDS, out_file);
+        //     hDstDS = static_cast<GDALDataset*>(GDALOpen(out_file.c_str(), GA_Update ));
 
-            // Setup warp options.
-            GDALWarpOptions *psWarpOptions = GDALCreateWarpOptions();
-            psWarpOptions->hSrcDS = hSrcDS;
-            psWarpOptions->hDstDS = hDstDS;
-            psWarpOptions->nBandCount = 1;
-            psWarpOptions->panSrcBands =
-                (int *) CPLMalloc(sizeof(int) * psWarpOptions->nBandCount );
-            psWarpOptions->panSrcBands[0] = 1;
-            psWarpOptions->panDstBands =
-                (int *) CPLMalloc(sizeof(int) * psWarpOptions->nBandCount );
-            psWarpOptions->panDstBands[0] = 1;
-            psWarpOptions->pfnProgress = GDALTermProgress;
+        //     // Setup warp options.
+        //     GDALWarpOptions *psWarpOptions = GDALCreateWarpOptions();
+        //     psWarpOptions->hSrcDS = hSrcDS;
+        //     psWarpOptions->hDstDS = hDstDS;
+        //     psWarpOptions->nBandCount = 1;
+        //     psWarpOptions->panSrcBands =
+        //         (int *) CPLMalloc(sizeof(int) * psWarpOptions->nBandCount );
+        //     psWarpOptions->panSrcBands[0] = 1;
+        //     psWarpOptions->panDstBands =
+        //         (int *) CPLMalloc(sizeof(int) * psWarpOptions->nBandCount );
+        //     psWarpOptions->panDstBands[0] = 1;
+        //     psWarpOptions->pfnProgress = GDALTermProgress;
 
-            // Establish reprojection transformer.
-            psWarpOptions->pTransformerArg =
-                GDALCreateGenImgProjTransformer( hSrcDS,
-                                                GDALGetProjectionRef(hSrcDS),
-                                                hDstDS,
-                                                GDALGetProjectionRef(hDstDS),
-                                                FALSE, 0.0, 1 );
-            psWarpOptions->pfnTransformer = GDALGenImgProjTransform;
+        //     // Establish reprojection transformer.
+        //     psWarpOptions->pTransformerArg =
+        //         GDALCreateGenImgProjTransformer( hSrcDS,
+        //                                         GDALGetProjectionRef(hSrcDS),
+        //                                         hDstDS,
+        //                                         GDALGetProjectionRef(hDstDS),
+        //                                         FALSE, 0.0, 1 );
+        //     psWarpOptions->pfnTransformer = GDALGenImgProjTransform;
 
-            // Initialize and execute the warp operation.
-            GDALWarpOperation oOperation;
-            oOperation.Initialize( psWarpOptions );
-            oOperation.ChunkAndWarpImage( 0, 0,
-                                        GDALGetRasterXSize( hDstDS ),
-                                        GDALGetRasterYSize( hDstDS ) );
-            GDALDestroyGenImgProjTransformer( psWarpOptions->pTransformerArg );
-            GDALDestroyWarpOptions( psWarpOptions );
-        }
-        else {
-            hDstDS = static_cast<GDALDataset*>(GDALOpen(out_file.c_str(), GA_ReadOnly ));
-        }
+        //     // Initialize and execute the warp operation.
+        //     GDALWarpOperation oOperation;
+        //     oOperation.Initialize( psWarpOptions );
+        //     oOperation.ChunkAndWarpImage( 0, 0,
+        //                                 GDALGetRasterXSize( hDstDS ),
+        //                                 GDALGetRasterYSize( hDstDS ) );
+        //     GDALDestroyGenImgProjTransformer( psWarpOptions->pTransformerArg );
+        //     GDALDestroyWarpOptions( psWarpOptions );
+        // }
+        // else {
+        //     hDstDS = static_cast<GDALDataset*>(GDALOpen(out_file.c_str(), GA_ReadOnly ));
+        // }
 
         std::vector<double> geotransform(6);
-        if(hDstDS->GetGeoTransform(geotransform.data())!=CE_None){
+        if(hSrcDS->GetGeoTransform(geotransform.data())!=CE_None){
             std::cout << "Could not get a geotransform!" << std::endl;
             return false;
         }
@@ -98,7 +97,7 @@ public:
         ul_x_utm = easting;
         ul_y_utm = northing;
 
-        GDALClose( hDstDS );
+        // GDALClose( hDstDS );
         GDALClose( hSrcDS );
 
         initializeValleys();
@@ -114,7 +113,7 @@ public:
         bool rows_outofbounds = pixel_r < 0 || pixel_r >= dem_cv.rows;
         if (cols_outofbounds || rows_outofbounds ) {
             // TODO should extend to checking if ROI is out of bounds
-            std::cout << "Pixels or rows out of bounds in get tif chunk" << std::endl;
+            std::cout << "Pixels or rows out of bounds in get tif chunk." << std::endl;
             return false;
         }
         else {
@@ -163,7 +162,7 @@ private:
 
         // Setup output coordinate system that is UTM 11 WGS84.
         OGRSpatialReference oSRS;
-        oSRS.SetUTM( 19, TRUE ); // TODO make map manager in TM and get correct zone
+        oSRS.SetUTM( 16, TRUE ); // TODO make map manager in TM and get correct zone
         oSRS.SetWellKnownGeogCS( "WGS84" );
         oSRS.exportToWkt( &pszDstWKT );
 

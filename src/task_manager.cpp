@@ -839,7 +839,7 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
     geometry_msgs::msg::PointStamped in, out;
     in.point = map_point;
     map2UtmPoint(in, out);
-    sensor_msgs::msg::Image::SharedPtr chunk;
+    sensor_msgs::msg::Image chunk;
     double max, min;
     bool worked = hello_decco_manager_->getElevationChunk(out.point.x, out.point.y, req->width, req->height, chunk, max, min);
     resp->success = worked;
@@ -847,7 +847,7 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
         logEvent(EventType::INFO, Severity::HIGH, "Failed to get elevation data! Cannot proceed in terrain.");
         return false;
     }
-    resp->tif_mat = *chunk;
+    resp->tif_mat = chunk;
     resp->max_altitude = max;
 
     if (req->adjust_params) {

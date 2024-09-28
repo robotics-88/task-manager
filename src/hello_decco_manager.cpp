@@ -32,6 +32,7 @@ HelloDeccoManager::HelloDeccoManager(const std::shared_ptr<rclcpp::Node>& node)
     : node_(node)
     , mavros_map_frame_("map")
     , flightleg_area_m2_(2023.0)
+    , elevation_init_(false)
 {
     node_->declare_parameter("flightleg_area_acres", 3.0);
     double flightleg_acres = node_->get_parameter("flightleg_area_acres").as_double();
@@ -94,13 +95,17 @@ void HelloDeccoManager::acceptFlight(json msgJson, bool &geofence_ok) {
 
 void HelloDeccoManager::elevationInitializer() {
     // TODO get tif from HD, for now assumes stored in dem/<burn unit name>
-    std::string burn_unit_name = flight_json_["burnUnitName"];
+    // std::string burn_unit_name = flight_json_["burnUnitName"];
     std::string tif_name = ament_index_cpp::get_package_share_directory("task_manager") + "/dem/bigilly2.tif";// + burn_unit_name;
     elevation_source_.init(tif_name);
+    elevation_init_ = true;
 }
 
-bool HelloDeccoManager::getElevationChunk(const double utm_x, const double utm_y, const int width, const int height, sensor_msgs::msg::Image::SharedPtr &chunk, double &max, double &min) {
+bool HelloDeccoManager::getElevationChunk(const double utm_x, const double utm_y, const int width, const int height, sensor_msgs::msg::Image &chunk, double &max, double &min) {
     cv::Mat mat;
+    if (!elevation_init_) {
+        elevationInitializer();
+    }
     bool worked = elevation_source_.getElevationChunk(utm_x, utm_y, width, height, mat);
     if (worked) {
         cv::Point minLoc, maxLoc;
@@ -113,6 +118,9 @@ bool HelloDeccoManager::getElevationChunk(const double utm_x, const double utm_y
 }
 
 bool HelloDeccoManager::getElevationValue(const double utm_x, const double utm_y, double &value) {
+    if (!elevation_init_) {
+        elevationInitializer();
+    }
     value = elevation_source_.getElevation(utm_x, utm_y);
 }
 
