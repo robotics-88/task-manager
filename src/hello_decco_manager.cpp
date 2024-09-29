@@ -87,7 +87,6 @@ void HelloDeccoManager::acceptFlight(json msgJson, bool &geofence_ok, double &ho
     RCLCPP_INFO(node_->get_logger(), "Flight received");
     geometry_msgs::msg::Polygon poly = polygonFromJson(flight_json_["subpolygon"]["coordinates"][0]);
     polygonInitializer(poly, false, geofence_ok);
-    elevationInitializer();
     getHomeElevation(home_elevation);
 
     packageToTymbalHD("burn_unit_receive", flight_json_);
@@ -96,8 +95,14 @@ void HelloDeccoManager::acceptFlight(json msgJson, bool &geofence_ok, double &ho
 
 void HelloDeccoManager::elevationInitializer() {
     // TODO get tif from HD, for now assumes stored in dem/<burn unit name>
-    std::string burn_unit_name = static_cast<std::string>(flight_json_["burnUnitName"]);
-    std::string tif_name = ament_index_cpp::get_package_share_directory("task_manager") + "/dem/" + burn_unit_name + ".tif";
+    std::string tif_name;
+    try {
+        std::string burn_unit_name = static_cast<std::string>(flight_json_["burnUnitName"]);
+        tif_name = ament_index_cpp::get_package_share_directory("task_manager") + "/dem/" + burn_unit_name + ".tif";
+    }
+    catch (...) {
+        tif_name = ament_index_cpp::get_package_share_directory("task_manager") + "/dem/bigilly2.tif";
+    }
     elevation_source_.init(tif_name);
     elevation_init_ = true;
 }
@@ -122,8 +127,7 @@ bool HelloDeccoManager::getHomeElevation(double &value) {
     if (!elevation_init_) {
         elevationInitializer();
     }
-    value = elevation_source_.getElevation(utm_x_offset_, utm_y_offset_);
-    std::cout << "FOr utm (" << utm_x_offset_ << ", " << utm_y_offset_ << "), got elevation value  in HD " << value << std::endl;
+    value = elevation_source_.getElevation(-1 * utm_x_offset_, -1 * utm_y_offset_);
 }
 
 bool HelloDeccoManager::getElevationValue(const double utm_x, const double utm_y, double &value) {

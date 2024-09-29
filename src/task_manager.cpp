@@ -393,6 +393,10 @@ void TaskManager::runTaskManager() {
             break;
         }
         case Task::MANUAL_FLIGHT: {
+            if (!hello_decco_manager_->getElevationInit()) {
+                hello_decco_manager_->getHomeElevation(home_elevation_);
+                std::cout << "got home elevation in manual mode : " << home_elevation_ << std::endl;
+            }
             if (!flight_controller_interface_->getIsArmed()) {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Drone disarmed manually");
                 updateCurrentTask(Task::COMPLETE);
