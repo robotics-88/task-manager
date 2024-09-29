@@ -1335,6 +1335,7 @@ void TaskManager::acceptFlight(json flight) {
     hello_decco_manager_->setDroneLocationLocal(slam_pose_);
     bool geofence_ok;
     hello_decco_manager_->acceptFlight(flight, geofence_ok, home_elevation_);
+    std::cout << "got home elevation : " << home_elevation_ << std::endl;
 
     if (!geofence_ok) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Geofence invalid, not setting geofence");
@@ -1346,7 +1347,7 @@ void TaskManager::acceptFlight(json flight) {
         return;
     }
 
-    std::string type = flight["type"];
+    std::string type = static_cast<std::string>(flight["type"]);
     if (type == "PERI") {
         getLawnmowerPattern(map_polygon_, lawnmower_points_);
         visualizeLawnmower();

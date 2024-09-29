@@ -96,9 +96,7 @@ void HelloDeccoManager::acceptFlight(json msgJson, bool &geofence_ok, double &ho
 
 void HelloDeccoManager::elevationInitializer() {
     // TODO get tif from HD, for now assumes stored in dem/<burn unit name>
-    std::cout << "about to tinit eelv" << std::endl;
     std::string burn_unit_name = static_cast<std::string>(flight_json_["burnUnitName"]);
-    std::cout << "flight accepted hdm, bu name " << burn_unit_name << std::endl;
     std::string tif_name = ament_index_cpp::get_package_share_directory("task_manager") + "/dem/" + burn_unit_name + ".tif";
     elevation_source_.init(tif_name);
     elevation_init_ = true;
@@ -125,6 +123,7 @@ bool HelloDeccoManager::getHomeElevation(double &value) {
         elevationInitializer();
     }
     value = elevation_source_.getElevation(utm_x_offset_, utm_y_offset_);
+    std::cout << "FOr utm (" << utm_x_offset_ << ", " << utm_y_offset_ << "), got elevation value  in HD " << value << std::endl;
 }
 
 bool HelloDeccoManager::getElevationValue(const double utm_x, const double utm_y, double &value) {
