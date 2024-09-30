@@ -129,6 +129,7 @@ bool HelloDeccoManager::getHomeElevation(double &value) {
     }
     value = elevation_source_.getElevation(-1 * utm_x_offset_, -1 * utm_y_offset_);
     std::cout << "got home elevation at utm " << utm_x_offset_ << ", " << utm_y_offset_ << " and value was " << value << std::endl;
+    return true;
 }
 
 bool HelloDeccoManager::getElevationValue(const double utm_x, const double utm_y, double &value) {
@@ -136,6 +137,7 @@ bool HelloDeccoManager::getElevationValue(const double utm_x, const double utm_y
         elevationInitializer();
     }
     value = elevation_source_.getElevation(utm_x, utm_y);
+    return true;
 }
 
 void HelloDeccoManager::polygonInitializer(const geometry_msgs::msg::Polygon &msg, bool make_legs, bool &geofence_ok) {

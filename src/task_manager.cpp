@@ -843,9 +843,10 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
     geometry_msgs::msg::PointStamped in, out;
     in.point = map_point;
     map2UtmPoint(in, out);
+    std::cout << "at intput (" << in.point.x << ", " << in.point.y << ", output utm was " << out.point.x << ", " << out.point.y << std::endl;
     sensor_msgs::msg::Image chunk;
     double max, min;
-    bool worked = hello_decco_manager_->getElevationChunk(out.point.x, out.point.y, req->width, req->height, chunk, max, min);
+    bool worked = hello_decco_manager_->getElevationValue(out.point.x, out.point.y, max);
     resp->success = worked;
     if (!worked) {
         logEvent(EventType::INFO, Severity::HIGH, "Failed to get elevation data! Cannot proceed in terrain.");
@@ -859,7 +860,7 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
         resp->home_offset = altitude_offset_;
         target_altitude_ = target_agl_  + altitude_offset_;
         resp->target_altitude = target_altitude_;
-        std::cout << "setting new alt params with home elev " << home_elevation_ << ", alt offset " << altitude_offset_ << ", min " << min << " and max " << max << std::endl;
+        std::cout << "setting new alt params with home elev " << home_elevation_ << ", alt offset " << altitude_offset_ << " and max " << max << std::endl;
         setAltitudeParams(max_agl_ + altitude_offset_, min_agl_ + altitude_offset_, target_agl_ + altitude_offset_);
     }
 }
