@@ -39,7 +39,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "messages_88/srv/emergency.hpp"
 #include "messages_88/srv/geopoint.hpp"
 #include "messages_88/srv/save.hpp"
-#include "messages_88/srv/set_float.hpp"
 #include "messages_88/srv/get_map_data.hpp"
 
 #include "pcl_conversions/pcl_conversions.h"
