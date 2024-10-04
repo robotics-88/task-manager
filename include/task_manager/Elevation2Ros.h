@@ -122,7 +122,7 @@ public:
             int start_c = pixel_c - floor(width / 2);
             int len_r = height - floor(height / 2);
             int len_c = width - floor(width / 2);
-            cv::Rect roi(start_r, start_c, len_r, len_c);
+            cv::Rect roi(start_c, start_r, len_c, len_r);
             cv::Mat submat = dem_cv(roi);
             chunk = submat.clone(); // Required to protect the original mat data
             return true;
