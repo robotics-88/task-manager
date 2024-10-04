@@ -118,15 +118,20 @@ FlightControllerInterface::FlightControllerInterface(const std::shared_ptr<rclcp
     battery_pub_ = node_->create_publisher<messages_88::msg::Battery>("/decco/battery", 10);
 
     if (!offline_) {
-        // Request mavlink streams now to hopefully get some data
-        requestMavlinkStreams();
 
-        // Param fetch takes about 45 seconds in sim, 15 seconds on drone
-        int approx_time_to_fetch = simulate_ ? 45 : 15;
+        // Todo: allow some time for stream rates to settle
+        // If stream rates not okay, request them and sleep, param fetch probably needs to complete
+        if (!battery_rate_ok_ || !imu_rate_ok_) {
+            requestMavlinkStreams();
 
-        RCLCPP_INFO(node_->get_logger(), "Flight controller interface waiting %is for param fetch to complete", (int)approx_time_to_fetch);
-        for (unsigned i = 0; i < approx_time_to_fetch; i++) {
-            rclcpp::Rate(1.0).sleep();
+            // Param fetch takes about 45 seconds in sim, 15 seconds on drone
+            int approx_time_to_fetch = simulate_ ? 45 : 15;
+
+            RCLCPP_INFO(node_->get_logger(), "Flight controller interface waiting %is for param fetch to complete", (int)approx_time_to_fetch);
+            for (unsigned i = 0; i < approx_time_to_fetch; i++) {
+                rclcpp::Rate(1.0).sleep();
+                rclcpp::spin_some(node_);
+            }
         }
         
         // Now we can initialize

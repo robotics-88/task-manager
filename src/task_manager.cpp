@@ -189,6 +189,11 @@ void TaskManager::initialize() {
     this->get_parameter("lidar_x", lidar_x_);
     this->get_parameter("lidar_z", lidar_z_);
 
+    // Init agl altitude params
+    max_agl_ = max_altitude_;
+    min_agl_ = min_altitude_;
+    target_agl_ = target_altitude_;
+    
     // SLAM pose sub
     slam_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(slam_pose_topic_, 10, std::bind(&TaskManager::slamPoseCallback, this, _1));
 
@@ -845,23 +850,25 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
     map2UtmPoint(in, out);
     std::cout << "at intput (" << in.point.x << ", " << in.point.y << ", output utm was " << out.point.x << ", " << out.point.y << std::endl;
     sensor_msgs::msg::Image chunk;
-    double max, min;
-    bool worked = hello_decco_manager_->getElevationValue(out.point.x, out.point.y, max);
+    double ret_altitude;
+    bool worked = hello_decco_manager_->getElevationValue(out.point.x, out.point.y, ret_altitude);
     resp->success = worked;
     if (!worked) {
         logEvent(EventType::INFO, Severity::HIGH, "Failed to get elevation data! Cannot proceed in terrain.");
         return false;
     }
     resp->tif_mat = chunk;
-    resp->max_altitude = max;
+    resp->ret_altitude = ret_altitude;
+
+    RCLCPP_INFO(this->get_logger(), "Altitude at utm: %fm", ret_altitude);
 
     if (req->adjust_params) {
-        altitude_offset_ = max - home_elevation_;
+        altitude_offset_ = ret_altitude - home_elevation_;
         resp->home_offset = altitude_offset_;
         target_altitude_ = target_agl_  + altitude_offset_;
         resp->target_altitude = target_altitude_;
-        std::cout << "setting new alt params with home elev " << home_elevation_ << ", alt offset " << altitude_offset_ << " and max " << max << std::endl;
-        setAltitudeParams(max_agl_ + altitude_offset_, min_agl_ + altitude_offset_, target_agl_ + altitude_offset_);
+        std::cout << "setting new alt params with home elev " << home_elevation_ << ", alt offset " << altitude_offset_ << " and target " << target_altitude_ << std::endl;
+        setAltitudeParams(max_agl_ + altitude_offset_, min_agl_ + altitude_offset_, target_altitude_);
     }
 }
 
