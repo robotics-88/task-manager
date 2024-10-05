@@ -81,6 +81,8 @@ TaskManager::TaskManager() : Node("task_manager")
     , needs_takeoff_(false)
     , last_rid_updated_timestamp_(0)
     , operator_id_("")
+    , hd_drone_id_(0)
+    , start_time_(0)
     , last_lidar_stamp_(0, 0, RCL_ROS_TIME)
     , last_slam_pos_stamp_(0, 0, RCL_ROS_TIME)
     , last_path_planner_stamp_(0, 0, RCL_ROS_TIME)
@@ -105,7 +107,7 @@ TaskManager::TaskManager() : Node("task_manager")
 }
 
 void TaskManager::initialize() {
-    std::cout << "TM entered init" << std::endl;
+    RCLCPP_INFO(this->get_logger(), "TM entered init");
 
     this->declare_parameter("enable_autonomy", enable_autonomy_);
     this->declare_parameter("use_failsafes", use_failsafes_);
@@ -316,11 +318,11 @@ TaskManager::~TaskManager(){
             }
             pcd_save_dir += file_name;
             pcl::PCDWriter pcd_writer;
-            std::cout << "current scan saved to /PCD/" << file_name<<std::endl;
+            RCLCPP_INFO(this->get_logger(), "current scan saved to /PCD/%s", file_name.c_str());
             pcd_writer.writeBinary(pcd_save_dir, *pcl_save_);
         }
         else {
-            std::cout << "No pointclouds to save" << std::endl;
+            RCLCPP_INFO(this->get_logger(), "No pointclouds to save");
         }
     }
 }
@@ -400,7 +402,7 @@ void TaskManager::runTaskManager() {
         case Task::MANUAL_FLIGHT: {
             if (!hello_decco_manager_->getElevationInit()) {
                 hello_decco_manager_->getHomeElevation(home_elevation_);
-                std::cout << "got home elevation in manual mode : " << home_elevation_ << std::endl;
+                RCLCPP_INFO(this->get_logger(),"got home elevation in manual mode : %f", home_elevation_);
             }
             if (!flight_controller_interface_->getIsArmed()) {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Drone disarmed manually");
@@ -454,7 +456,6 @@ void TaskManager::runTaskManager() {
             }
             else {
                 if (lawnmower_started_ && !lawnmowerGoalComplete()) {
-                    // std::cout << "Waiting for goal complete" << std::cout;
                     break;
                 }
                 else {
@@ -818,7 +819,6 @@ bool TaskManager::convert2Geo(const std::shared_ptr<rmw_request_id_t>/*request_h
                                 const std::shared_ptr<messages_88::srv::Geopoint::Request> req,
                                 const std::shared_ptr<messages_88::srv::Geopoint::Response> resp) {
     // Sanity check UTM
-    std::cout << "got geo request in TM" << std::endl;
     if (home_utm_zone_ != flight_controller_interface_->getUTMZone()) {
         logEvent(EventType::INFO, Severity::LOW, "UTM zones crossed. Home UTM: " + std::to_string(home_utm_zone_) + 
                                                  "Now UTM: " + std::to_string(flight_controller_interface_->getUTMZone()));
@@ -848,7 +848,7 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
     geometry_msgs::msg::PointStamped in, out;
     in.point = map_point;
     map2UtmPoint(in, out);
-    std::cout << "at intput (" << in.point.x << ", " << in.point.y << ", output utm was " << out.point.x << ", " << out.point.y << std::endl;
+    RCLCPP_INFO(this->get_logger(), "at intput (%f, %f) output utm was (%f, %f)", in.point.x, in.point.y, out.point.x, out.point.y);
     sensor_msgs::msg::Image chunk;
     double ret_altitude;
     bool worked = hello_decco_manager_->getElevationValue(out.point.x, out.point.y, ret_altitude);
@@ -867,7 +867,7 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
         resp->home_offset = altitude_offset_;
         target_altitude_ = target_agl_  + altitude_offset_;
         resp->target_altitude = target_altitude_;
-        std::cout << "setting new alt params with home elev " << home_elevation_ << ", alt offset " << altitude_offset_ << " and target " << target_altitude_ << std::endl;
+        RCLCPP_INFO(this->get_logger(),"setting new alt params with home elev %f, alt offset %f, and target alt: %f.", home_elevation_, altitude_offset_, target_altitude_);
         setAltitudeParams(max_agl_ + altitude_offset_, min_agl_ + altitude_offset_, target_altitude_);
     }
 }
@@ -888,6 +888,10 @@ void TaskManager::heartbeatTimerCallback() {
             {"stamp", static_cast<float>(hb.header.stamp.sec) + static_cast<float>(hb.header.stamp.nanosec) / 1e9}
         }}
     };
+    if (in_autonomous_flight_) {
+        j["deccoId"] = hd_drone_id_;
+        j["startTime"] = start_time_;
+    }
     hello_decco_manager_->packageToTymbalHD("decco_heartbeat", j);
 
     // rclcpp::Time now_time = this->get_clock()->now();
@@ -1317,7 +1321,12 @@ void TaskManager::explore_result_callback(const ExploreGoalHandle::WrappedResult
 
 void TaskManager::packageFromTymbal(const std_msgs::msg::String::SharedPtr msg) {
     json mapver_json = json::parse(msg->data);
-    std::string topic = mapver_json["topic"];
+    if (!mapver_json.contains("topic")) {
+        RCLCPP_ERROR(this->get_logger(), "Received tymbal message without topic, ignoring.");
+        logEvent(TASK_STATUS, HIGH, "Bad message sent to drone, ignoring.");
+        return;
+    }
+    std::string topic = static_cast<std::string>(mapver_json["topic"]);
     json gossip_json = mapver_json["gossip"];
     if (topic == "flight_send") {
         acceptFlight(gossip_json);
@@ -1326,7 +1335,7 @@ void TaskManager::packageFromTymbal(const std_msgs::msg::String::SharedPtr msg) 
         setpointResponse(gossip_json);
     }
     else if (topic == "emergency") {
-        std::string severity = gossip_json["severity"];
+        std::string severity = static_cast<std::string>(gossip_json["severity"]);
         emergencyResponse(severity);
     }
     else if (topic == "altitudes") {
@@ -1334,6 +1343,9 @@ void TaskManager::packageFromTymbal(const std_msgs::msg::String::SharedPtr msg) 
     }
     else if (topic == "heartbeat") {
         remoteIDResponse(gossip_json);
+    }
+    else {
+        RCLCPP_ERROR(this->get_logger(), "Got a tymbal topic I don't understand.");
     }
 }
 
@@ -1343,12 +1355,14 @@ void TaskManager::acceptFlight(json flight) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Not ready for flight, try again after initialized");
         return;
     }
-    burn_unit_name_ = flight["burnUnitName"];
+    burn_unit_name_ = static_cast<std::string>(flight["burnUnitName"]);
+    hd_drone_id_ = flight["droneId"];
+    start_time_ = decco_utilities::rosTimeToMilliseconds(this->get_clock()->now());
 
     hello_decco_manager_->setDroneLocationLocal(slam_pose_);
     bool geofence_ok;
     hello_decco_manager_->acceptFlight(flight, geofence_ok, home_elevation_);
-    std::cout << "got home elevation : " << home_elevation_ << std::endl;
+    RCLCPP_INFO(this->get_logger(), "got home elevation : %f", home_elevation_);
 
     if (!geofence_ok) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Geofence invalid, not setting geofence");
@@ -1365,7 +1379,7 @@ void TaskManager::acceptFlight(json flight) {
         getLawnmowerPattern(map_polygon_, lawnmower_points_);
         visualizeLawnmower();
         survey_type_ = SurveyType::SUPER;
-        std::cout << "lawnmower starting. " << std::endl;
+        RCLCPP_INFO(this->get_logger(),"lawnmower starting. ");
     }
     else {
         survey_type_ = SurveyType::SUB;
@@ -1728,6 +1742,8 @@ void TaskManager::logEvent(EventType type, Severity sev, std::string description
     hello_decco_manager_->packageToTymbalHD("event", j);
 
     if (in_autonomous_flight_) {
+        j["deccoId"] = hd_drone_id_;
+        j["startTime"] = start_time_;
         sensor_msgs::msg::NavSatFix hb = flight_controller_interface_->getCurrentGlobalPosition();
         json ll_json = {
             {"latitude", hb.latitude},

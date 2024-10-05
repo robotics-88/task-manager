@@ -323,6 +323,8 @@ class TaskManager : public rclcpp::Node
 
         Task current_task_;
         rclcpp::TimerBase::SharedPtr status_timer_;
+        int hd_drone_id_;
+        unsigned long start_time_;
 
         // Explicit UTM param handling
         bool explicit_global_params_;

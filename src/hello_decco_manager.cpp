@@ -128,7 +128,6 @@ bool HelloDeccoManager::getHomeElevation(double &value) {
         elevationInitializer();
     }
     value = elevation_source_.getElevation(-1 * utm_x_offset_, -1 * utm_y_offset_);
-    std::cout << "got home elevation at utm " << utm_x_offset_ << ", " << utm_y_offset_ << " and value was " << value << std::endl;
     return true;
 }
 
