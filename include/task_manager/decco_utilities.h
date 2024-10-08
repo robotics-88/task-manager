@@ -6,8 +6,9 @@ Author: Gus Meyer <gus@robotics88.com>
 #ifndef DECCO_UTILITIES_H_
 #define DECCO_UTILITIES_H_
 
-#include <ros/ros.h>
-#include <geometry_msgs/Polygon.h>
+#include "rclcpp/rclcpp.hpp"
+#include "geometry_msgs/msg/point.hpp"
+#include "geometry_msgs/msg/polygon.hpp"
 
 #include <GeographicLib/GeoCoords.hpp>
 
@@ -21,7 +22,7 @@ namespace decco_utilities
         double dist_z = point_b.z - point_a.z;
 
         return sqrt(dist_x * dist_x + dist_y * dist_y + dist_z * dist_z);
-    };
+    }
 
     template<typename T>
     double distance_xy(const T point_a, const T point_b) {
@@ -29,7 +30,13 @@ namespace decco_utilities
         double dist_y = point_b.y - point_a.y;
 
         return sqrt(dist_x * dist_x + dist_y * dist_y);
-    };
+    }
+
+    template<typename T, typename T2>
+    bool isInAcceptanceRadius(const T point_a, const T point_b, T2 acceptance_radius)
+    {
+        return distance(point_b, point_a) <= acceptance_radius; // Goal reached if within a meter
+    }
 
     // Determines if line segment between point_a and point_b has an orthogonal line segment that intersects the "origin" point
     template<typename T>
@@ -55,7 +62,7 @@ namespace decco_utilities
         // Solving for t, we find equation
         double numerator = x1 * x1 - x1*x2 + y1 * y1 - y1*y2;
         double denomenator = (x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2);
-        if (abs(denomenator) <= DBL_EPSILON) {
+        if (abs(denomenator) <= __DBL_EPSILON__) {
             return false;
         }
 
@@ -78,7 +85,7 @@ namespace decco_utilities
     }
 
     template<typename T>
-    bool isInside(const geometry_msgs::Polygon polygon, const T point)
+    bool isInside(const geometry_msgs::msg::Polygon polygon, const T point)
     {
         // Determine if the given point is inside the polygon using the number of crossings method
         // https://wrf.ecse.rpi.edu//Research/Short_Notes/pnpoly.html
@@ -100,7 +107,7 @@ namespace decco_utilities
         return cross % 2 > 0;
     }
 
-    unsigned long rosTimeToMilliseconds(const ros::Time ros_time);
+    unsigned long rosTimeToMilliseconds(const rclcpp::Time ros_time);
     
     void llToUtm(const double lat, const double lon, int &zone, double &utm_x, double &utm_y);
     void utmToLL(const double utm_x, const double utm_y, const int zone, double &lat, double &lon);

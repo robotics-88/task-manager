@@ -6,20 +6,26 @@ Author: Erin Linebarger <erin@robotics88.com>
 #ifndef HELLO_DECCO_MANAGER_H_
 #define HELLO_DECCO_MANAGER_H_
 
-#include <ros/ros.h>
+#include "rclcpp/rclcpp.hpp"
 
-#include <geometry_msgs/Point.h>
-#include <geometry_msgs/PointStamped.h>
-#include <geometry_msgs/Polygon.h>
-#include <std_msgs/String.h>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
-#include <tf2_ros/transform_listener.h>
-#include <sensor_msgs/NavSatFix.h>
+#include "mavros_msgs/srv/waypoint_push.hpp"
+#include "geometry_msgs/msg/point.hpp"
+#include "geometry_msgs/msg/point_stamped.hpp"
+#include "geometry_msgs/msg/polygon.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
+#include "sensor_msgs/msg/nav_sat_fix.hpp"
+#include "std_msgs/msg/string.hpp"
+#include "visualization_msgs/msg/marker.hpp"
 
-#include <ConcavePolygon.h>
-#include <CentroidSplitter.h>
+#include <cv_bridge/cv_bridge.h>               // cv_bridge converts between ROS 2 image messages and OpenCV image representations.
+#include <opencv2/opencv.hpp>                  // We include everything about OpenCV as we don't care much about compilation time at the moment.
 
-#include <task_manager/json.hpp>
+#include "ConcavePolygon.h"
+#include "CentroidSplitter.h"
+
+#include "task_manager/Elevation2Ros.h"
+
+#include "task_manager/json.hpp"
 using json = nlohmann::json;
 
 namespace hello_decco_manager {
@@ -27,33 +33,42 @@ namespace hello_decco_manager {
  * @class HelloDeccoManager
  * @brief Manages interactions with Hello Decco
  */
-class HelloDeccoManager {
-
+class HelloDeccoManager
+{
     public:
-        HelloDeccoManager(ros::NodeHandle& node);
+        HelloDeccoManager(const std::shared_ptr<rclcpp::Node>& node);
         ~HelloDeccoManager();
 
-        void acceptFlight(json msgJson, int utm_zone, bool &geofence_ok);
-        void updateFlightStatus(int index, std::string flight_status);
+        void acceptFlight(json msgJson, bool &geofence_ok, double &home_elevation);
+        void updateFlightStatus(std::string flight_status);
         void setUtm(double utm_x, double utm_y, int zone) {
             utm_x_offset_ = -utm_x;
             utm_y_offset_ = -utm_y;
             utm_zone_ = zone;
         }
-        geometry_msgs::Polygon polygonFromJson(json jsonPolygon);
-        geometry_msgs::Polygon polygonToMap(const geometry_msgs::Polygon &polygon);
+        geometry_msgs::msg::Polygon polygonFromJson(json jsonPolygon);
+        geometry_msgs::msg::Polygon polygonToMap(const geometry_msgs::msg::Polygon &polygon);
         void packageToTymbalHD(std::string topic, json gossip);
         void packageToTymbalPuddle(std::string topic, json gossip);
 
-        void setDroneLocationLocal(geometry_msgs::PoseStamped location) {
+        void setDroneLocationLocal(geometry_msgs::msg::PoseStamped location) {
             drone_location_ = location;
         }
 
-        geometry_msgs::Polygon getMapPolygon() { 
+        geometry_msgs::msg::Polygon getMapPolygon() { 
             return map_region_;
         }
 
+        bool getElevationChunk(const double utm_x, const double utm_y, const int width, const int height, sensor_msgs::msg::Image &chunk, double &max, double &min);
+        bool getElevationValue(const double utm_x, const double utm_y, double &value);
+        bool getHomeElevation(double &value);
+        bool getElevationInit() {
+            return elevation_init_;
+        }
+
     private:
+        const std::shared_ptr<rclcpp::Node> node_;
+
         enum FlightStatus {
             NOT_STARTED,
             ACTIVE,
@@ -66,43 +81,42 @@ class HelloDeccoManager {
             PUT
         };
 
-        ros::NodeHandle private_nh_;
-        ros::NodeHandle nh_;
-
         // Frames/TF
         std::string mavros_map_frame_;
-        std::string slam_map_frame_;
-        tf2_ros::Buffer tf_buffer_;
-        tf2_ros::TransformListener tf_listener_;
         double utm_x_offset_;
         double utm_y_offset_;
         int utm_zone_;
-        geometry_msgs::PoseStamped drone_location_;
+        geometry_msgs::msg::PoseStamped drone_location_;
 
         // tymbal
-        ros::Publisher tymbal_hd_pub_;
-        ros::Publisher tymbal_puddle_pub_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr tymbal_hd_pub_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr tymbal_puddle_pub_;
 
         json flight_json_;
-        ros::Publisher map_region_pub_;
+        rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr map_region_pub_;
         unsigned long start_time_;
         unsigned long end_time_;
 
+        // Elevation
+        elevation2ros::Elevation2Ros elevation_source_;
+        bool elevation_init_;
+
         // MAVROS geofence publisher
-        ros::ServiceClient mavros_geofence_client_;
+        rclcpp::Client<mavros_msgs::srv::WaypointPush>::SharedPtr mavros_geofence_client_;
 
         // Subpolygon creation variables
         std::vector<cxd::Vertex > vertices_;
-        geometry_msgs::Polygon map_region_; // Entire unit
-        std::vector<geometry_msgs::Polygon> local_subpolygons_; // Flight units
+        geometry_msgs::msg::Polygon map_region_; // Entire unit
+        std::vector<geometry_msgs::msg::Polygon> local_subpolygons_; // Flight units
         double flightleg_area_m2_;
 
-        void flightReceipt();
-        void polygonInitializer(const geometry_msgs::Polygon &msg, bool make_legs, bool &geofence_ok);
+        void flightReceipt(const int id);
+        void polygonInitializer(const geometry_msgs::msg::Polygon &msg, bool make_legs, bool &geofence_ok);
+        void elevationInitializer();
 
         // Polygon mgmt
-        bool polygonToGeofence(const geometry_msgs::Polygon &polygon);
-        int polygonNumFlights(const geometry_msgs::Polygon &polygon);
+        bool polygonToGeofence(const geometry_msgs::msg::Polygon &polygon);
+        int polygonNumFlights(const geometry_msgs::msg::Polygon &polygon);
         int concaveToMinimalConvexPolygons();
         void visualizeLegs();
         void visualizePolygon();

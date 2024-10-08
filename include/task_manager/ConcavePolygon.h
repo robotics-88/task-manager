@@ -590,7 +590,7 @@ public:
 
     Vec2 getPoint(unsigned int index) const
     {
-        if(index >= 0 && index < vertices.size())
+        if(index < vertices.size())
             return vertices[index].position;
 
         return {0.0f, 0.0f};

@@ -6,7 +6,7 @@
 #include <map>
 #include <iostream>
 
-#include <geometry_msgs/Polygon.h>
+#include <geometry_msgs/msg/polygon.hpp>
 
 namespace centroid_splitter
 {
@@ -150,11 +150,11 @@ struct LineSegment
 struct Polygon2Split
 {
     Polygon2Split() {}
-    Polygon2Split(geometry_msgs::Polygon const &polygon) : original(polygon) {
+    Polygon2Split(geometry_msgs::msg::Polygon const &polygon) : original(polygon) {
         // Get area, polygon is in meters/local map coordinates so no need for geodesic
         double x_sum = 0, y_sum = 0, xy_sum = 0, sum_x_square = 0;
-        int N = polygon.points.size();
-        for (int ii = 0; ii<N; ii++) {
+        unsigned N = polygon.points.size();
+        for (unsigned ii = 0; ii<N; ii++) {
             // Add to avgs
             x_sum += polygon.points.at(ii).x;
             y_sum += polygon.points.at(ii).y;
@@ -162,7 +162,7 @@ struct Polygon2Split
             sum_x_square += polygon.points.at(ii).x * polygon.points.at(ii).x;
             // Make edge
             Vec2 start_pos(polygon.points.at(ii).x, polygon.points.at(ii).y);
-            int next_ind = ii + 1;
+            unsigned next_ind = ii + 1;
             if (next_ind == polygon.points.size()) {
                 next_ind = 0;
             }
@@ -187,7 +187,7 @@ struct Polygon2Split
     Vec2 centroid;
     std::vector<double> blfs_params;
     LineSegment opposite_line;
-    geometry_msgs::Polygon original;
+    geometry_msgs::msg::Polygon original;
     std::vector<Vertex> vertices;
     std::vector<LineSegment> edges;
 };
@@ -195,7 +195,7 @@ struct Polygon2Split
 class CentroidSplitter
 {
     typedef std::vector<Polygon2Split > PolygonArray;
-    typedef std::vector<geometry_msgs::Polygon > OutputArray;
+    typedef std::vector<geometry_msgs::msg::Polygon > OutputArray;
 
     Polygon2Split original_polygon;
     OutputArray outputPolygons;
@@ -204,7 +204,7 @@ class CentroidSplitter
 
 
 public:
-    CentroidSplitter(geometry_msgs::Polygon const & _polygon, double _threshold) : original_polygon{_polygon}, area_threshold(_threshold)
+    CentroidSplitter(geometry_msgs::msg::Polygon const & _polygon, double _threshold) : original_polygon{_polygon}, area_threshold(_threshold)
     {
         assignArea();
         assignOppositeLine();
@@ -244,20 +244,20 @@ public:
 
     }
 
-    std::vector<geometry_msgs::Polygon> slicePolygon()
+    std::vector<geometry_msgs::msg::Polygon> slicePolygon()
     {
-        std::vector<geometry_msgs::Polygon> polys;
+        std::vector<geometry_msgs::msg::Polygon> polys;
         // fill in recursive alg, and produce outputPolygons on finish
         if (original_polygon.area < area_threshold) {
             polys.push_back(original_polygon.original);
         }
         else {
-            geometry_msgs::Polygon poly1, poly2;
+            geometry_msgs::msg::Polygon poly1, poly2;
             halvePolygon(poly1, poly2);
             CentroidSplitter centroid1 = CentroidSplitter(poly1, area_threshold);
             CentroidSplitter centroid2 = CentroidSplitter(poly2, area_threshold);
-            std::vector<geometry_msgs::Polygon> result1 = centroid1.slicePolygon();
-            std::vector<geometry_msgs::Polygon> result2 = centroid2.slicePolygon();
+            std::vector<geometry_msgs::msg::Polygon> result1 = centroid1.slicePolygon();
+            std::vector<geometry_msgs::msg::Polygon> result2 = centroid2.slicePolygon();
             if (polys.empty()) {
                 polys = result1;
             }
@@ -269,12 +269,12 @@ public:
         return polys;
     }
 
-    void halvePolygon(geometry_msgs::Polygon &poly1, geometry_msgs::Polygon &poly2) {
+    void halvePolygon(geometry_msgs::msg::Polygon &poly1, geometry_msgs::msg::Polygon &poly2) {
         // Only guaranteed for convex shapes
         std::vector<int> indices;
-        int intersect_count = 0;
+        unsigned intersect_count = 0;
         std::vector<Vec2> intersection_vertex;
-        for (int nn = 0; nn < original_polygon.edges.size(); nn++) {
+        for (unsigned nn = 0; nn < original_polygon.edges.size(); nn++) {
             std::pair<bool, Vec2 > intersectionResult = LineSegment::intersects(original_polygon.edges.at(nn), original_polygon.opposite_line);
             if (intersectionResult.first) {
                 intersect_count++;
@@ -301,16 +301,16 @@ public:
         }
     }
 
-    void addVerticesBetweenIndices(std::vector<Vec2> &vertices, const int start_ind, const int end_ind) {
-        int len;
+    void addVerticesBetweenIndices(std::vector<Vec2> &vertices, const unsigned start_ind, const unsigned end_ind) {
+        unsigned len;
         if (end_ind > start_ind) {
             len = end_ind - start_ind;
         }
         else {
             len = end_ind + (original_polygon.edges.size() - start_ind);
         }
-        int index = start_ind;
-        for (int nn = 0; nn < len; nn++) {
+        unsigned index = start_ind;
+        for (unsigned nn = 0; nn < len; nn++) {
             index++; // Skip the first line segment
             if (index >= original_polygon.edges.size()) {
                 index -= original_polygon.edges.size();
@@ -320,16 +320,16 @@ public:
 
     }
 
-    void geometryFromVertices(const std::vector<Vec2> vertices, geometry_msgs::Polygon &polygon) {
-        for (int nn = 0; nn < vertices.size(); nn++) {
-            geometry_msgs::Point32 pt;
+    void geometryFromVertices(const std::vector<Vec2> vertices, geometry_msgs::msg::Polygon &polygon) {
+        for (unsigned nn = 0; nn < vertices.size(); nn++) {
+            geometry_msgs::msg::Point32 pt;
             pt.x = vertices.at(nn).x;
             pt.y = vertices.at(nn).y;
             polygon.points.push_back(pt);
         }
     }
 
-    std::vector<geometry_msgs::Polygon> getSubpolygons() {
+    std::vector<geometry_msgs::msg::Polygon> getSubpolygons() {
         return outputPolygons;
     }
 
