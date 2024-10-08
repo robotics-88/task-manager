@@ -79,6 +79,14 @@ void HelloDeccoManager::flightReceipt(const int id) {
     packageToTymbalHD("flight_confirm", msg);
 }
 
+void HelloDeccoManager::rejectFlight(json msgJson) {
+    int id = msgJson["id"];
+    flightReceipt(id);
+    // Parse data
+    flight_json_ = msgJson;
+    RCLCPP_INFO(node_->get_logger(), "Flight received was rejected.");
+}
+
 void HelloDeccoManager::acceptFlight(json msgJson, bool &geofence_ok, double &home_elevation) {
     int id = msgJson["id"];
     flightReceipt(id);

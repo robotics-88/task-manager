@@ -36,6 +36,7 @@ TaskManager::TaskManager() : Node("task_manager")
     , utm_tf_init_(false)
     , enable_autonomy_(false)
     , use_failsafes_(false)
+    , do_trail_(false)
     , target_altitude_(3.0)
     , target_agl_(3.0)
     , min_altitude_(2.0)
@@ -115,6 +116,7 @@ void TaskManager::initialize() {
     this->declare_parameter("min_alt", min_altitude_);
     this->declare_parameter("max_alt", max_altitude_);
     this->declare_parameter("max_dist_to_polygon", max_dist_to_polygon_);
+    this->declare_parameter("do_trail", do_trail_);
 
     std::string goal_topic = "/mavros/setpoint_position/local";
     this->declare_parameter("goal_topic", goal_topic);
@@ -158,6 +160,7 @@ void TaskManager::initialize() {
     this->get_parameter("min_alt", min_altitude_);
     this->get_parameter("max_alt", max_altitude_);
     this->get_parameter("max_dist_to_polygon", max_dist_to_polygon_);
+    this->get_parameter("do_trail", do_trail_);
     this->get_parameter("goal_topic", goal_topic);
     this->get_parameter("do_slam", do_slam_);
     this->get_parameter("do_record", do_record_);
@@ -553,7 +556,14 @@ void TaskManager::startTransit() {
 
 void TaskManager::startExploration() {
     if (survey_type_ == SurveyType::SUPER) {
+        getLawnmowerPattern(map_polygon_, lawnmower_points_);
+        visualizeLawnmower();
         updateCurrentTask(Task::LAWNMOWER);
+        return;
+    }
+    else if (survey_type_ == SurveyType::TRAIL) {
+        startTrailFollowing(true); // TODO trail has no stop condition yet
+        updateCurrentTask(Task::TRAIL_FOLLOW);
         return;
     }
 
@@ -1142,6 +1152,7 @@ std::string TaskManager::getTaskString(Task task) {
         case Task::PAUSE:                  return "PAUSE";
         case Task::EXPLORING:              return "EXPLORING";
         case Task::LAWNMOWER:              return "LAWNMOWER";
+        case Task::TRAIL_FOLLOW:           return "TRAIL_FOLLOW";
         case Task::IN_TRANSIT:             return "IN_TRANSIT";
         case Task::RTL_88:                 return "RTL_88";
         case Task::TAKING_OFF:             return "TAKING_OFF";
@@ -1359,6 +1370,26 @@ void TaskManager::acceptFlight(json flight) {
     hd_drone_id_ = flight["droneId"];
     start_time_ = decco_utilities::rosTimeToMilliseconds(this->get_clock()->now());
 
+    std::string type = static_cast<std::string>(flight["type"]);
+    if (type == "PERI") {
+        getLawnmowerPattern(map_polygon_, lawnmower_points_);
+        visualizeLawnmower();
+        survey_type_ = SurveyType::SUPER;
+        RCLCPP_INFO(this->get_logger(),"lawnmower starting. ");
+    }
+    else if (type == "POST") {
+        // TODO update types in HD
+        if (!do_trail_) {
+            logEvent(EventType::INFO, Severity::HIGH, "Trail requested but trail detector not active.");
+            hello_decco_manager_->rejectFlight(flight);
+            return;
+        }
+        survey_type_ = SurveyType::TRAIL;
+    }
+    else {
+        survey_type_ = SurveyType::SUB;
+    }
+
     hello_decco_manager_->setDroneLocationLocal(slam_pose_);
     bool geofence_ok;
     hello_decco_manager_->acceptFlight(flight, geofence_ok, home_elevation_);
@@ -1374,19 +1405,35 @@ void TaskManager::acceptFlight(json flight) {
         return;
     }
 
-    std::string type = static_cast<std::string>(flight["type"]);
-    if (type == "PERI") {
-        getLawnmowerPattern(map_polygon_, lawnmower_points_);
-        visualizeLawnmower();
-        survey_type_ = SurveyType::SUPER;
-        RCLCPP_INFO(this->get_logger(),"lawnmower starting. ");
+    if (offline_) {
+        updateCurrentTask(Task::IN_TRANSIT); // TODO find a better way to make auton possible in offline mode
     }
     else {
-        survey_type_ = SurveyType::SUB;
+        needs_takeoff_ = true;
     }
+}
 
-    needs_takeoff_ = true;
+// TODO where should this live?
+void TaskManager::startTrailFollowing(bool start) {
+    // Start trail goal enabled in pcl analysis
+    auto parameter = rcl_interfaces::msg::Parameter();
+    auto request = std::make_shared<rcl_interfaces::srv::SetParametersAtomically::Request>();
 
+    auto client = this->create_client<rcl_interfaces::srv::SetParametersAtomically>("trail_enabled_service"); // E.g.: serviceName = "/turtlesim/set_parameters_atomically"
+
+    parameter.name = "trails_enabled";  // E.g.: parameter_name = "background_b"
+    parameter.value.type = 1;          //  bool = 1,    int = 2,        float = 3,     string = 4
+    parameter.value.bool_value = start; // .bool_value, .integer_value, .double_value, .string_value
+    request->parameters.push_back(parameter);
+
+    while (!client->wait_for_service(1s)) {
+        if (!rclcpp::ok()) {
+        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Interrupted while waiting for the service. Exiting.");
+        return;
+        }
+        RCLCPP_INFO_STREAM(this->get_logger(), "universal altitude param service not available, waiting again..."); 
+    }
+    auto result = client->async_send_request(request);
 }
 
 // TODO where should this live?

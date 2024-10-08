@@ -18,6 +18,7 @@
 
     <arg name="enable_autonomy" default="false"/>
     <arg name="use_failsafes" default="false"/>
+    <arg name="do_trail" default="false"/>
     
     <arg name="default_alt" default="2.0"/>
     <arg name="min_alt" default="2.0"/>
@@ -71,6 +72,7 @@
         <param name="max_alt" value="$(var max_alt)"/>
         <param name="max_dist_to_polygon" value="$(var max_dist_to_polygon)"/>
         <param name="flightleg_area_acres" value="$(var flightleg_area_acres)"/>
+        <param name="do_trail" value="$(var do_trail)"/>
         <param name="all_stream_rate" value="5.0"/>
         <param name="imu_rate" value="120.0"/>
         <param name="local_pos_rate" value="60.0"/>

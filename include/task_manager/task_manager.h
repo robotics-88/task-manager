@@ -78,6 +78,7 @@ class TaskManager : public rclcpp::Node
             PAUSE,
             EXPLORING,
             LAWNMOWER,
+            TRAIL_FOLLOW,
             IN_TRANSIT,
             RTL_88,
             TAKING_OFF,
@@ -96,7 +97,8 @@ class TaskManager : public rclcpp::Node
 
         enum SurveyType {
             SUB,
-            SUPER
+            SUPER,
+            TRAIL
         };
 
         enum Severity {
@@ -224,6 +226,7 @@ class TaskManager : public rclcpp::Node
         bool do_slam_;
         bool enable_autonomy_;
         bool use_failsafes_;
+        bool do_trail_;
 
         bool do_attollo_;
         bool do_mapir_;
@@ -349,6 +352,7 @@ class TaskManager : public rclcpp::Node
         void startLanding();
         void startFailsafeLanding();
         void startPause();
+        void startTrailFollowing(bool start);
         
         // Other methods
         bool isBatteryOk();
