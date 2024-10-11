@@ -224,7 +224,7 @@ geometry_msgs::msg::Polygon HelloDeccoManager::polygonToMap(const geometry_msgs:
     for (unsigned ii = 0; ii < polygon.points.size(); ii++) {
         geometry_msgs::msg::Point32 poly_point;
         double px, py;
-        decco_utilities::llToMap(polygon.points.at(ii).x, polygon.points.at(ii).y, px, py, utm_x_offset_, utm_y_offset_);
+        llToMap(polygon.points.at(ii).x, polygon.points.at(ii).y, px, py);
         poly_point.x = px;
         poly_point.y = py;
         map_polygon.points.push_back(poly_point);
@@ -247,7 +247,7 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::msg::Polygon &pol
     geometry_msgs::msg::Polygon polygon_map;
     for (const auto &point : polygon.points) {
         double px, py;
-        decco_utilities::llToMap(point.x, point.y, px, py, utm_x_offset_, utm_y_offset_);
+        llToMap(point.x, point.y, px, py);
         geometry_msgs::msg::Point32 point_map;
         point_map.x = px;
         point_map.y = py;
@@ -494,6 +494,10 @@ void HelloDeccoManager::visualizeLegs() {
         m.points.push_back(p);
         map_region_pub_->publish(m);
     }
+}
+
+void HelloDeccoManager::llToMap(const double lat, const double lon, double &px, double &py) {
+    decco_utilities::llToMap(lat, lon, px, py, utm_x_offset_, utm_y_offset_);
 }
 
 }

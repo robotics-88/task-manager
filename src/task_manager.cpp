@@ -70,6 +70,7 @@ TaskManager::TaskManager() : Node("task_manager")
     , explore_action_result_(rclcpp_action::ResultCode::UNKNOWN)
     , is_armed_(false)
     , in_autonomous_flight_(false)
+    , setpoint_mode_(false)
     , explicit_global_params_(false)
     , init_remote_id_message_sent_(false)
     , takeoff_attempts_(0)
@@ -421,7 +422,7 @@ void TaskManager::runTaskManager() {
             // Once we reach takeoff altitude, transition to next flight state
             if (flight_controller_interface_->getAltitudeAGL() > (target_altitude_ - 1)) {
                 // If not in polygon, start navigation task
-                if (!decco_utilities::isInside(map_polygon_, flight_controller_interface_->getCurrentLocalPosition().pose.position)) {
+                if (setpoint_mode_ || !decco_utilities::isInside(map_polygon_, flight_controller_interface_->getCurrentLocalPosition().pose.position)) {
                     logEvent(EventType::STATE_MACHINE, Severity::LOW, "Transiting to designated survey unit");
                     startTransit();
                 }
@@ -544,8 +545,10 @@ void TaskManager::startTakeoff() {
 
 }
 
-void TaskManager::startTransit() {    
-    padNavTarget(initial_transit_point_);
+void TaskManager::startTransit() {
+    if (!setpoint_mode_) {
+        padNavTarget(initial_transit_point_);
+    }
 
     initial_transit_point_.header.frame_id = mavros_map_frame_;
     initial_transit_point_.header.stamp = this->get_clock()->now();
@@ -1528,8 +1531,26 @@ bool TaskManager::lawnmowerGoalComplete() {
 }
 
 void TaskManager::setpointResponse(json &json_msg) {
-    // ATM, this response is purely a testing function. 
-    startBag();
+    std::cout << "json was " << json_msg.dump(4) << std::endl;
+    double lat = json_msg["latitude"];
+    double lon = json_msg["longitude"];
+    double px, py;
+    hello_decco_manager_->llToMap(lat, lon, px, py);
+
+    // Check distance makes sense
+    double max_dist = 20.0;
+    if (std::abs(px - flight_controller_interface_->getCurrentLocalPosition().pose.position.x) < max_dist && std::abs(py - flight_controller_interface_->getCurrentLocalPosition().pose.position.y) < max_dist) {
+        setpoint_mode_ = true;
+        needs_takeoff_ = true;
+        initial_transit_point_.pose.position.x = px;
+        initial_transit_point_.pose.position.y = py;
+        hello_decco_manager_->packageToTymbalHD("confirmation", json_msg);
+    }
+    else {
+        logEvent(EventType::TASK_STATUS, Severity::HIGH, "Setpoint rejected, farther than max distance.");
+        hello_decco_manager_->packageToTymbalHD("confirmation", json_msg);
+    }
+
 }
 
 void TaskManager::emergencyResponse(const std::string severity) {

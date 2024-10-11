@@ -318,6 +318,7 @@ class TaskManager : public rclcpp::Node
         // State
         bool is_armed_;
         bool in_autonomous_flight_;
+        bool setpoint_mode_;
 
         rclcpp::TimerBase::SharedPtr odid_timer_;
         bool init_remote_id_message_sent_;

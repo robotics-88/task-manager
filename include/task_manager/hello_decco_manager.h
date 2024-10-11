@@ -51,6 +51,7 @@ class HelloDeccoManager
         geometry_msgs::msg::Polygon polygonToMap(const geometry_msgs::msg::Polygon &polygon);
         void packageToTymbalHD(std::string topic, json gossip);
         void packageToTymbalPuddle(std::string topic, json gossip);
+        void llToMap(const double lat, const double lon, double &px, double &py);
 
         void setDroneLocationLocal(geometry_msgs::msg::PoseStamped location) {
             drone_location_ = location;
