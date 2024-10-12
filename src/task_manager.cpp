@@ -1545,6 +1545,10 @@ void TaskManager::setpointResponse(json &json_msg) {
         initial_transit_point_.pose.position.x = px;
         initial_transit_point_.pose.position.y = py;
         hello_decco_manager_->packageToTymbalHD("confirmation", json_msg);
+
+        hello_decco_manager_->setDroneLocationLocal(slam_pose_);\
+        hello_decco_manager_->getHomeElevation(home_elevation_);
+        RCLCPP_INFO(this->get_logger(), "got home elevation : %f", home_elevation_);
     }
     else {
         logEvent(EventType::TASK_STATUS, Severity::HIGH, "Setpoint rejected, farther than max distance.");
