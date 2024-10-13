@@ -242,13 +242,13 @@ class TaskManager : public rclcpp::Node
         bool utm_tf_init_;    
 
         // Control defaults
-        float target_altitude_;
-        float target_agl_;
-        float min_altitude_;
-        float min_agl_;
-        float max_altitude_;
-        float max_agl_;
-        float altitude_offset_;
+        double target_altitude_;
+        double target_agl_;
+        double min_altitude_;
+        double min_agl_;
+        double max_altitude_;
+        double max_agl_;
+        double altitude_offset_;
         double home_elevation_;
         double max_dist_to_polygon_;
 

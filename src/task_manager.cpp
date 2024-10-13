@@ -876,12 +876,29 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
     RCLCPP_INFO(this->get_logger(), "Altitude at utm: %fm", ret_altitude);
 
     if (req->adjust_params) {
+        // Get alt at start
+        geometry_msgs::msg::PoseStamped local = flight_controller_interface_->getCurrentLocalPosition();
+        geometry_msgs::msg::PointStamped in, out;
+        in.point.x = local.pose.position.x;
+        in.point.y = local.pose.position.y;
+        map2UtmPoint(in, out);
+        double my_altitude;
+        hello_decco_manager_->getElevationValue(out.point.x, out.point.y, my_altitude);
+        double my_offset = my_altitude - home_elevation_;
+        // Update internal
         altitude_offset_ = ret_altitude - home_elevation_;
-        resp->home_offset = altitude_offset_;
         target_altitude_ = target_agl_  + altitude_offset_;
+        min_altitude_ = std::min(min_agl_ + altitude_offset_, min_agl_ + my_offset);
+        max_altitude_ = std::max(max_agl_ + altitude_offset_, max_agl_ + my_offset);
+        // Send service
+        resp->home_offset = altitude_offset_;
         resp->target_altitude = target_altitude_;
         RCLCPP_INFO(this->get_logger(),"setting new alt params with home elev %f, alt offset %f, and target alt: %f.", home_elevation_, altitude_offset_, target_altitude_);
-        setAltitudeParams(max_agl_ + altitude_offset_, min_agl_ + altitude_offset_, target_altitude_);
+        // setAltitudeParams(max_altitude_, min_altitude_, target_altitude_);
+
+        this->set_parameter(rclcpp::Parameter("max_alt", max_altitude_));
+        this->set_parameter(rclcpp::Parameter("min_alt", min_altitude_));
+        this->set_parameter(rclcpp::Parameter("default_alt", target_altitude_));
     }
 }
 
