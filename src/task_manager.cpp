@@ -1548,14 +1548,13 @@ bool TaskManager::lawnmowerGoalComplete() {
 }
 
 void TaskManager::setpointResponse(json &json_msg) {
-    std::cout << "json was " << json_msg.dump(4) << std::endl;
     double lat = json_msg["latitude"];
     double lon = json_msg["longitude"];
     double px, py;
     hello_decco_manager_->llToMap(lat, lon, px, py);
 
     // Check distance makes sense
-    double max_dist = 20.0;
+    double max_dist = 100.0;
     if (std::abs(px - flight_controller_interface_->getCurrentLocalPosition().pose.position.x) < max_dist && std::abs(py - flight_controller_interface_->getCurrentLocalPosition().pose.position.y) < max_dist) {
         setpoint_mode_ = true;
         needs_takeoff_ = true;
