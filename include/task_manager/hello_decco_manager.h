@@ -112,7 +112,7 @@ class HelloDeccoManager
         std::vector<geometry_msgs::msg::Polygon> local_subpolygons_; // Flight units
         double flightleg_area_m2_;
 
-        void flightReceipt(const int id);
+        void flightReceipt(json msgJson);
         void polygonInitializer(const geometry_msgs::msg::Polygon &msg, bool make_legs, bool &geofence_ok);
         void elevationInitializer();
 

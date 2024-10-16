@@ -1360,10 +1360,10 @@ void TaskManager::packageFromTymbal(const std_msgs::msg::String::SharedPtr msg) 
     std::string topic = static_cast<std::string>(mapver_json["topic"]);
     json gossip_json = mapver_json["gossip"];
     if (topic == "flight_send") {
-        acceptFlight(gossip_json);
+        acceptFlight(mapver_json);
     }
     else if (topic == "target_setpoint") {
-        setpointResponse(gossip_json);
+        setpointResponse(mapver_json);
     }
     else if (topic == "emergency") {
         std::string severity = static_cast<std::string>(gossip_json["severity"]);
@@ -1380,7 +1380,8 @@ void TaskManager::packageFromTymbal(const std_msgs::msg::String::SharedPtr msg) 
     }
 }
 
-void TaskManager::acceptFlight(json flight) {
+void TaskManager::acceptFlight(json mapver_json) {
+    json flight = mapver_json["gossip"];
 
     if (!map_tf_init_) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Not ready for flight, try again after initialized");
@@ -1412,7 +1413,7 @@ void TaskManager::acceptFlight(json flight) {
 
     hello_decco_manager_->setDroneLocationLocal(slam_pose_);
     bool geofence_ok;
-    hello_decco_manager_->acceptFlight(flight, geofence_ok, home_elevation_);
+    hello_decco_manager_->acceptFlight(mapver_json, geofence_ok, home_elevation_);
     RCLCPP_INFO(this->get_logger(), "got home elevation : %f", home_elevation_);
 
     if (!geofence_ok) {
@@ -1548,8 +1549,8 @@ bool TaskManager::lawnmowerGoalComplete() {
 }
 
 void TaskManager::setpointResponse(json &json_msg) {
-    double lat = json_msg["latitude"];
-    double lon = json_msg["longitude"];
+    double lat = json_msg["gossip"]["latitude"];
+    double lon = json_msg["gossip"]["longitude"];
     double px, py;
     hello_decco_manager_->llToMap(lat, lon, px, py);
 
@@ -1557,13 +1558,17 @@ void TaskManager::setpointResponse(json &json_msg) {
     double max_dist = 100.0;
     if (std::abs(px - flight_controller_interface_->getCurrentLocalPosition().pose.position.x) < max_dist && std::abs(py - flight_controller_interface_->getCurrentLocalPosition().pose.position.y) < max_dist) {
         setpoint_mode_ = true;
-        needs_takeoff_ = true;
+        if (!is_armed_) {
+            needs_takeoff_ = true;
+        }
         initial_transit_point_.pose.position.x = px;
         initial_transit_point_.pose.position.y = py;
         hello_decco_manager_->packageToTymbalHD("confirmation", json_msg);
 
-        hello_decco_manager_->setDroneLocationLocal(slam_pose_);\
-        hello_decco_manager_->getHomeElevation(home_elevation_);
+        if (!hello_decco_manager_->getElevationInit()) {
+            hello_decco_manager_->setDroneLocationLocal(slam_pose_);
+            hello_decco_manager_->getHomeElevation(home_elevation_);
+        }
         RCLCPP_INFO(this->get_logger(), "got home elevation : %f", home_elevation_);
     }
     else {
