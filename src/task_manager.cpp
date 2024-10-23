@@ -25,10 +25,10 @@ using namespace std::chrono_literals;
 
 namespace task_manager
 {
-TaskManager::TaskManager() : Node("task_manager")
+TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightControllerInterface> fci)
+    : Node("task_manager")
     , current_task_(Task::INITIALIZING)
-    , hello_decco_manager_(nullptr)
-    , flight_controller_interface_(nullptr)
+    , flight_controller_interface_(fci)
     , task_manager_loop_duration_(1.0)
     , simulate_(false)
     , offline_(false)
@@ -45,6 +45,7 @@ TaskManager::TaskManager() : Node("task_manager")
     , altitude_offset_(0.0)
     , home_elevation_(0.0)
     , max_dist_to_polygon_(300.0)
+    , flightleg_area_acres_(3.0)
     , map_tf_init_(false)
     , home_utm_zone_(-1)
     , mavros_map_frame_("map")
@@ -115,7 +116,6 @@ void TaskManager::initialize() {
     this->declare_parameter("min_alt", min_altitude_);
     this->declare_parameter("max_alt", max_altitude_);
     this->declare_parameter("max_dist_to_polygon", max_dist_to_polygon_);
-
     std::string goal_topic = "/mavros/setpoint_position/local";
     this->declare_parameter("goal_topic", goal_topic);
     this->declare_parameter("do_slam", do_slam_);
@@ -150,6 +150,7 @@ void TaskManager::initialize() {
     this->declare_parameter("lidar_pitch", lidar_pitch_);
     this->declare_parameter("lidar_x", lidar_x_);
     this->declare_parameter("lidar_z", lidar_z_);
+    this->declare_parameter("flightleg_area_acres", flightleg_area_acres_);
 
     // Now get parameters
     this->get_parameter("enable_autonomy", enable_autonomy_);
@@ -190,6 +191,7 @@ void TaskManager::initialize() {
     this->get_parameter("lidar_pitch", lidar_pitch_);
     this->get_parameter("lidar_x", lidar_x_);
     this->get_parameter("lidar_z", lidar_z_);
+    this->get_parameter("flightleg_area_acres", flightleg_area_acres_);
 
     // Init agl altitude params
     max_agl_ = max_altitude_;
@@ -205,7 +207,9 @@ void TaskManager::initialize() {
         path_planner_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(path_planner_topic_, 10, std::bind(&TaskManager::pathPlannerCallback, this, _1));
         // Pointcloud republisher only if SLAM running
         pointcloud_repub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered_map", 10);
-        registered_cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered", 10, std::bind(&TaskManager::registeredPclCallback, this, _1));
+
+        // TODO change this back to cloud_registered
+        registered_cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered_map", 10, std::bind(&TaskManager::registeredPclCallback, this, _1));
     }
     costmap_sub_ = this->create_subscription<map_msgs::msg::OccupancyGridUpdate>(costmap_topic_, 10, std::bind(&TaskManager::costmapCallback, this, _1));
     if (lidar_type == 2) {
@@ -243,6 +247,8 @@ void TaskManager::initialize() {
     geopoint_service_ = this->create_service<messages_88::srv::Geopoint>("slam2geo", std::bind(&TaskManager::convert2Geo, this, _1, std::placeholders::_2, std::placeholders::_3));
     elevation_map_service_ = this->create_service<messages_88::srv::GetMapData>("get_map_data", std::bind(&TaskManager::getMapData, this, _1, std::placeholders::_2, std::placeholders::_3));
 
+    mavros_geofence_client_ = this->create_client<mavros_msgs::srv::WaypointPush>("/mavros/geofence/push");
+
     // If running slam, pass goals through path planner, which receives goal_topic and plans a path. 
     // Otherwise, send direct setpoint to mavros. 
     if (do_slam_)
@@ -279,17 +285,19 @@ void TaskManager::initialize() {
     task_msg_.enable_autonomy = enable_autonomy_;
     task_msg_.enable_exploration = true;
 
-    // tymbal subscriber
+    // tymbal pub/subs
+    tymbal_hd_pub_ = this->create_publisher<std_msgs::msg::String>("/tymbal/to_hello_decco", 10);
     tymbal_sub_ = this->create_subscription<std_msgs::msg::String>("/tymbal/to_decco", 10, std::bind(&TaskManager::packageFromTymbal, this, _1));
+    // Maybe the above topic should be called "from_hello_decco", feels a little more readable
+    tymbal_puddle_pub_ = this->create_publisher<std_msgs::msg::String>("/tymbal/to_puddle", 10);
+    map_region_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("/map_region", 10);
+
 
     // TF
     tf_static_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-    // We can only create these pointers with `shared_from_this()` outside of the main constructor. 
-    hello_decco_manager_ = std::make_shared<hello_decco_manager::HelloDeccoManager>(shared_from_this());
-    flight_controller_interface_ = std::make_shared<flight_controller_interface::FlightControllerInterface>(shared_from_this());
     flight_controller_interface_->setAutonomyEnabled(enable_autonomy_);
 
     // Start timers
@@ -297,9 +305,14 @@ void TaskManager::initialize() {
     task_manager_timer_ = this->create_wall_timer(std::chrono::duration<float>(task_manager_loop_duration_), std::bind(&TaskManager::runTaskManager, this));
     heartbeat_timer_ = this->create_wall_timer(1s, std::bind(&TaskManager::heartbeatTimerCallback, this));
     odid_timer_ = this->create_wall_timer(1s, std::bind(&TaskManager::odidTimerCallback, this));
+
+    // Initialize hello decco manager
+    hello_decco_manager_ = std::make_shared<hello_decco_manager::HelloDeccoManager>(flightleg_area_acres_, mavros_map_frame_);
+
 }
 
-TaskManager::~TaskManager(){
+TaskManager::~TaskManager() {
+
     if (offline_ && save_pcd_) {
         if (pcl_save_->size() > 0) {
             std::string file_name = "utm.pcd";
@@ -443,7 +456,8 @@ void TaskManager::runTaskManager() {
                 explore_action_result_ == rclcpp_action::ResultCode::SUCCEEDED) {
 
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Initiating RTL_88 due to exploration action stopped. "); // TODO add result parsing to string
-                hello_decco_manager_->updateFlightStatus("COMPLETED");
+                auto fs_msg = hello_decco_manager_->updateFlightStatus("COMPLETED", this->get_clock()->now());
+                tymbal_hd_pub_->publish(fs_msg);
                 startRtl88();
             }
 
@@ -500,7 +514,8 @@ void TaskManager::runTaskManager() {
     task_msg_.current_status.data = getTaskString(current_task_);
     task_pub_->publish(task_msg_);
     json task_json = makeTaskJson();
-    hello_decco_manager_->packageToTymbalHD("task_status", task_json);
+    auto ts_msg = hello_decco_manager_->packageToTymbalHD("task_status", task_json, this->get_clock()->now());
+    tymbal_hd_pub_->publish(ts_msg);
 
     json path_json;
     path_json["timestamp"] = static_cast<float>(flight_controller_interface_->getCurrentGlobalPosition().header.stamp.sec
@@ -577,7 +592,8 @@ void TaskManager::startExploration() {
     explore_action_client_->async_send_goal(current_explore_goal_);
 
     logEvent(EventType::STATE_MACHINE, Severity::LOW, "Sending explore goal");
-    hello_decco_manager_->updateFlightStatus("ACTIVE");
+    auto fs_msg = hello_decco_manager_->updateFlightStatus("ACTIVE", this->get_clock()->now());
+    tymbal_hd_pub_->publish(fs_msg);
 
     updateCurrentTask(Task::EXPLORING);
 }
@@ -703,6 +719,10 @@ void TaskManager::checkFailsafes() {
 }
 
 bool TaskManager::initialized() {
+
+    // Wait for FCI to finish initializing
+    if (!flight_controller_interface_->getDroneInitalized())
+        return false;
 
     // Get drone heading
     if (!offline_) {
@@ -892,7 +912,8 @@ void TaskManager::heartbeatTimerCallback() {
         j["deccoId"] = hd_drone_id_;
         j["startTime"] = start_time_;
     }
-    hello_decco_manager_->packageToTymbalHD("decco_heartbeat", j);
+    auto hb_msg = hello_decco_manager_->packageToTymbalHD("decco_heartbeat", j, this->get_clock()->now());
+    tymbal_hd_pub_->publish(hb_msg);
 
     // rclcpp::Time now_time = this->get_clock()->now();
     // float interval = (now_time - last_ui_heartbeat_stamp_).seconds();
@@ -1237,6 +1258,8 @@ void TaskManager::registeredPclCallback(const sensor_msgs::msg::PointCloud2::Sha
     pointcloud_repub_->publish(map_cloud_ros);
 
     if (utm_tf_init_ && offline_ & save_pcd_) {
+        RCLCPP_INFO(this->get_logger(), "Adding pcl to pcl_save");
+
         pcl::PointCloud<pcl::PointXYZI>::Ptr cloud = map_cloud;
         // if (save_pcd_frame_ == "utm") {
             pcl::PointCloud<pcl::PointXYZI>::Ptr utm_cloud(new pcl::PointCloud<pcl::PointXYZI>());
@@ -1360,11 +1383,28 @@ void TaskManager::acceptFlight(json flight) {
     start_time_ = decco_utilities::rosTimeToMilliseconds(this->get_clock()->now());
 
     hello_decco_manager_->setDroneLocationLocal(slam_pose_);
-    bool geofence_ok;
-    hello_decco_manager_->acceptFlight(flight, geofence_ok, home_elevation_);
-    RCLCPP_INFO(this->get_logger(), "got home elevation : %f", home_elevation_);
+    geometry_msgs::msg::Polygon polygon;
 
-    if (!geofence_ok) {
+    // Process flight via HDM
+    rclcpp::Time timestamp = this->get_clock()->now();
+    auto receipt = hello_decco_manager_->flightReceipt(flight, timestamp);
+    tymbal_hd_pub_->publish(receipt);
+
+    auto burn_unit_rcv = hello_decco_manager_->acceptFlight(flight, polygon, home_elevation_, timestamp);
+    tymbal_hd_pub_->publish(burn_unit_rcv);
+
+    RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
+
+    // Now publish polygon visualization
+    auto vis = hello_decco_manager_->visualizePolygon(timestamp);
+    map_region_pub_->publish(vis);
+
+    auto req = std::make_shared<mavros_msgs::srv::WaypointPush::Request>();
+    if (!hello_decco_manager_->polygonToGeofence(polygon, req)) {
+        auto result = mavros_geofence_client_->async_send_request(req);
+        // TODO see if there is a clean way to handle result - I think I had issues with this last time I tried
+    }
+    else {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Geofence invalid, not setting geofence");
     }
     
@@ -1707,7 +1747,8 @@ void TaskManager::publishHealth() {
     }
 
     jsonObjects["healthIndicators"] = healthObjects;
-    hello_decco_manager_->packageToTymbalHD("health_report", jsonObjects);
+    auto hr_msg = hello_decco_manager_->packageToTymbalHD("health_report", jsonObjects, this->get_clock()->now());
+    tymbal_hd_pub_->publish(hr_msg);
 }
 
 void TaskManager::logEvent(EventType type, Severity sev, std::string description) {
@@ -1739,7 +1780,8 @@ void TaskManager::logEvent(EventType type, Severity sev, std::string description
     j["type"] = getEventTypeString(type);
     j["description"] = description.substr(0, 256); // Limit string size to 256
 
-    hello_decco_manager_->packageToTymbalHD("event", j);
+    auto event_msg = hello_decco_manager_->packageToTymbalHD("event", j, this->get_clock()->now());
+    tymbal_hd_pub_->publish(event_msg);
 
     if (in_autonomous_flight_) {
         j["deccoId"] = hd_drone_id_;
@@ -1750,7 +1792,8 @@ void TaskManager::logEvent(EventType type, Severity sev, std::string description
             {"longitude", hb.longitude}
         };
         j["location"] = ll_json;
-        hello_decco_manager_->packageToTymbalPuddle("/flight-event", j);
+        auto puddle_msg = hello_decco_manager_->packageToTymbalPuddle("/flight-event", j);
+        tymbal_puddle_pub_->publish(puddle_msg);
     }
 }
 

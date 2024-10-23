@@ -47,15 +47,16 @@ namespace flight_controller_interface {
  * @class FlightControllerInterface
  * @brief Manages task and flight state of drone.
  */
-class FlightControllerInterface
+class FlightControllerInterface : public rclcpp::Node
 {
     public:
-        FlightControllerInterface(const std::shared_ptr<rclcpp::Node>& node);
+        FlightControllerInterface();
         ~FlightControllerInterface();
 
-        // State access methods
+        void initialize();
+
+        // Getters and setters
         void setAutonomyEnabled(bool enabled);
-        
         geometry_msgs::msg::PoseStamped getCurrentSlamPosition() {return current_slam_pose_;}
         geometry_msgs::msg::PoseStamped getCurrentLocalPosition() {return current_pose_;}
         sensor_msgs::msg::NavSatFix getCurrentGlobalPosition() {return current_ll_;}
@@ -72,7 +73,6 @@ class FlightControllerInterface
         bool getDroneReadyToArm() {return ready_to_arm_;}
         unsigned getImuAveragingN() {return imu_averaging_n_;}
         std::string getPreflightCheckReasons() {return preflight_check_reasons_;}
-
         bool getMapYaw(double &yaw);
         bool getAveragedOrientation(geometry_msgs::msg::Quaternion &orientation);
 
@@ -88,32 +88,17 @@ class FlightControllerInterface
         void statusCallback(const mavros_msgs::msg::State::SharedPtr  msg);
         void statusTextCallback(const mavros_msgs::msg::StatusText::SharedPtr  msg);
 
-        // Mavros state control
-        bool setMode(std::string mode);
-        bool arm();
-        bool takeOff();
-
-        // safety/validity checking
-        void initializeFlightController();
+        // General public methods
         void initUTM(double &utm_x, double &utm_y);
-        void checkMsgRates();
-        void requestMavlinkStreams();
-
-        // Other methods
-        float calculateBatteryPercentage(float voltage);
-        // float findValidRoot(float a, float b, float c);
+        bool setMode(std::string mode);
+        bool takeOff();
 
         std::string land_mode_ = "LAND";
         std::string brake_mode_ = "BRAKE";
         std::string guided_mode_ = "GUIDED";
         std::string rtl_mode_ = "RTL";
 
-
-        void fakeTimer();
-
     private:
-
-        const std::shared_ptr<rclcpp::Node> node_;
 
         bool offline_;
         bool simulate_;
@@ -141,6 +126,9 @@ class FlightControllerInterface
 
         // Publishers
         rclcpp::Publisher<messages_88::msg::Battery>::SharedPtr battery_pub_; // Publisher mostly for debug
+
+        // Param sync client;
+        std::shared_ptr<rclcpp::SyncParametersClient> sync_params_client_;
 
 
         // General private data
@@ -219,6 +207,14 @@ class FlightControllerInterface
             { "EK3_SRC1_YAW", 1 },
             { "VISO_TYPE", 0 },
         };
+
+        // FCI private methods
+        bool arm();
+        void initializeFlightController();
+        void checkMsgRates();
+        void requestMavlinkStreams();
+        float calculateBatteryPercentage(float voltage);
+        // float findValidRoot(float a, float b, float c);
 };
 
 }
