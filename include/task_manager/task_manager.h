@@ -105,8 +105,6 @@ class TaskManager : public rclcpp::Node
             HIGH
         };
 
-        void initialize();
-
         void runTaskManager();
 
         Task getCurrentTask();

@@ -11,8 +11,6 @@ int main(int argc, char** argv)
 
   auto fci_node = std::make_shared<flight_controller_interface::FlightControllerInterface>();
   auto tm_node = std::make_shared<task_manager::TaskManager>(fci_node);
-  tm_node->initialize();
-  fci_node->initialize();
 
   rclcpp::executors::MultiThreadedExecutor executor;
   executor.add_node(fci_node);

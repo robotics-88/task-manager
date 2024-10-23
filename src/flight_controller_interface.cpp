@@ -89,12 +89,6 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
         RCLCPP_WARN(this->get_logger(), "do_slam param not found");
     if (!this->get_parameter("simulate", simulate_))
         RCLCPP_WARN(this->get_logger(), "simulate param not found");
-}
-
-FlightControllerInterface::~FlightControllerInterface() {
-}
-
-void FlightControllerInterface::initialize() {
 
     if (do_slam_) {
         param_map_[ "EK3_SRC1_POSXY" ] = 6;
@@ -157,6 +151,9 @@ void FlightControllerInterface::initialize() {
     mavros_imu_init_.orientation.y = 0;
     mavros_imu_init_.orientation.z = 0;
     mavros_imu_init_.orientation.w = 0;
+}
+
+FlightControllerInterface::~FlightControllerInterface() {
 }
 
 void FlightControllerInterface::initializeFlightController() {

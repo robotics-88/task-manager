@@ -105,9 +105,6 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , thermal_timeout_(rclcpp::Duration::from_seconds(1.0))
     , rosbag_timeout_(rclcpp::Duration::from_seconds(1.0))
 {
-}
-
-void TaskManager::initialize() {
     RCLCPP_INFO(this->get_logger(), "TM entered init");
 
     this->declare_parameter("enable_autonomy", enable_autonomy_);
@@ -312,6 +309,8 @@ void TaskManager::initialize() {
 }
 
 TaskManager::~TaskManager() {
+
+    RCLCPP_INFO(this->get_logger(), "Calling TM destructor");
 
     if (offline_ && save_pcd_) {
         if (pcl_save_->size() > 0) {
@@ -572,12 +571,12 @@ void TaskManager::startExploration() {
         return;
     }
 
+    RCLCPP_INFO(this->get_logger(), "explore 1");
+
     current_explore_goal_.polygon = map_polygon_;
     current_explore_goal_.altitude = target_altitude_;
     current_explore_goal_.min_altitude = min_altitude_;
     current_explore_goal_.max_altitude = max_altitude_;
-
-    explore_action_client_->wait_for_action_server();
 
     // Start with a rotation command in case no frontiers immediately processed, will be overridden with first exploration goal
     geometry_msgs::msg::Twist vel;
@@ -586,10 +585,15 @@ void TaskManager::startExploration() {
     vel.angular.z = M_PI_2; // PI/2 rad/s
     local_vel_pub_->publish(vel);
 
-    if (!explore_action_client_->wait_for_action_server()) {
+    if (!explore_action_client_->wait_for_action_server(2s)) {
         RCLCPP_WARN(this->get_logger(), "Explore action client not available after waiting");
     }
+
+    RCLCPP_INFO(this->get_logger(), "explore 3");
+
     explore_action_client_->async_send_goal(current_explore_goal_);
+
+    RCLCPP_INFO(this->get_logger(), "explore 4");
 
     logEvent(EventType::STATE_MACHINE, Severity::LOW, "Sending explore goal");
     auto fs_msg = hello_decco_manager_->updateFlightStatus("ACTIVE", this->get_clock()->now());
@@ -988,7 +992,8 @@ bool TaskManager::isBatteryOk() {
 }
 
 void TaskManager::startBag() {
-    if (bag_active_) {
+
+    if (bag_active_ || offline_ || !do_record_) {
         return;
     }
     logEvent(EventType::INFO, Severity::LOW, "Bag starting, dir: " + data_directory_);
@@ -1243,6 +1248,7 @@ void TaskManager::slamPoseCallback(const geometry_msgs::msg::PoseStamped::Shared
 }
 
 void TaskManager::registeredPclCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+
     if (!map_tf_init_) {
         return;
     }
@@ -1257,6 +1263,7 @@ void TaskManager::registeredPclCallback(const sensor_msgs::msg::PointCloud2::Sha
     map_cloud_ros.header.frame_id = mavros_map_frame_;
     pointcloud_repub_->publish(map_cloud_ros);
 
+    RCLCPP_INFO(this->get_logger(), "Pre thing");
     if (utm_tf_init_ && offline_ & save_pcd_) {
         RCLCPP_INFO(this->get_logger(), "Adding pcl to pcl_save");
 
