@@ -46,6 +46,7 @@ TaskManager::TaskManager() : Node("task_manager")
     , altitude_offset_(0.0)
     , home_elevation_(0.0)
     , max_dist_to_polygon_(300.0)
+    , goal_reached_threshold_(2.0)
     , map_tf_init_(false)
     , home_utm_zone_(-1)
     , mavros_map_frame_("map")
@@ -58,6 +59,7 @@ TaskManager::TaskManager() : Node("task_manager")
     , burn_unit_name_("")
     , cmd_history_("")
     , lawnmower_started_(false)
+    , setpoint_started_(false)
     , health_check_pub_duration_(rclcpp::Duration(5.0, 0))
     , path_planner_topic_("/kd_pointcloud_accumulated")
     , costmap_topic_("/costmap_node/costmap/costmap_updates")
@@ -70,7 +72,7 @@ TaskManager::TaskManager() : Node("task_manager")
     , explore_action_result_(rclcpp_action::ResultCode::UNKNOWN)
     , is_armed_(false)
     , in_autonomous_flight_(false)
-    , setpoint_mode_(false)
+    , has_setpoint_(false)
     , explicit_global_params_(false)
     , init_remote_id_message_sent_(false)
     , takeoff_attempts_(0)
@@ -422,13 +424,33 @@ void TaskManager::runTaskManager() {
             // Once we reach takeoff altitude, transition to next flight state
             if (flight_controller_interface_->getAltitudeAGL() > (target_altitude_ - 1)) {
                 // If not in polygon, start navigation task
-                if (setpoint_mode_ || !decco_utilities::isInside(map_polygon_, flight_controller_interface_->getCurrentLocalPosition().pose.position)) {
+                if (has_setpoint_) {
+                    updateCurrentTask(Task::SETPOINT);
+                }
+                else if (!decco_utilities::isInside(map_polygon_, flight_controller_interface_->getCurrentLocalPosition().pose.position)) {
                     logEvent(EventType::STATE_MACHINE, Severity::LOW, "Transiting to designated survey unit");
                     startTransit();
                 }
                 else {
                     logEvent(EventType::STATE_MACHINE, Severity::LOW, "Starting exploration");
                     startExploration();
+                }
+            }
+            break;
+        }
+        case Task::SETPOINT: {
+            if (!setpoint_started_) {
+                position_setpoint_pub_->publish(initial_transit_point_);
+                setpoint_started_ = true;
+            }
+            else {
+                bool reached = decco_utilities::isInAcceptanceRadius(flight_controller_interface_->getCurrentLocalPosition().pose.position,
+                                                                          initial_transit_point_.pose.position,
+                                                                          3.0);
+                if (reached) {
+                    has_setpoint_ = false;
+                    setpoint_started_ = false;
+                    updateCurrentTask(Task::READY);
                 }
             }
             break;
@@ -546,9 +568,7 @@ void TaskManager::startTakeoff() {
 }
 
 void TaskManager::startTransit() {
-    if (!setpoint_mode_) {
-        padNavTarget(initial_transit_point_);
-    }
+    padNavTarget(initial_transit_point_);
 
     initial_transit_point_.header.frame_id = mavros_map_frame_;
     initial_transit_point_.header.stamp = this->get_clock()->now();
@@ -1174,6 +1194,7 @@ std::string TaskManager::getTaskString(Task task) {
         case Task::LAWNMOWER:              return "LAWNMOWER";
         case Task::TRAIL_FOLLOW:           return "TRAIL_FOLLOW";
         case Task::IN_TRANSIT:             return "IN_TRANSIT";
+        case Task::SETPOINT:               return "SETPOINT";
         case Task::RTL_88:                 return "RTL_88";
         case Task::TAKING_OFF:             return "TAKING_OFF";
         case Task::LANDING:                return "LANDING";
@@ -1385,6 +1406,7 @@ void TaskManager::acceptFlight(json mapver_json) {
 
     if (!map_tf_init_) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Not ready for flight, try again after initialized");
+        hello_decco_manager_->rejectFlight(mapver_json);
         return;
     }
     burn_unit_name_ = static_cast<std::string>(flight["burnUnitName"]);
@@ -1402,7 +1424,7 @@ void TaskManager::acceptFlight(json mapver_json) {
         // TODO update types in HD
         if (!do_trail_) {
             logEvent(EventType::INFO, Severity::HIGH, "Trail requested but trail detector not active.");
-            hello_decco_manager_->rejectFlight(flight);
+            hello_decco_manager_->rejectFlight(mapver_json);
             return;
         }
         survey_type_ = SurveyType::TRAIL;
@@ -1549,6 +1571,12 @@ bool TaskManager::lawnmowerGoalComplete() {
 }
 
 void TaskManager::setpointResponse(json &json_msg) {
+    if (!map_tf_init_) {
+        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Not ready for flight, try again after initialized");
+        hello_decco_manager_->rejectFlight(json_msg);
+        return;
+    }
+
     double lat = json_msg["gossip"]["latitude"];
     double lon = json_msg["gossip"]["longitude"];
     double px, py;
@@ -1557,9 +1585,13 @@ void TaskManager::setpointResponse(json &json_msg) {
     // Check distance makes sense
     double max_dist = 100.0;
     if (std::abs(px - flight_controller_interface_->getCurrentLocalPosition().pose.position.x) < max_dist && std::abs(py - flight_controller_interface_->getCurrentLocalPosition().pose.position.y) < max_dist) {
-        setpoint_mode_ = true;
+        has_setpoint_ = true;
+        setpoint_started_ = false;
         if (!is_armed_) {
             needs_takeoff_ = true;
+        }
+        else {
+            updateCurrentTask(Task::SETPOINT);
         }
         initial_transit_point_.pose.position.x = px;
         initial_transit_point_.pose.position.y = py;
@@ -1573,7 +1605,7 @@ void TaskManager::setpointResponse(json &json_msg) {
     }
     else {
         logEvent(EventType::TASK_STATUS, Severity::HIGH, "Setpoint rejected, farther than max distance.");
-        hello_decco_manager_->packageToTymbalHD("confirmation", json_msg);
+        hello_decco_manager_->rejectFlight(json_msg);
     }
 
 }

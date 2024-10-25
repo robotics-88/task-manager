@@ -80,6 +80,7 @@ class TaskManager : public rclcpp::Node
             LAWNMOWER,
             TRAIL_FOLLOW,
             IN_TRANSIT,
+            SETPOINT,
             RTL_88,
             TAKING_OFF,
             LANDING,
@@ -251,6 +252,7 @@ class TaskManager : public rclcpp::Node
         double altitude_offset_;
         double home_elevation_;
         double max_dist_to_polygon_;
+        double goal_reached_threshold_;
 
         // TF
         std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
@@ -293,9 +295,9 @@ class TaskManager : public rclcpp::Node
         rclcpp::TimerBase::SharedPtr mode_monitor_timer_;
         std::string cmd_history_;
         messages_88::msg::TaskStatus task_msg_;
-
         std::vector<geometry_msgs::msg::PoseStamped> lawnmower_points_;
         bool lawnmower_started_;
+        bool setpoint_started_;
         SurveyType survey_type_;
         
         geometry_msgs::msg::PoseStamped goal_;
@@ -318,7 +320,7 @@ class TaskManager : public rclcpp::Node
         // State
         bool is_armed_;
         bool in_autonomous_flight_;
-        bool setpoint_mode_;
+        bool has_setpoint_;
 
         rclcpp::TimerBase::SharedPtr odid_timer_;
         bool init_remote_id_message_sent_;
