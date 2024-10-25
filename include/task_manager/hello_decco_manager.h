@@ -39,6 +39,7 @@ class HelloDeccoManager
         HelloDeccoManager(const std::shared_ptr<rclcpp::Node>& node);
         ~HelloDeccoManager();
 
+        void rejectFlight(json msgJson);
         void acceptFlight(json msgJson, bool &geofence_ok, double &home_elevation);
         void updateFlightStatus(std::string flight_status);
         void setUtm(double utm_x, double utm_y, int zone) {
@@ -50,6 +51,7 @@ class HelloDeccoManager
         geometry_msgs::msg::Polygon polygonToMap(const geometry_msgs::msg::Polygon &polygon);
         void packageToTymbalHD(std::string topic, json gossip);
         void packageToTymbalPuddle(std::string topic, json gossip);
+        void llToMap(const double lat, const double lon, double &px, double &py);
 
         void setDroneLocationLocal(geometry_msgs::msg::PoseStamped location) {
             drone_location_ = location;
@@ -110,7 +112,7 @@ class HelloDeccoManager
         std::vector<geometry_msgs::msg::Polygon> local_subpolygons_; // Flight units
         double flightleg_area_m2_;
 
-        void flightReceipt(const int id);
+        void flightReceipt(json msgJson);
         void polygonInitializer(const geometry_msgs::msg::Polygon &msg, bool make_legs, bool &geofence_ok);
         void elevationInitializer();
 

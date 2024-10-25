@@ -73,17 +73,20 @@ void HelloDeccoManager::packageToTymbalPuddle(std::string topic, json gossip) {
     tymbal_puddle_pub_->publish(msg_string); // tymbal to Hello Decco
 }
 
-void HelloDeccoManager::flightReceipt(const int id) {
-    json msg;
-    msg["id"] = id;
-    packageToTymbalHD("flight_confirm", msg);
+void HelloDeccoManager::flightReceipt(json msgJson) {
+    packageToTymbalHD("confirmation", msgJson);
+}
+
+void HelloDeccoManager::rejectFlight(json msgJson) {
+    flightReceipt(msgJson);
+    // Parse data
+    RCLCPP_INFO(node_->get_logger(), "Flight received was rejected.");
 }
 
 void HelloDeccoManager::acceptFlight(json msgJson, bool &geofence_ok, double &home_elevation) {
-    int id = msgJson["id"];
-    flightReceipt(id);
+    flightReceipt(msgJson);
     // Parse data
-    flight_json_ = msgJson;
+    flight_json_ = msgJson["gossip"];
     RCLCPP_INFO(node_->get_logger(), "Flight received");
     geometry_msgs::msg::Polygon poly = polygonFromJson(flight_json_["subpolygon"]["coordinates"][0]);
     polygonInitializer(poly, false, geofence_ok);
@@ -216,7 +219,7 @@ geometry_msgs::msg::Polygon HelloDeccoManager::polygonToMap(const geometry_msgs:
     for (unsigned ii = 0; ii < polygon.points.size(); ii++) {
         geometry_msgs::msg::Point32 poly_point;
         double px, py;
-        decco_utilities::llToMap(polygon.points.at(ii).x, polygon.points.at(ii).y, px, py, utm_x_offset_, utm_y_offset_);
+        llToMap(polygon.points.at(ii).x, polygon.points.at(ii).y, px, py);
         poly_point.x = px;
         poly_point.y = py;
         map_polygon.points.push_back(poly_point);
@@ -239,7 +242,7 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::msg::Polygon &pol
     geometry_msgs::msg::Polygon polygon_map;
     for (const auto &point : polygon.points) {
         double px, py;
-        decco_utilities::llToMap(point.x, point.y, px, py, utm_x_offset_, utm_y_offset_);
+        llToMap(point.x, point.y, px, py);
         geometry_msgs::msg::Point32 point_map;
         point_map.x = px;
         point_map.y = py;
@@ -486,6 +489,10 @@ void HelloDeccoManager::visualizeLegs() {
         m.points.push_back(p);
         map_region_pub_->publish(m);
     }
+}
+
+void HelloDeccoManager::llToMap(const double lat, const double lon, double &px, double &py) {
+    decco_utilities::llToMap(lat, lon, px, py, utm_x_offset_, utm_y_offset_);
 }
 
 }
