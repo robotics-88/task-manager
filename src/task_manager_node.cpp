@@ -23,14 +23,8 @@ int main(int argc, char** argv)
   } catch (...) {
       RCLCPP_ERROR(tm_node->get_logger(), "Unknown exception in executor spin");
   }
-  
-  std::cout << "Reference count 1: " << tm_node.use_count() << std::endl;
-  executor.remove_node(tm_node);
-  std::cout << "Reference count 2: " << tm_node.use_count() << std::endl;
 
   rclcpp::shutdown();
-
-  std::cout << "Reference count 3: " << tm_node.use_count() << std::endl;
   RCLCPP_INFO(tm_node->get_logger(), "Shutting down task manager node");
   return 0;
 }

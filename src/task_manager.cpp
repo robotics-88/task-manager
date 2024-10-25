@@ -204,9 +204,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
         path_planner_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(path_planner_topic_, 10, std::bind(&TaskManager::pathPlannerCallback, this, _1));
         // Pointcloud republisher only if SLAM running
         pointcloud_repub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered_map", 10);
-
-        // TODO change this back to cloud_registered
-        registered_cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered_map", 10, std::bind(&TaskManager::registeredPclCallback, this, _1));
+        registered_cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered", 10, std::bind(&TaskManager::registeredPclCallback, this, _1));
     }
     costmap_sub_ = this->create_subscription<map_msgs::msg::OccupancyGridUpdate>(costmap_topic_, 10, std::bind(&TaskManager::costmapCallback, this, _1));
     if (lidar_type == 2) {
@@ -571,8 +569,6 @@ void TaskManager::startExploration() {
         return;
     }
 
-    RCLCPP_INFO(this->get_logger(), "explore 1");
-
     current_explore_goal_.polygon = map_polygon_;
     current_explore_goal_.altitude = target_altitude_;
     current_explore_goal_.min_altitude = min_altitude_;
@@ -589,11 +585,7 @@ void TaskManager::startExploration() {
         RCLCPP_WARN(this->get_logger(), "Explore action client not available after waiting");
     }
 
-    RCLCPP_INFO(this->get_logger(), "explore 3");
-
     explore_action_client_->async_send_goal(current_explore_goal_);
-
-    RCLCPP_INFO(this->get_logger(), "explore 4");
 
     logEvent(EventType::STATE_MACHINE, Severity::LOW, "Sending explore goal");
     auto fs_msg = hello_decco_manager_->updateFlightStatus("ACTIVE", this->get_clock()->now());
@@ -1263,7 +1255,6 @@ void TaskManager::registeredPclCallback(const sensor_msgs::msg::PointCloud2::Sha
     map_cloud_ros.header.frame_id = mavros_map_frame_;
     pointcloud_repub_->publish(map_cloud_ros);
 
-    RCLCPP_INFO(this->get_logger(), "Pre thing");
     if (utm_tf_init_ && offline_ & save_pcd_) {
         RCLCPP_INFO(this->get_logger(), "Adding pcl to pcl_save");
 
