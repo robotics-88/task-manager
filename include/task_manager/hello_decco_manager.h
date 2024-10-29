@@ -39,6 +39,7 @@ class HelloDeccoManager
         HelloDeccoManager(const double flightleg_acres, const std::string mavros_map_frame);
         ~HelloDeccoManager();
 
+        std_msgs::msg::String rejectFlight(json msgJson, const rclcpp::Time timestamp);
         std_msgs::msg::String acceptFlight(json msgJson, geometry_msgs::msg::Polygon &polygon, double &home_elevation, const rclcpp::Time timestamp);
         std_msgs::msg::String updateFlightStatus(std::string flight_status, const rclcpp::Time timestamp);
         void setUtm(double utm_x, double utm_y, int zone) {
@@ -50,6 +51,7 @@ class HelloDeccoManager
         geometry_msgs::msg::Polygon polygonToMap(const geometry_msgs::msg::Polygon &polygon);
         std_msgs::msg::String packageToTymbalHD(std::string topic, json gossip, const rclcpp::Time timestamp);
         std_msgs::msg::String packageToTymbalPuddle(std::string topic, json gossip);
+        void llToMap(const double lat, const double lon, double &px, double &py);
 
         void setDroneLocationLocal(geometry_msgs::msg::PoseStamped location) {
             drone_location_ = location;

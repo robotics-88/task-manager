@@ -36,6 +36,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , utm_tf_init_(false)
     , enable_autonomy_(false)
     , use_failsafes_(false)
+    , do_trail_(false)
     , target_altitude_(3.0)
     , target_agl_(3.0)
     , min_altitude_(2.0)
@@ -46,6 +47,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , home_elevation_(0.0)
     , max_dist_to_polygon_(300.0)
     , flightleg_area_acres_(3.0)
+    , goal_reached_threshold_(2.0)
     , map_tf_init_(false)
     , home_utm_zone_(-1)
     , mavros_map_frame_("map")
@@ -58,6 +60,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , burn_unit_name_("")
     , cmd_history_("")
     , lawnmower_started_(false)
+    , setpoint_started_(false)
     , health_check_pub_duration_(rclcpp::Duration(5.0, 0))
     , path_planner_topic_("/kd_pointcloud_accumulated")
     , costmap_topic_("/costmap_node/costmap/costmap_updates")
@@ -70,6 +73,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , explore_action_result_(rclcpp_action::ResultCode::UNKNOWN)
     , is_armed_(false)
     , in_autonomous_flight_(false)
+    , has_setpoint_(false)
     , explicit_global_params_(false)
     , init_remote_id_message_sent_(false)
     , takeoff_attempts_(0)
@@ -113,6 +117,8 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     this->declare_parameter("min_alt", min_altitude_);
     this->declare_parameter("max_alt", max_altitude_);
     this->declare_parameter("max_dist_to_polygon", max_dist_to_polygon_);
+    this->declare_parameter("do_trail", do_trail_);
+
     std::string goal_topic = "/mavros/setpoint_position/local";
     this->declare_parameter("goal_topic", goal_topic);
     this->declare_parameter("do_slam", do_slam_);
@@ -156,6 +162,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     this->get_parameter("min_alt", min_altitude_);
     this->get_parameter("max_alt", max_altitude_);
     this->get_parameter("max_dist_to_polygon", max_dist_to_polygon_);
+    this->get_parameter("do_trail", do_trail_);
     this->get_parameter("goal_topic", goal_topic);
     this->get_parameter("do_slam", do_slam_);
     this->get_parameter("do_record", do_record_);
@@ -428,13 +435,33 @@ void TaskManager::runTaskManager() {
             // Once we reach takeoff altitude, transition to next flight state
             if (flight_controller_interface_->getAltitudeAGL() > (target_altitude_ - 1)) {
                 // If not in polygon, start navigation task
-                if (!decco_utilities::isInside(map_polygon_, flight_controller_interface_->getCurrentLocalPosition().pose.position)) {
+                if (has_setpoint_) {
+                    updateCurrentTask(Task::SETPOINT);
+                }
+                else if (!decco_utilities::isInside(map_polygon_, flight_controller_interface_->getCurrentLocalPosition().pose.position)) {
                     logEvent(EventType::STATE_MACHINE, Severity::LOW, "Transiting to designated survey unit");
                     startTransit();
                 }
                 else {
                     logEvent(EventType::STATE_MACHINE, Severity::LOW, "Starting exploration");
                     startExploration();
+                }
+            }
+            break;
+        }
+        case Task::SETPOINT: {
+            if (!setpoint_started_) {
+                position_setpoint_pub_->publish(initial_transit_point_);
+                setpoint_started_ = true;
+            }
+            else {
+                bool reached = decco_utilities::isInAcceptanceRadius(flight_controller_interface_->getCurrentLocalPosition().pose.position,
+                                                                          initial_transit_point_.pose.position,
+                                                                          3.0);
+                if (reached) {
+                    has_setpoint_ = false;
+                    setpoint_started_ = false;
+                    updateCurrentTask(Task::READY);
                 }
             }
             break;
@@ -553,7 +580,7 @@ void TaskManager::startTakeoff() {
 
 }
 
-void TaskManager::startTransit() {    
+void TaskManager::startTransit() {
     padNavTarget(initial_transit_point_);
 
     initial_transit_point_.header.frame_id = mavros_map_frame_;
@@ -565,7 +592,14 @@ void TaskManager::startTransit() {
 
 void TaskManager::startExploration() {
     if (survey_type_ == SurveyType::SUPER) {
+        getLawnmowerPattern(map_polygon_, lawnmower_points_);
+        visualizeLawnmower();
         updateCurrentTask(Task::LAWNMOWER);
+        return;
+    }
+    else if (survey_type_ == SurveyType::TRAIL) {
+        startTrailFollowing(true); // TODO trail has no stop condition yet
+        updateCurrentTask(Task::TRAIL_FOLLOW);
         return;
     }
 
@@ -879,12 +913,29 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
     RCLCPP_INFO(this->get_logger(), "Altitude at utm: %fm", ret_altitude);
 
     if (req->adjust_params) {
+        // Get alt at start
+        geometry_msgs::msg::PoseStamped local = flight_controller_interface_->getCurrentLocalPosition();
+        geometry_msgs::msg::PointStamped in, out;
+        in.point.x = local.pose.position.x;
+        in.point.y = local.pose.position.y;
+        map2UtmPoint(in, out);
+        double my_altitude;
+        hello_decco_manager_->getElevationValue(out.point.x, out.point.y, my_altitude);
+        double my_offset = my_altitude - home_elevation_;
+        // Update internal
         altitude_offset_ = ret_altitude - home_elevation_;
-        resp->home_offset = altitude_offset_;
         target_altitude_ = target_agl_  + altitude_offset_;
+        min_altitude_ = std::min(min_agl_ + altitude_offset_, min_agl_ + my_offset);
+        max_altitude_ = std::max(max_agl_ + altitude_offset_, max_agl_ + my_offset);
+        // Send service
+        resp->home_offset = altitude_offset_;
         resp->target_altitude = target_altitude_;
         RCLCPP_INFO(this->get_logger(),"setting new alt params with home elev %f, alt offset %f, and target alt: %f.", home_elevation_, altitude_offset_, target_altitude_);
-        setAltitudeParams(max_agl_ + altitude_offset_, min_agl_ + altitude_offset_, target_altitude_);
+        // setAltitudeParams(max_altitude_, min_altitude_, target_altitude_);
+
+        this->set_parameter(rclcpp::Parameter("max_alt", max_altitude_));
+        this->set_parameter(rclcpp::Parameter("min_alt", min_altitude_));
+        this->set_parameter(rclcpp::Parameter("default_alt", target_altitude_));
     }
 }
 
@@ -1160,7 +1211,9 @@ std::string TaskManager::getTaskString(Task task) {
         case Task::PAUSE:                  return "PAUSE";
         case Task::EXPLORING:              return "EXPLORING";
         case Task::LAWNMOWER:              return "LAWNMOWER";
+        case Task::TRAIL_FOLLOW:           return "TRAIL_FOLLOW";
         case Task::IN_TRANSIT:             return "IN_TRANSIT";
+        case Task::SETPOINT:               return "SETPOINT";
         case Task::RTL_88:                 return "RTL_88";
         case Task::TAKING_OFF:             return "TAKING_OFF";
         case Task::LANDING:                return "LANDING";
@@ -1350,10 +1403,10 @@ void TaskManager::packageFromTymbal(const std_msgs::msg::String::SharedPtr msg) 
     std::string topic = static_cast<std::string>(mapver_json["topic"]);
     json gossip_json = mapver_json["gossip"];
     if (topic == "flight_send") {
-        acceptFlight(gossip_json);
+        acceptFlight(mapver_json);
     }
     else if (topic == "target_setpoint") {
-        setpointResponse(gossip_json);
+        setpointResponse(mapver_json);
     }
     else if (topic == "emergency") {
         std::string severity = static_cast<std::string>(gossip_json["severity"]);
@@ -1370,21 +1423,48 @@ void TaskManager::packageFromTymbal(const std_msgs::msg::String::SharedPtr msg) 
     }
 }
 
-void TaskManager::acceptFlight(json flight) {
+void TaskManager::acceptFlight(json mapver_json) {
+
+    rclcpp::Time timestamp = this->get_clock()->now();
+
+    json flight = mapver_json["gossip"];
 
     if (!map_tf_init_) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Not ready for flight, try again after initialized");
+        auto rej_msg = hello_decco_manager_->rejectFlight(mapver_json, timestamp);
+        tymbal_hd_pub_->publish(rej_msg);
         return;
     }
     burn_unit_name_ = static_cast<std::string>(flight["burnUnitName"]);
     hd_drone_id_ = flight["droneId"];
-    start_time_ = decco_utilities::rosTimeToMilliseconds(this->get_clock()->now());
+    
+    start_time_ = decco_utilities::rosTimeToMilliseconds(timestamp);
+
+    std::string type = static_cast<std::string>(flight["type"]);
+    if (type == "PERI") {
+        getLawnmowerPattern(map_polygon_, lawnmower_points_);
+        visualizeLawnmower();
+        survey_type_ = SurveyType::SUPER;
+        RCLCPP_INFO(this->get_logger(),"lawnmower starting. ");
+    }
+    else if (type == "POST") {
+        // TODO update types in HD
+        if (!do_trail_) {
+            logEvent(EventType::INFO, Severity::HIGH, "Trail requested but trail detector not active.");
+            auto msg = hello_decco_manager_->rejectFlight(mapver_json, timestamp);
+            tymbal_hd_pub_->publish(msg);
+            return;
+        }
+        survey_type_ = SurveyType::TRAIL;
+    }
+    else {
+        survey_type_ = SurveyType::SUB;
+    }
 
     hello_decco_manager_->setDroneLocationLocal(slam_pose_);
     geometry_msgs::msg::Polygon polygon;
 
     // Process flight via HDM
-    rclcpp::Time timestamp = this->get_clock()->now();
     auto receipt = hello_decco_manager_->flightReceipt(flight, timestamp);
     tymbal_hd_pub_->publish(receipt);
 
@@ -1397,14 +1477,18 @@ void TaskManager::acceptFlight(json flight) {
     auto vis = hello_decco_manager_->visualizePolygon(timestamp);
     map_region_pub_->publish(vis);
 
+    std::cout << "Viz" << std::endl;
+
     auto req = std::make_shared<mavros_msgs::srv::WaypointPush::Request>();
-    if (!hello_decco_manager_->polygonToGeofence(polygon, req)) {
+    if (hello_decco_manager_->polygonToGeofence(polygon, req)) {
         auto result = mavros_geofence_client_->async_send_request(req);
         // TODO see if there is a clean way to handle result - I think I had issues with this last time I tried
     }
     else {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Geofence invalid, not setting geofence");
     }
+
+    std::cout << "Geo" << std::endl;
     
     map_polygon_ = hello_decco_manager_->getMapPolygon();
     if (!polygonDistanceOk(initial_transit_point_, map_polygon_)) {
@@ -1412,19 +1496,39 @@ void TaskManager::acceptFlight(json flight) {
         return;
     }
 
-    std::string type = static_cast<std::string>(flight["type"]);
-    if (type == "PERI") {
-        getLawnmowerPattern(map_polygon_, lawnmower_points_);
-        visualizeLawnmower();
-        survey_type_ = SurveyType::SUPER;
-        RCLCPP_INFO(this->get_logger(),"lawnmower starting. ");
+    std::cout << "Map" << std::endl;
+
+    if (offline_) {
+        updateCurrentTask(Task::IN_TRANSIT); // TODO find a better way to make auton possible in offline mode
     }
     else {
-        survey_type_ = SurveyType::SUB;
+        needs_takeoff_ = true;
     }
 
-    needs_takeoff_ = true;
+    std::cout << "End" << std::endl;
+}
 
+// TODO where should this live?
+void TaskManager::startTrailFollowing(bool start) {
+    // Start trail goal enabled in pcl analysis
+    auto parameter = rcl_interfaces::msg::Parameter();
+    auto request = std::make_shared<rcl_interfaces::srv::SetParametersAtomically::Request>();
+
+    auto client = this->create_client<rcl_interfaces::srv::SetParametersAtomically>("trail_enabled_service"); // E.g.: serviceName = "/turtlesim/set_parameters_atomically"
+
+    parameter.name = "trails_enabled";  // E.g.: parameter_name = "background_b"
+    parameter.value.type = 1;          //  bool = 1,    int = 2,        float = 3,     string = 4
+    parameter.value.bool_value = start; // .bool_value, .integer_value, .double_value, .string_value
+    request->parameters.push_back(parameter);
+
+    while (!client->wait_for_service(1s)) {
+        if (!rclcpp::ok()) {
+        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Interrupted while waiting for the service. Exiting.");
+        return;
+        }
+        RCLCPP_INFO_STREAM(this->get_logger(), "universal altitude param service not available, waiting again..."); 
+    }
+    auto result = client->async_send_request(request);
 }
 
 // TODO where should this live?
@@ -1519,8 +1623,46 @@ bool TaskManager::lawnmowerGoalComplete() {
 }
 
 void TaskManager::setpointResponse(json &json_msg) {
-    // ATM, this response is purely a testing function. 
-    startBag();
+    if (!map_tf_init_) {
+        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Not ready for flight, try again after initialized");
+        auto resp = hello_decco_manager_->rejectFlight(json_msg, this->get_clock()->now());
+        tymbal_hd_pub_->publish(resp);
+        return;
+    }
+
+    double lat = json_msg["gossip"]["latitude"];
+    double lon = json_msg["gossip"]["longitude"];
+    double px, py;
+    hello_decco_manager_->llToMap(lat, lon, px, py);
+
+    // Check distance makes sense
+    double max_dist = 100.0;
+    if (std::abs(px - flight_controller_interface_->getCurrentLocalPosition().pose.position.x) < max_dist && std::abs(py - flight_controller_interface_->getCurrentLocalPosition().pose.position.y) < max_dist) {
+        has_setpoint_ = true;
+        setpoint_started_ = false;
+        if (!is_armed_) {
+            needs_takeoff_ = true;
+        }
+        else {
+            updateCurrentTask(Task::SETPOINT);
+        }
+        initial_transit_point_.pose.position.x = px;
+        initial_transit_point_.pose.position.y = py;
+        auto conf_msg = hello_decco_manager_->packageToTymbalHD("confirmation", json_msg, this->get_clock()->now());
+        tymbal_hd_pub_->publish(conf_msg);
+
+        if (!hello_decco_manager_->getElevationInit()) {
+            hello_decco_manager_->setDroneLocationLocal(slam_pose_);
+            hello_decco_manager_->getHomeElevation(home_elevation_);
+        }
+        RCLCPP_INFO(this->get_logger(), "got home elevation : %f", home_elevation_);
+    }
+    else {
+        logEvent(EventType::TASK_STATUS, Severity::HIGH, "Setpoint rejected, farther than max distance.");
+        auto rej_msg = hello_decco_manager_->rejectFlight(json_msg, this->get_clock()->now());
+        tymbal_hd_pub_->publish(rej_msg);
+    }
+
 }
 
 void TaskManager::emergencyResponse(const std::string severity) {

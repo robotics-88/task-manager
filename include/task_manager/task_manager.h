@@ -78,7 +78,9 @@ class TaskManager : public rclcpp::Node
             PAUSE,
             EXPLORING,
             LAWNMOWER,
+            TRAIL_FOLLOW,
             IN_TRANSIT,
+            SETPOINT,
             RTL_88,
             TAKING_OFF,
             LANDING,
@@ -96,7 +98,8 @@ class TaskManager : public rclcpp::Node
 
         enum SurveyType {
             SUB,
-            SUPER
+            SUPER,
+            TRAIL
         };
 
         enum Severity {
@@ -225,6 +228,7 @@ class TaskManager : public rclcpp::Node
         bool do_slam_;
         bool enable_autonomy_;
         bool use_failsafes_;
+        bool do_trail_;
 
         bool do_attollo_;
         bool do_mapir_;
@@ -240,16 +244,17 @@ class TaskManager : public rclcpp::Node
         bool utm_tf_init_;    
 
         // Control defaults
-        float target_altitude_;
-        float target_agl_;
-        float min_altitude_;
-        float min_agl_;
-        float max_altitude_;
-        float max_agl_;
-        float altitude_offset_;
+        double target_altitude_;
+        double target_agl_;
+        double min_altitude_;
+        double min_agl_;
+        double max_altitude_;
+        double max_agl_;
+        double altitude_offset_;
         double home_elevation_;
         double max_dist_to_polygon_;
         double flightleg_area_acres_;
+        double goal_reached_threshold_;
 
         // TF
         std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
@@ -292,9 +297,9 @@ class TaskManager : public rclcpp::Node
         rclcpp::TimerBase::SharedPtr mode_monitor_timer_;
         std::string cmd_history_;
         messages_88::msg::TaskStatus task_msg_;
-
         std::vector<geometry_msgs::msg::PoseStamped> lawnmower_points_;
         bool lawnmower_started_;
+        bool setpoint_started_;
         SurveyType survey_type_;
         
         geometry_msgs::msg::PoseStamped goal_;
@@ -317,6 +322,7 @@ class TaskManager : public rclcpp::Node
         // State
         bool is_armed_;
         bool in_autonomous_flight_;
+        bool has_setpoint_;
 
         rclcpp::TimerBase::SharedPtr odid_timer_;
         bool init_remote_id_message_sent_;
@@ -354,6 +360,7 @@ class TaskManager : public rclcpp::Node
         void startLanding();
         void startFailsafeLanding();
         void startPause();
+        void startTrailFollowing(bool start);
         
         // Other methods
         bool isBatteryOk();

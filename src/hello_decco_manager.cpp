@@ -65,16 +65,23 @@ std_msgs::msg::String HelloDeccoManager::packageToTymbalPuddle(std::string topic
 }
 
 std_msgs::msg::String HelloDeccoManager::flightReceipt(json msgJson, const rclcpp::Time timestamp) {
-    json msg;
-    msg["id"] = msgJson["id"];
-    return packageToTymbalHD("flight_confirm", msg, timestamp);
+    return packageToTymbalHD("confirmation", msgJson, timestamp);
+}
+
+std_msgs::msg::String HelloDeccoManager::rejectFlight(json msgJson, const rclcpp::Time timestamp) {
+    return flightReceipt(msgJson, timestamp);
+    // Parse data
+    RCLCPP_INFO(rclcpp::get_logger("hello_decco_manager"), "Flight received was rejected.");
 }
 
 std_msgs::msg::String HelloDeccoManager::acceptFlight(json msgJson, geometry_msgs::msg::Polygon &poly, double &home_elevation, const rclcpp::Time timestamp) {
+    flightReceipt(msgJson, timestamp);
     // Parse data
-    flight_json_ = msgJson;
+    flight_json_ = msgJson["gossip"];
     RCLCPP_INFO(rclcpp::get_logger("hello_decco_manager"), "Flight received");
     poly = polygonFromJson(flight_json_["subpolygon"]["coordinates"][0]);
+
+    std::cout << "Inner size: " << poly.points.size() << std::endl;
     // Convert polygon to map coordinates and visualize
     map_region_ = polygonToMap(poly);
     getHomeElevation(home_elevation);
@@ -168,6 +175,10 @@ visualization_msgs::msg::Marker HelloDeccoManager::visualizePolygon(const rclcpp
     m.color.b = 0.0;
     m.id = 0;
 
+    std::cout << "Here1\n";
+
+    std::cout << "size: " << map_region_.points.size() << std::endl;
+
     for (unsigned ii = 0; ii < map_region_.points.size(); ii++) {
         // Add marker
         geometry_msgs::msg::Point p;
@@ -179,6 +190,8 @@ visualization_msgs::msg::Marker HelloDeccoManager::visualizePolygon(const rclcpp
     geometry_msgs::msg::Point p = m.points.at(0);
     m.points.push_back(p);
 
+    std::cout << "Here2\n";
+
     return m;
 }
 
@@ -188,7 +201,7 @@ geometry_msgs::msg::Polygon HelloDeccoManager::polygonToMap(const geometry_msgs:
     for (unsigned ii = 0; ii < polygon.points.size(); ii++) {
         geometry_msgs::msg::Point32 poly_point;
         double px, py;
-        decco_utilities::llToMap(polygon.points.at(ii).x, polygon.points.at(ii).y, px, py, utm_x_offset_, utm_y_offset_);
+        llToMap(polygon.points.at(ii).x, polygon.points.at(ii).y, px, py);
         poly_point.x = px;
         poly_point.y = py;
         map_polygon.points.push_back(poly_point);
@@ -210,7 +223,7 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::msg::Polygon &pol
     geometry_msgs::msg::Polygon polygon_map;
     for (const auto &point : polygon.points) {
         double px, py;
-        decco_utilities::llToMap(point.x, point.y, px, py, utm_x_offset_, utm_y_offset_);
+        llToMap(point.x, point.y, px, py);
         geometry_msgs::msg::Point32 point_map;
         point_map.x = px;
         point_map.y = py;
@@ -390,6 +403,10 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::msg::Polygon &pol
     }
 
     return true;
+}
+
+void HelloDeccoManager::llToMap(const double lat, const double lon, double &px, double &py) {
+    decco_utilities::llToMap(lat, lon, px, py, utm_x_offset_, utm_y_offset_);
 }
 
 }
