@@ -83,12 +83,9 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
     this->declare_parameter("do_slam", do_slam_);
     this->declare_parameter("simulate", simulate_);
 
-    if (!this->get_parameter("offline", offline_))
-        RCLCPP_WARN(this->get_logger(), "offline param not found");
-    if (!this->get_parameter("do_slam", do_slam_))
-        RCLCPP_WARN(this->get_logger(), "do_slam param not found");
-    if (!this->get_parameter("simulate", simulate_))
-        RCLCPP_WARN(this->get_logger(), "simulate param not found");
+    this->get_parameter("offline", offline_);
+    this->get_parameter("do_slam", do_slam_);
+    this->get_parameter("simulate", simulate_);
 
     if (do_slam_) {
         param_map_[ "EK3_SRC1_POSXY" ] = 6;

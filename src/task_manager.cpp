@@ -1465,19 +1465,23 @@ void TaskManager::acceptFlight(json mapver_json) {
     geometry_msgs::msg::Polygon polygon;
 
     // Process flight via HDM
-    auto receipt = hello_decco_manager_->flightReceipt(flight, timestamp);
+    auto receipt = hello_decco_manager_->flightReceipt(mapver_json, timestamp);
     tymbal_hd_pub_->publish(receipt);
 
-    auto burn_unit_rcv = hello_decco_manager_->acceptFlight(flight, polygon, home_elevation_, timestamp);
+    bool poly_valid;
+    auto burn_unit_rcv = hello_decco_manager_->acceptFlight(mapver_json, polygon, poly_valid, home_elevation_, timestamp);
     tymbal_hd_pub_->publish(burn_unit_rcv);
+
+    if (!poly_valid) {
+        logEvent(EventType::INFO, Severity::MEDIUM, "Polygon invalid, not continuing flight");
+        return;
+    }
 
     RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
 
     // Now publish polygon visualization
     auto vis = hello_decco_manager_->visualizePolygon(timestamp);
     map_region_pub_->publish(vis);
-
-    std::cout << "Viz" << std::endl;
 
     auto req = std::make_shared<mavros_msgs::srv::WaypointPush::Request>();
     if (hello_decco_manager_->polygonToGeofence(polygon, req)) {
@@ -1487,8 +1491,6 @@ void TaskManager::acceptFlight(json mapver_json) {
     else {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Geofence invalid, not setting geofence");
     }
-
-    std::cout << "Geo" << std::endl;
     
     map_polygon_ = hello_decco_manager_->getMapPolygon();
     if (!polygonDistanceOk(initial_transit_point_, map_polygon_)) {
@@ -1496,16 +1498,12 @@ void TaskManager::acceptFlight(json mapver_json) {
         return;
     }
 
-    std::cout << "Map" << std::endl;
-
     if (offline_) {
         updateCurrentTask(Task::IN_TRANSIT); // TODO find a better way to make auton possible in offline mode
     }
     else {
         needs_takeoff_ = true;
     }
-
-    std::cout << "End" << std::endl;
 }
 
 // TODO where should this live?

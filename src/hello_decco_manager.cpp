@@ -74,14 +74,14 @@ std_msgs::msg::String HelloDeccoManager::rejectFlight(json msgJson, const rclcpp
     RCLCPP_INFO(rclcpp::get_logger("hello_decco_manager"), "Flight received was rejected.");
 }
 
-std_msgs::msg::String HelloDeccoManager::acceptFlight(json msgJson, geometry_msgs::msg::Polygon &poly, double &home_elevation, const rclcpp::Time timestamp) {
+std_msgs::msg::String HelloDeccoManager::acceptFlight(json msgJson, geometry_msgs::msg::Polygon &poly, bool &poly_valid, double &home_elevation, const rclcpp::Time timestamp) {
     flightReceipt(msgJson, timestamp);
     // Parse data
     flight_json_ = msgJson["gossip"];
     RCLCPP_INFO(rclcpp::get_logger("hello_decco_manager"), "Flight received");
     poly = polygonFromJson(flight_json_["subpolygon"]["coordinates"][0]);
+    poly_valid = poly.points.size() > 2;
 
-    std::cout << "Inner size: " << poly.points.size() << std::endl;
     // Convert polygon to map coordinates and visualize
     map_region_ = polygonToMap(poly);
     getHomeElevation(home_elevation);
@@ -152,6 +152,12 @@ std_msgs::msg::String HelloDeccoManager::updateFlightStatus(std::string flight_s
 
 geometry_msgs::msg::Polygon HelloDeccoManager::polygonFromJson(json jsonPolygon) {
     geometry_msgs::msg::Polygon polygon;
+    
+    if (jsonPolygon.size() < 3) {
+        RCLCPP_WARN(rclcpp::get_logger("hello_decco_manager"), "Invalid JSON polygon, returning empty");
+        return polygon;
+    }
+
     for (auto& element : jsonPolygon) {
         geometry_msgs::msg::Point32 pt;
         pt.y = element[0];
@@ -163,6 +169,13 @@ geometry_msgs::msg::Polygon HelloDeccoManager::polygonFromJson(json jsonPolygon)
 
 visualization_msgs::msg::Marker HelloDeccoManager::visualizePolygon(const rclcpp::Time timestamp) {
     visualization_msgs::msg::Marker m;
+
+    // Repost first marker at end to close the loop
+    if (map_region_.points.size() < 3) {
+        RCLCPP_WARN(rclcpp::get_logger("hello_decco_manager"), "Invalid polygon for visualization, returning empty marker");
+        return m;
+    }
+
     m.scale.x = 2.0;
     m.header.frame_id = mavros_map_frame_;
 
@@ -175,10 +188,6 @@ visualization_msgs::msg::Marker HelloDeccoManager::visualizePolygon(const rclcpp
     m.color.b = 0.0;
     m.id = 0;
 
-    std::cout << "Here1\n";
-
-    std::cout << "size: " << map_region_.points.size() << std::endl;
-
     for (unsigned ii = 0; ii < map_region_.points.size(); ii++) {
         // Add marker
         geometry_msgs::msg::Point p;
@@ -186,11 +195,9 @@ visualization_msgs::msg::Marker HelloDeccoManager::visualizePolygon(const rclcpp
         p.y = map_region_.points.at(ii).y;
         m.points.push_back(p);
     }
-    // Repost first marker at end to close the loop
+
     geometry_msgs::msg::Point p = m.points.at(0);
     m.points.push_back(p);
-
-    std::cout << "Here2\n";
 
     return m;
 }
@@ -210,6 +217,11 @@ geometry_msgs::msg::Polygon HelloDeccoManager::polygonToMap(const geometry_msgs:
 }
 
 bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::msg::Polygon &polygon, std::shared_ptr<mavros_msgs::srv::WaypointPush::Request> &request) {
+
+    if (polygon.points.size() < 3) {
+        RCLCPP_WARN(rclcpp::get_logger("hello_decco_manager"), "Invalid polygon, not creating geofence");
+        return false;
+    }
 
     request->start_index = 0;
 
