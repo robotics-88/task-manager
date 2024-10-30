@@ -1293,10 +1293,10 @@ void TaskManager::slamPoseCallback(const geometry_msgs::msg::PoseStamped::Shared
 }
 
 void TaskManager::registeredPclCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
-
     if (!map_tf_init_) {
         return;
     }
+
     pcl::PointCloud<pcl::PointXYZI>::Ptr reg_cloud(new pcl::PointCloud<pcl::PointXYZI>());
     pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud(new pcl::PointCloud<pcl::PointXYZI>());
     pcl::fromROSMsg (*msg, *reg_cloud);
@@ -1309,8 +1309,6 @@ void TaskManager::registeredPclCallback(const sensor_msgs::msg::PointCloud2::Sha
     pointcloud_repub_->publish(map_cloud_ros);
 
     if (utm_tf_init_ && offline_ & save_pcd_) {
-        RCLCPP_INFO(this->get_logger(), "Adding pcl to pcl_save");
-
         pcl::PointCloud<pcl::PointXYZI>::Ptr cloud = map_cloud;
         // if (save_pcd_frame_ == "utm") {
             pcl::PointCloud<pcl::PointXYZI>::Ptr utm_cloud(new pcl::PointCloud<pcl::PointXYZI>());

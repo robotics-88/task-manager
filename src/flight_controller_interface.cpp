@@ -137,6 +137,10 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
         drone_init_timer_ = this->create_wall_timer(1s, std::bind(&FlightControllerInterface::initializeFlightController, this));
         msg_rate_timer_ = this->create_wall_timer(std::chrono::duration<float>(msg_rate_timer_dt_), std::bind(&FlightControllerInterface::checkMsgRates, this));
     }
+    else {
+        // Declare that drone is initalized for offline mode
+        drone_initialized_ = true;
+    }
 
     // fill recent current vector with starting estimated current from param
     for (unsigned i = 0; i < 10; i++) {
