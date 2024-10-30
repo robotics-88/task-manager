@@ -1584,7 +1584,9 @@ void TaskManager::setpointResponse(json &json_msg) {
 
     // Check distance makes sense
     double max_dist = 100.0;
-    if (std::abs(px - flight_controller_interface_->getCurrentLocalPosition().pose.position.x) < max_dist && std::abs(py - flight_controller_interface_->getCurrentLocalPosition().pose.position.y) < max_dist) {
+    double diff_x = px - flight_controller_interface_->getCurrentLocalPosition().pose.position.x;
+    double diff_y = py - flight_controller_interface_->getCurrentLocalPosition().pose.position.y;
+    if (std::abs(diff_x) < max_dist && std::abs(diff_y) < max_dist) {
         has_setpoint_ = true;
         setpoint_started_ = false;
         if (!is_armed_) {
@@ -1595,6 +1597,13 @@ void TaskManager::setpointResponse(json &json_msg) {
         }
         initial_transit_point_.pose.position.x = px;
         initial_transit_point_.pose.position.y = py;
+
+        double yaw_target_ = atan2(diff_y, diff_x);
+
+        tf2::Quaternion setpoint_q;
+        setpoint_q.setRPY(0.0, 0.0, yaw_target_);
+        tf2::convert(setpoint_q, initial_transit_point_.pose.orientation);
+
         hello_decco_manager_->packageToTymbalHD("confirmation", json_msg);
 
         if (!hello_decco_manager_->getElevationInit()) {
