@@ -1893,10 +1893,12 @@ json TaskManager::makeTaskJson() {
     j["flightMode"] = flight_controller_interface_->getFlightMode();
     double xval = goal_.pose.position.x;
     double yval = goal_.pose.position.y;
-    json goalArray;
-    goalArray.push_back(xval);
-    goalArray.push_back(yval);
-    j["goal"] = goalArray;
+    double lat, lon;
+    hello_decco_manager_->mapToLl(xval, yval, lat, lon);
+    json goalObject;
+    goalObject["latitude"] = lat;
+    goalObject["longitude"] = lon;
+    j["goal"] = goalObject;
     j["taskStatus"] = getTaskString(current_task_);
     j["minAltitude"] = min_altitude_;
     j["maxAltitude"] = max_altitude_;
