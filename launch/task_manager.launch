@@ -47,7 +47,7 @@
     <arg name="simulate" default="false"/>
     <arg name="offline" default="false"/>
 
-    <node pkg="task_manager" exec="task_manager_node" output="screen">
+    <node pkg="task_manager" exec="task_manager_node" namespace="task_manager" output="screen">
         <param name="do_slam" value="$(var do_slam)"/>
         <param name="enable_autonomy" value="$(var enable_autonomy)"/>
         <param name="use_failsafes" value="$(var use_failsafes)"/>
@@ -73,14 +73,10 @@
         <param name="max_dist_to_polygon" value="$(var max_dist_to_polygon)"/>
         <param name="flightleg_area_acres" value="$(var flightleg_area_acres)"/>
         <param name="do_trail" value="$(var do_trail)"/>
-        <param name="all_stream_rate" value="5.0"/>
-        <param name="imu_rate" value="120.0"/>
-        <param name="local_pos_rate" value="60.0"/>
         <param name="simulate" value="$(var simulate)"/>
         <param name="offline" value="$(var offline)"/>
         <param name="save_pcd" value="$(var save_pcd)"/>
-        <param name="battery_size" value="5.2"/> 
-        <param name="estimated_current" value="20.0"/> 
+        
         <param name="estimated_drone_speed" value="2.0"/>
         <param name="battery_failsafe_safety_factor" value="2.0"/>
         <param name="do_mapir" value="$(var do_mapir)"/>
@@ -91,5 +87,12 @@
         <param name="lidar_pitch" value="$(var lidar_pitch)"/>
         <param name="lidar_x" value="$(var lidar_x)"/>
         <param name="lidar_z" value="$(var lidar_z)"/>
+
+        <!-- Flight Controller Interface params -->
+        <param name="estimated_current" value="20.0"/> 
+        <param name="battery_size" value="5.21"/> 
+        <param name="all_stream_rate" value="5.0"/>
+        <param name="imu_rate" value="120.0"/>
+        <param name="local_pos_rate" value="60.0"/>
     </node>
 </launch>

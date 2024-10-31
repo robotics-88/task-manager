@@ -9,10 +9,11 @@ int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv);
 
-  auto tm_node = std::make_shared<task_manager::TaskManager>();
-  tm_node->initialize();
+  auto fci_node = std::make_shared<flight_controller_interface::FlightControllerInterface>();
+  auto tm_node = std::make_shared<task_manager::TaskManager>(fci_node);
 
-  rclcpp::executors::SingleThreadedExecutor executor;
+  rclcpp::executors::MultiThreadedExecutor executor;
+  executor.add_node(fci_node);
   executor.add_node(tm_node);
   executor.spin();
   try {
@@ -22,7 +23,7 @@ int main(int argc, char** argv)
   } catch (...) {
       RCLCPP_ERROR(tm_node->get_logger(), "Unknown exception in executor spin");
   }
-  
+
   rclcpp::shutdown();
   RCLCPP_INFO(tm_node->get_logger(), "Shutting down task manager node");
   return 0;

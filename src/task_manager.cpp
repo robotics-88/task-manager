@@ -25,10 +25,10 @@ using namespace std::chrono_literals;
 
 namespace task_manager
 {
-TaskManager::TaskManager() : Node("task_manager")
+TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightControllerInterface> fci)
+    : Node("task_manager")
     , current_task_(Task::INITIALIZING)
-    , hello_decco_manager_(nullptr)
-    , flight_controller_interface_(nullptr)
+    , flight_controller_interface_(fci)
     , task_manager_loop_duration_(1.0)
     , simulate_(false)
     , offline_(false)
@@ -46,6 +46,7 @@ TaskManager::TaskManager() : Node("task_manager")
     , altitude_offset_(0.0)
     , home_elevation_(0.0)
     , max_dist_to_polygon_(300.0)
+    , flightleg_area_acres_(3.0)
     , goal_reached_threshold_(2.0)
     , map_tf_init_(false)
     , home_utm_zone_(-1)
@@ -108,9 +109,6 @@ TaskManager::TaskManager() : Node("task_manager")
     , thermal_timeout_(rclcpp::Duration::from_seconds(1.0))
     , rosbag_timeout_(rclcpp::Duration::from_seconds(1.0))
 {
-}
-
-void TaskManager::initialize() {
     RCLCPP_INFO(this->get_logger(), "TM entered init");
 
     this->declare_parameter("enable_autonomy", enable_autonomy_);
@@ -155,6 +153,7 @@ void TaskManager::initialize() {
     this->declare_parameter("lidar_pitch", lidar_pitch_);
     this->declare_parameter("lidar_x", lidar_x_);
     this->declare_parameter("lidar_z", lidar_z_);
+    this->declare_parameter("flightleg_area_acres", flightleg_area_acres_);
 
     // Now get parameters
     this->get_parameter("enable_autonomy", enable_autonomy_);
@@ -196,6 +195,7 @@ void TaskManager::initialize() {
     this->get_parameter("lidar_pitch", lidar_pitch_);
     this->get_parameter("lidar_x", lidar_x_);
     this->get_parameter("lidar_z", lidar_z_);
+    this->get_parameter("flightleg_area_acres", flightleg_area_acres_);
 
     // Init agl altitude params
     max_agl_ = max_altitude_;
@@ -249,6 +249,8 @@ void TaskManager::initialize() {
     geopoint_service_ = this->create_service<messages_88::srv::Geopoint>("slam2geo", std::bind(&TaskManager::convert2Geo, this, _1, std::placeholders::_2, std::placeholders::_3));
     elevation_map_service_ = this->create_service<messages_88::srv::GetMapData>("get_map_data", std::bind(&TaskManager::getMapData, this, _1, std::placeholders::_2, std::placeholders::_3));
 
+    mavros_geofence_client_ = this->create_client<mavros_msgs::srv::WaypointPush>("/mavros/geofence/push");
+
     // If running slam, pass goals through path planner, which receives goal_topic and plans a path. 
     // Otherwise, send direct setpoint to mavros. 
     if (do_slam_)
@@ -285,17 +287,19 @@ void TaskManager::initialize() {
     task_msg_.enable_autonomy = enable_autonomy_;
     task_msg_.enable_exploration = true;
 
-    // tymbal subscriber
+    // tymbal pub/subs
+    tymbal_hd_pub_ = this->create_publisher<std_msgs::msg::String>("/tymbal/to_hello_decco", 10);
     tymbal_sub_ = this->create_subscription<std_msgs::msg::String>("/tymbal/to_decco", 10, std::bind(&TaskManager::packageFromTymbal, this, _1));
+    // Maybe the above topic should be called "from_hello_decco", feels a little more readable
+    tymbal_puddle_pub_ = this->create_publisher<std_msgs::msg::String>("/tymbal/to_puddle", 10);
+    map_region_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("/map_region", 10);
+
 
     // TF
     tf_static_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-    // We can only create these pointers with `shared_from_this()` outside of the main constructor. 
-    hello_decco_manager_ = std::make_shared<hello_decco_manager::HelloDeccoManager>(shared_from_this());
-    flight_controller_interface_ = std::make_shared<flight_controller_interface::FlightControllerInterface>(shared_from_this());
     flight_controller_interface_->setAutonomyEnabled(enable_autonomy_);
 
     // Start timers
@@ -303,9 +307,16 @@ void TaskManager::initialize() {
     task_manager_timer_ = this->create_wall_timer(std::chrono::duration<float>(task_manager_loop_duration_), std::bind(&TaskManager::runTaskManager, this));
     heartbeat_timer_ = this->create_wall_timer(1s, std::bind(&TaskManager::heartbeatTimerCallback, this));
     odid_timer_ = this->create_wall_timer(1s, std::bind(&TaskManager::odidTimerCallback, this));
+
+    // Initialize hello decco manager
+    hello_decco_manager_ = std::make_shared<hello_decco_manager::HelloDeccoManager>(flightleg_area_acres_, mavros_map_frame_);
+
 }
 
-TaskManager::~TaskManager(){
+TaskManager::~TaskManager() {
+
+    RCLCPP_INFO(this->get_logger(), "Calling TM destructor");
+
     if (offline_ && save_pcd_) {
         if (pcl_save_->size() > 0) {
             std::string file_name = "utm.pcd";
@@ -324,7 +335,7 @@ TaskManager::~TaskManager(){
             }
             pcd_save_dir += file_name;
             pcl::PCDWriter pcd_writer;
-            RCLCPP_INFO(this->get_logger(), "current scan saved to /PCD/%s", file_name.c_str());
+            RCLCPP_INFO(this->get_logger(), "current scan saved to %s", pcd_save_dir.c_str());
             pcd_writer.writeBinary(pcd_save_dir, *pcl_save_);
         }
         else {
@@ -469,7 +480,8 @@ void TaskManager::runTaskManager() {
                 explore_action_result_ == rclcpp_action::ResultCode::SUCCEEDED) {
 
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Initiating RTL_88 due to exploration action stopped. "); // TODO add result parsing to string
-                hello_decco_manager_->updateFlightStatus("COMPLETED");
+                auto fs_msg = hello_decco_manager_->updateFlightStatus("COMPLETED", this->get_clock()->now());
+                tymbal_hd_pub_->publish(fs_msg);
                 startRtl88();
             }
 
@@ -526,7 +538,8 @@ void TaskManager::runTaskManager() {
     task_msg_.current_status.data = getTaskString(current_task_);
     task_pub_->publish(task_msg_);
     json task_json = makeTaskJson();
-    hello_decco_manager_->packageToTymbalHD("task_status", task_json);
+    auto ts_msg = hello_decco_manager_->packageToTymbalHD("task_status", task_json, this->get_clock()->now());
+    tymbal_hd_pub_->publish(ts_msg);
 
     json path_json;
     path_json["timestamp"] = static_cast<float>(flight_controller_interface_->getCurrentGlobalPosition().header.stamp.sec
@@ -595,8 +608,6 @@ void TaskManager::startExploration() {
     current_explore_goal_.min_altitude = min_altitude_;
     current_explore_goal_.max_altitude = max_altitude_;
 
-    explore_action_client_->wait_for_action_server();
-
     // Start with a rotation command in case no frontiers immediately processed, will be overridden with first exploration goal
     geometry_msgs::msg::Twist vel;
     vel.angular.x = 0;
@@ -604,13 +615,15 @@ void TaskManager::startExploration() {
     vel.angular.z = M_PI_2; // PI/2 rad/s
     local_vel_pub_->publish(vel);
 
-    if (!explore_action_client_->wait_for_action_server()) {
+    if (!explore_action_client_->wait_for_action_server(2s)) {
         RCLCPP_WARN(this->get_logger(), "Explore action client not available after waiting");
     }
+
     explore_action_client_->async_send_goal(current_explore_goal_);
 
     logEvent(EventType::STATE_MACHINE, Severity::LOW, "Sending explore goal");
-    hello_decco_manager_->updateFlightStatus("ACTIVE");
+    auto fs_msg = hello_decco_manager_->updateFlightStatus("ACTIVE", this->get_clock()->now());
+    tymbal_hd_pub_->publish(fs_msg);
 
     updateCurrentTask(Task::EXPLORING);
 }
@@ -736,6 +749,10 @@ void TaskManager::checkFailsafes() {
 }
 
 bool TaskManager::initialized() {
+
+    // Wait for FCI to finish initializing
+    if (!flight_controller_interface_->getDroneInitalized())
+        return false;
 
     // Get drone heading
     if (!offline_) {
@@ -942,7 +959,8 @@ void TaskManager::heartbeatTimerCallback() {
         j["deccoId"] = hd_drone_id_;
         j["startTime"] = start_time_;
     }
-    hello_decco_manager_->packageToTymbalHD("decco_heartbeat", j);
+    auto hb_msg = hello_decco_manager_->packageToTymbalHD("decco_heartbeat", j, this->get_clock()->now());
+    tymbal_hd_pub_->publish(hb_msg);
 
     // rclcpp::Time now_time = this->get_clock()->now();
     // float interval = (now_time - last_ui_heartbeat_stamp_).seconds();
@@ -1017,7 +1035,8 @@ bool TaskManager::isBatteryOk() {
 }
 
 void TaskManager::startBag() {
-    if (bag_active_) {
+
+    if (bag_active_ || offline_ || !do_record_) {
         return;
     }
     logEvent(EventType::INFO, Severity::LOW, "Bag starting, dir: " + data_directory_);
@@ -1277,6 +1296,7 @@ void TaskManager::registeredPclCallback(const sensor_msgs::msg::PointCloud2::Sha
     if (!map_tf_init_) {
         return;
     }
+
     pcl::PointCloud<pcl::PointXYZI>::Ptr reg_cloud(new pcl::PointCloud<pcl::PointXYZI>());
     pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud(new pcl::PointCloud<pcl::PointXYZI>());
     pcl::fromROSMsg (*msg, *reg_cloud);
@@ -1402,16 +1422,21 @@ void TaskManager::packageFromTymbal(const std_msgs::msg::String::SharedPtr msg) 
 }
 
 void TaskManager::acceptFlight(json mapver_json) {
+
+    rclcpp::Time timestamp = this->get_clock()->now();
+
     json flight = mapver_json["gossip"];
 
     if (!map_tf_init_) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Not ready for flight, try again after initialized");
-        hello_decco_manager_->rejectFlight(mapver_json);
+        auto rej_msg = hello_decco_manager_->rejectFlight(mapver_json, timestamp);
+        tymbal_hd_pub_->publish(rej_msg);
         return;
     }
     burn_unit_name_ = static_cast<std::string>(flight["burnUnitName"]);
     hd_drone_id_ = flight["droneId"];
-    start_time_ = decco_utilities::rosTimeToMilliseconds(this->get_clock()->now());
+    
+    start_time_ = decco_utilities::rosTimeToMilliseconds(timestamp);
 
     std::string type = static_cast<std::string>(flight["type"]);
     if (type == "PERI") {
@@ -1424,7 +1449,8 @@ void TaskManager::acceptFlight(json mapver_json) {
         // TODO update types in HD
         if (!do_trail_) {
             logEvent(EventType::INFO, Severity::HIGH, "Trail requested but trail detector not active.");
-            hello_decco_manager_->rejectFlight(mapver_json);
+            auto msg = hello_decco_manager_->rejectFlight(mapver_json, timestamp);
+            tymbal_hd_pub_->publish(msg);
             return;
         }
         survey_type_ = SurveyType::TRAIL;
@@ -1434,11 +1460,33 @@ void TaskManager::acceptFlight(json mapver_json) {
     }
 
     hello_decco_manager_->setDroneLocationLocal(slam_pose_);
-    bool geofence_ok;
-    hello_decco_manager_->acceptFlight(mapver_json, geofence_ok, home_elevation_);
-    RCLCPP_INFO(this->get_logger(), "got home elevation : %f", home_elevation_);
+    geometry_msgs::msg::Polygon polygon;
 
-    if (!geofence_ok) {
+    // Process flight via HDM
+    auto receipt = hello_decco_manager_->flightReceipt(mapver_json, timestamp);
+    tymbal_hd_pub_->publish(receipt);
+
+    bool poly_valid;
+    auto burn_unit_rcv = hello_decco_manager_->acceptFlight(mapver_json, polygon, poly_valid, home_elevation_, timestamp);
+    tymbal_hd_pub_->publish(burn_unit_rcv);
+
+    if (!poly_valid) {
+        logEvent(EventType::INFO, Severity::MEDIUM, "Polygon invalid, not continuing flight");
+        return;
+    }
+
+    RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
+
+    // Now publish polygon visualization
+    auto vis = hello_decco_manager_->visualizePolygon(timestamp);
+    map_region_pub_->publish(vis);
+
+    auto req = std::make_shared<mavros_msgs::srv::WaypointPush::Request>();
+    if (hello_decco_manager_->polygonToGeofence(polygon, req)) {
+        auto result = mavros_geofence_client_->async_send_request(req);
+        // TODO see if there is a clean way to handle result - I think I had issues with this last time I tried
+    }
+    else {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Geofence invalid, not setting geofence");
     }
     
@@ -1573,7 +1621,8 @@ bool TaskManager::lawnmowerGoalComplete() {
 void TaskManager::setpointResponse(json &json_msg) {
     if (!map_tf_init_) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Not ready for flight, try again after initialized");
-        hello_decco_manager_->rejectFlight(json_msg);
+        auto resp = hello_decco_manager_->rejectFlight(json_msg, this->get_clock()->now());
+        tymbal_hd_pub_->publish(resp);
         return;
     }
 
@@ -1595,16 +1644,18 @@ void TaskManager::setpointResponse(json &json_msg) {
         else {
             updateCurrentTask(Task::SETPOINT);
         }
+
+        // Set initial transit point
         initial_transit_point_.pose.position.x = px;
         initial_transit_point_.pose.position.y = py;
-
         double yaw_target_ = atan2(diff_y, diff_x);
-
         tf2::Quaternion setpoint_q;
         setpoint_q.setRPY(0.0, 0.0, yaw_target_);
         tf2::convert(setpoint_q, initial_transit_point_.pose.orientation);
 
-        hello_decco_manager_->packageToTymbalHD("confirmation", json_msg);
+        // Give confirmation
+        auto conf_msg = hello_decco_manager_->packageToTymbalHD("confirmation", json_msg, this->get_clock()->now());
+        tymbal_hd_pub_->publish(conf_msg);
 
         if (!hello_decco_manager_->getElevationInit()) {
             hello_decco_manager_->setDroneLocationLocal(slam_pose_);
@@ -1614,7 +1665,8 @@ void TaskManager::setpointResponse(json &json_msg) {
     }
     else {
         logEvent(EventType::TASK_STATUS, Severity::HIGH, "Setpoint rejected, farther than max distance.");
-        hello_decco_manager_->rejectFlight(json_msg);
+        auto rej_msg = hello_decco_manager_->rejectFlight(json_msg, this->get_clock()->now());
+        tymbal_hd_pub_->publish(rej_msg);
     }
 
 }
@@ -1841,7 +1893,8 @@ void TaskManager::publishHealth() {
     }
 
     jsonObjects["healthIndicators"] = healthObjects;
-    hello_decco_manager_->packageToTymbalHD("health_report", jsonObjects);
+    auto hr_msg = hello_decco_manager_->packageToTymbalHD("health_report", jsonObjects, this->get_clock()->now());
+    tymbal_hd_pub_->publish(hr_msg);
 }
 
 void TaskManager::logEvent(EventType type, Severity sev, std::string description) {
@@ -1873,7 +1926,8 @@ void TaskManager::logEvent(EventType type, Severity sev, std::string description
     j["type"] = getEventTypeString(type);
     j["description"] = description.substr(0, 256); // Limit string size to 256
 
-    hello_decco_manager_->packageToTymbalHD("event", j);
+    auto event_msg = hello_decco_manager_->packageToTymbalHD("event", j, this->get_clock()->now());
+    tymbal_hd_pub_->publish(event_msg);
 
     if (in_autonomous_flight_) {
         j["deccoId"] = hd_drone_id_;
@@ -1884,7 +1938,8 @@ void TaskManager::logEvent(EventType type, Severity sev, std::string description
             {"longitude", hb.longitude}
         };
         j["location"] = ll_json;
-        hello_decco_manager_->packageToTymbalPuddle("/flight-event", j);
+        auto puddle_msg = hello_decco_manager_->packageToTymbalPuddle("/flight-event", j);
+        tymbal_puddle_pub_->publish(puddle_msg);
     }
 }
 
