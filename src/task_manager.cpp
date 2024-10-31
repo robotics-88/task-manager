@@ -440,12 +440,12 @@ void TaskManager::runTaskManager() {
         }
         case Task::SETPOINT: {
             if (!setpoint_started_) {
-                position_setpoint_pub_->publish(initial_transit_point_);
+                position_setpoint_pub_->publish(goal_);
                 setpoint_started_ = true;
             }
             else {
                 bool reached = decco_utilities::isInAcceptanceRadius(flight_controller_interface_->getCurrentLocalPosition().pose.position,
-                                                                          initial_transit_point_.pose.position,
+                                                                          goal_.pose.position,
                                                                           3.0);
                 if (reached) {
                     has_setpoint_ = false;
@@ -568,11 +568,11 @@ void TaskManager::startTakeoff() {
 }
 
 void TaskManager::startTransit() {
-    padNavTarget(initial_transit_point_);
+    padNavTarget(goal_);
 
-    initial_transit_point_.header.frame_id = mavros_map_frame_;
-    initial_transit_point_.header.stamp = this->get_clock()->now();
-    position_setpoint_pub_->publish(initial_transit_point_);
+    goal_.header.frame_id = mavros_map_frame_;
+    goal_.header.stamp = this->get_clock()->now();
+    position_setpoint_pub_->publish(goal_);
 
     updateCurrentTask(Task::IN_TRANSIT);
 }
@@ -1443,7 +1443,7 @@ void TaskManager::acceptFlight(json mapver_json) {
     }
     
     map_polygon_ = hello_decco_manager_->getMapPolygon();
-    if (!polygonDistanceOk(initial_transit_point_, map_polygon_)) {
+    if (!polygonDistanceOk(goal_, map_polygon_)) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Polygon rejected, exceeds maximum starting distance threshold");
         return;
     }
@@ -1595,14 +1595,14 @@ void TaskManager::setpointResponse(json &json_msg) {
         else {
             updateCurrentTask(Task::SETPOINT);
         }
-        initial_transit_point_.pose.position.x = px;
-        initial_transit_point_.pose.position.y = py;
+        goal_.pose.position.x = px;
+        goal_.pose.position.y = py;
 
         double yaw_target_ = atan2(diff_y, diff_x);
 
         tf2::Quaternion setpoint_q;
         setpoint_q.setRPY(0.0, 0.0, yaw_target_);
-        tf2::convert(setpoint_q, initial_transit_point_.pose.orientation);
+        tf2::convert(setpoint_q, goal_.pose.orientation);
 
         hello_decco_manager_->packageToTymbalHD("confirmation", json_msg);
 

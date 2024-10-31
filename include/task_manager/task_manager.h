@@ -291,7 +291,6 @@ class TaskManager : public rclcpp::Node
         geometry_msgs::msg::PoseStamped slam_pose_;
         geometry_msgs::msg::PoseStamped home_pos_;
         geometry_msgs::msg::Polygon map_polygon_;
-        geometry_msgs::msg::PoseStamped initial_transit_point_;
         rclcpp::TimerBase::SharedPtr mode_monitor_timer_;
         std::string cmd_history_;
         messages_88::msg::TaskStatus task_msg_;
