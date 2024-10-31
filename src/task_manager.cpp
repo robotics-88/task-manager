@@ -335,7 +335,7 @@ TaskManager::~TaskManager() {
             }
             pcd_save_dir += file_name;
             pcl::PCDWriter pcd_writer;
-            RCLCPP_INFO(this->get_logger(), "current scan saved to /PCD/%s", file_name.c_str());
+            RCLCPP_INFO(this->get_logger(), "current scan saved to %s", pcd_save_dir.c_str());
             pcd_writer.writeBinary(pcd_save_dir, *pcl_save_);
         }
         else {
