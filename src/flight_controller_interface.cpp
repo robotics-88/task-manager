@@ -188,7 +188,7 @@ void FlightControllerInterface::initializeFlightController() {
             else {
                 if (attempts_ > 10) {
                     RCLCPP_ERROR(this->get_logger(), "Param set request unsuccessful after 10 attempts, not initializing drone");
-                    drone_init_timer_.reset();
+                    drone_init_timer_->cancel();
                     return;
                 }
                 attempts_++;
@@ -214,7 +214,7 @@ void FlightControllerInterface::initializeFlightController() {
                 requestMavlinkStreams();
             else if (attempts_ >= 10) {
                 RCLCPP_ERROR(this->get_logger(), "MAVlink stream rates failed, not initializing FCU");
-                drone_init_timer_.reset();
+                drone_init_timer_->cancel();
                 return;
             }
             
@@ -241,7 +241,7 @@ void FlightControllerInterface::initializeFlightController() {
             else {
                 if (attempts_ > 3) {
                     RCLCPP_ERROR(this->get_logger(), "Geofence clear unsuccessful after 3 attempts, not initializing drone");
-                    drone_init_timer_.reset();
+                    drone_init_timer_->cancel();
                     return;
                 }
                 attempts_++;
@@ -277,7 +277,7 @@ void FlightControllerInterface::initializeFlightController() {
         //     else {
         //         if (attempts_ > 3) {
         //             RCLCPP_ERROR(this->get_logger(), "Mission clear unsuccessful after 3 attempts, not initializing drone");
-        //             drone_init_timer_.reset();
+        //             drone_init_timer_->cancel();
         //             return;
         //         }
         //         attempts_++;
@@ -319,7 +319,7 @@ void FlightControllerInterface::initializeFlightController() {
             else {
                 if (attempts_ > 3) {
                     RCLCPP_ERROR(this->get_logger(), "Heading src param set request unsuccessful after 3 attempts, not initializing drone");
-                    drone_init_timer_.reset();
+                    drone_init_timer_->cancel();
                     return;
                 }
                 attempts_++;
@@ -352,7 +352,7 @@ void FlightControllerInterface::initializeFlightController() {
         else {
             if (attempts_ == 3) {
                 RCLCPP_ERROR(this->get_logger(), "Compass heading not received after 3 attempts");
-                drone_init_timer_.reset();
+                drone_init_timer_->cancel();
             }
             RCLCPP_WARN(this->get_logger(), "Compass heading not yet received, trying again in 1s");
             attempts_++;
@@ -392,7 +392,7 @@ void FlightControllerInterface::initializeFlightController() {
             else {
                 if (attempts_ > 3) {
                     RCLCPP_ERROR(this->get_logger(), "Param set request unsuccessful after 3 attempts, not initializing drone");
-                    drone_init_timer_.reset();
+                    drone_init_timer_->cancel();
                     return;
                 }
                 attempts_++;
@@ -406,7 +406,7 @@ void FlightControllerInterface::initializeFlightController() {
 
     RCLCPP_INFO(this->get_logger(), "Drone initialization successful");
     drone_initialized_ = true;
-    drone_init_timer_.reset();
+    drone_init_timer_->cancel();
 }
 
 void FlightControllerInterface::requestMavlinkStreams() {
