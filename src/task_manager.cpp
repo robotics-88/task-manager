@@ -1539,20 +1539,7 @@ void TaskManager::getLawnmowerPattern(const geometry_msgs::msg::Polygon &polygon
     std::vector<lawnmower::Point> points = lawnmower::generateLawnmowerPattern(polygon_points, 10);
     geometry_msgs::msg::PoseStamped pose_stamped;
     pose_stamped.header.frame_id = mavros_map_frame_;
-    pose_stamped.header.stamp = this->get_clock()->now();
-
-    // TODO outer loop for testing, remove
-    for (int j = 0; j < 10; j++) {
-        for (int ii = 0; ii < points.size(); ii++) {
-            geometry_msgs::msg::Pose pose;
-            pose.position.x = points.at(ii).x;
-            pose.position.y = points.at(ii).y;
-            pose.position.z = target_altitude_;
-            pose_stamped.pose = pose;
-            lawnmower_points.push_back(pose_stamped);
-        }
-    }
-    
+    pose_stamped.header.stamp = this->get_clock()->now();    
 }
 
 // TODO remove this once confirmed
