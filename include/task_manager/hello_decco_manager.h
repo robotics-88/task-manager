@@ -36,12 +36,12 @@ namespace hello_decco_manager {
 class HelloDeccoManager
 {
     public:
-        HelloDeccoManager(const std::shared_ptr<rclcpp::Node>& node);
+        HelloDeccoManager(const double flightleg_acres, const std::string mavros_map_frame);
         ~HelloDeccoManager();
 
-        void rejectFlight(json msgJson);
-        void acceptFlight(json msgJson, bool &geofence_ok, double &home_elevation);
-        void updateFlightStatus(std::string flight_status);
+        std_msgs::msg::String rejectFlight(json msgJson, const rclcpp::Time timestamp);
+        std_msgs::msg::String acceptFlight(json msgJson, geometry_msgs::msg::Polygon &polygon, bool &poly_valid, double &home_elevation, const rclcpp::Time timestamp);
+        std_msgs::msg::String updateFlightStatus(std::string flight_status, const rclcpp::Time timestamp);
         void setUtm(double utm_x, double utm_y, int zone) {
             utm_x_offset_ = -utm_x;
             utm_y_offset_ = -utm_y;
@@ -49,14 +49,20 @@ class HelloDeccoManager
         }
         geometry_msgs::msg::Polygon polygonFromJson(json jsonPolygon);
         geometry_msgs::msg::Polygon polygonToMap(const geometry_msgs::msg::Polygon &polygon);
-        void packageToTymbalHD(std::string topic, json gossip);
-        void packageToTymbalPuddle(std::string topic, json gossip);
+        std_msgs::msg::String packageToTymbalHD(std::string topic, json gossip, const rclcpp::Time timestamp);
+        std_msgs::msg::String packageToTymbalPuddle(std::string topic, json gossip);
         void llToMap(const double lat, const double lon, double &px, double &py);
         void mapToLl(const double px, const double py, double &lat, double &lon);
 
         void setDroneLocationLocal(geometry_msgs::msg::PoseStamped location) {
             drone_location_ = location;
         }
+
+        std_msgs::msg::String flightReceipt(json msgJson, const rclcpp::Time timestamp);
+
+        visualization_msgs::msg::Marker visualizePolygon(const rclcpp::Time timestamp);
+
+        bool polygonToGeofence(const geometry_msgs::msg::Polygon &polygon, std::shared_ptr<mavros_msgs::srv::WaypointPush::Request> &req);
 
         geometry_msgs::msg::Polygon getMapPolygon() { 
             return map_region_;
@@ -70,7 +76,7 @@ class HelloDeccoManager
         }
 
     private:
-        const std::shared_ptr<rclcpp::Node> node_;
+        const std::weak_ptr<rclcpp::Node> node_;
 
         enum FlightStatus {
             NOT_STARTED,
@@ -91,12 +97,7 @@ class HelloDeccoManager
         int utm_zone_;
         geometry_msgs::msg::PoseStamped drone_location_;
 
-        // tymbal
-        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr tymbal_hd_pub_;
-        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr tymbal_puddle_pub_;
-
         json flight_json_;
-        rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr map_region_pub_;
         unsigned long start_time_;
         unsigned long end_time_;
 
@@ -104,25 +105,13 @@ class HelloDeccoManager
         elevation2ros::Elevation2Ros elevation_source_;
         bool elevation_init_;
 
-        // MAVROS geofence publisher
-        rclcpp::Client<mavros_msgs::srv::WaypointPush>::SharedPtr mavros_geofence_client_;
-
         // Subpolygon creation variables
         std::vector<cxd::Vertex > vertices_;
         geometry_msgs::msg::Polygon map_region_; // Entire unit
         std::vector<geometry_msgs::msg::Polygon> local_subpolygons_; // Flight units
         double flightleg_area_m2_;
 
-        void flightReceipt(json msgJson);
-        void polygonInitializer(const geometry_msgs::msg::Polygon &msg, bool make_legs, bool &geofence_ok);
         void elevationInitializer();
-
-        // Polygon mgmt
-        bool polygonToGeofence(const geometry_msgs::msg::Polygon &polygon);
-        int polygonNumFlights(const geometry_msgs::msg::Polygon &polygon);
-        int concaveToMinimalConvexPolygons();
-        void visualizeLegs();
-        void visualizePolygon();
 };
 
 }

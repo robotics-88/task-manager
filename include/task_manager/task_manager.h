@@ -66,7 +66,7 @@ class TaskManager : public rclcpp::Node
 {
     public:
 
-        TaskManager();
+        TaskManager(std::shared_ptr<flight_controller_interface::FlightControllerInterface> fci);
         ~TaskManager();
 
         enum Task
@@ -107,8 +107,6 @@ class TaskManager : public rclcpp::Node
             MEDIUM,
             HIGH
         };
-
-        void initialize();
 
         void runTaskManager();
 
@@ -158,6 +156,9 @@ class TaskManager : public rclcpp::Node
         rclcpp::Publisher<messages_88::msg::TaskStatus>::SharedPtr          task_pub_;
         rclcpp::Publisher<sensor_msgs::msg::NavSatFix>::SharedPtr           global_pose_pub_;
         rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr  marker_pub_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                 tymbal_hd_pub_;
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                 tymbal_puddle_pub_;
+        rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr       map_region_pub_;
 
         // Subscriptions
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr      path_planner_sub_;
@@ -252,6 +253,7 @@ class TaskManager : public rclcpp::Node
         double altitude_offset_;
         double home_elevation_;
         double max_dist_to_polygon_;
+        double flightleg_area_acres_;
         double goal_reached_threshold_;
 
         // TF
@@ -344,6 +346,9 @@ class TaskManager : public rclcpp::Node
 
         rclcpp::Service<messages_88::srv::Geopoint>::SharedPtr geopoint_service_;
         rclcpp::Service<messages_88::srv::GetMapData>::SharedPtr elevation_map_service_;
+
+        // MAVROS geofence publisher
+        rclcpp::Client<mavros_msgs::srv::WaypointPush>::SharedPtr mavros_geofence_client_;
 
         // Task methods
         void updateCurrentTask(Task task);
