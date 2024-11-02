@@ -564,7 +564,7 @@ void TaskManager::startTakeoff() {
         return;
     }
 
-    if (flight_controller_interface_->takeOff()) {
+    if (flight_controller_interface_->takeOff(target_altitude_)) {
         if (do_record_) {
             startBag();
         }
@@ -931,7 +931,6 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
         resp->home_offset = altitude_offset_;
         resp->target_altitude = target_altitude_;
         RCLCPP_INFO(this->get_logger(),"setting new alt params with home elev %f, alt offset %f, and target alt: %f.", home_elevation_, altitude_offset_, target_altitude_);
-        // setAltitudeParams(max_altitude_, min_altitude_, target_altitude_);
 
         this->set_parameter(rclcpp::Parameter("max_alt", max_altitude_));
         this->set_parameter(rclcpp::Parameter("min_alt", min_altitude_));
@@ -1700,45 +1699,13 @@ void TaskManager::altitudesResponse(json &json_msg) {
     min_agl_ = json_msg["min_altitude"];
     target_agl_= json_msg["default_altitude"];
 
-    // Set altitude params in all nodes that use them
-    setAltitudeParams(max_agl_ + altitude_offset_, min_agl_ + altitude_offset_, target_agl_ + altitude_offset_);
+    max_altitude_ = max_agl_ + altitude_offset_;
+    min_altitude_ = min_agl_ + altitude_offset_;
+    target_altitude_ = target_agl_ + altitude_offset_;
 
-    // TODO verify but I think can remove this. only sets values for this node anyways.
-    this->set_parameter(rclcpp::Parameter("max_alt", max_agl_ + altitude_offset_));
-    this->set_parameter(rclcpp::Parameter("min_alt", min_agl_ + altitude_offset_));
-    this->set_parameter(rclcpp::Parameter("default_alt", target_agl_ + altitude_offset_));
-}
-
-void TaskManager::setAltitudeParams(const double max, const double min, const double target) {
-    // Set altitude params in all nodes that use them
-    auto parameter = rcl_interfaces::msg::Parameter();
-    auto request = std::make_shared<rcl_interfaces::srv::SetParametersAtomically::Request>();
-
-    auto client = this->create_client<rcl_interfaces::srv::SetParametersAtomically>("universal_altitude_params"); // E.g.: serviceName = "/turtlesim/set_parameters_atomically"
-
-    parameter.name = "max_alt";  // E.g.: parameter_name = "background_b"
-    parameter.value.type = 3;          //  bool = 1,    int = 2,        float = 3,     string = 4
-    parameter.value.double_value = max; // .bool_value, .integer_value, .double_value, .string_value
-    request->parameters.push_back(parameter);
-
-    parameter.name = "min_alt";  // E.g.: parameter_name = "background_b"
-    parameter.value.type = 3;          //  bool = 1,    int = 2,        float = 3,     string = 4
-    parameter.value.double_value = min; // .bool_value, .integer_value, .double_value, .string_value
-    request->parameters.push_back(parameter);
-
-    parameter.name = "default_alt";  // E.g.: parameter_name = "background_b"
-    parameter.value.type = 3;          //  bool = 1,    int = 2,        float = 3,     string = 4
-    parameter.value.double_value = target; // .bool_value, .integer_value, .double_value, .string_value
-    request->parameters.push_back(parameter);
-
-    while (!client->wait_for_service(1s)) {
-        if (!rclcpp::ok()) {
-        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Interrupted while waiting for the service. Exiting.");
-        return;
-        }
-        RCLCPP_INFO_STREAM(this->get_logger(), "universal altitude param service not available, waiting again..."); 
-    }
-    auto result = client->async_send_request(request);
+    this->set_parameter(rclcpp::Parameter("max_alt", max_altitude_));
+    this->set_parameter(rclcpp::Parameter("min_alt", min_altitude_));
+    this->set_parameter(rclcpp::Parameter("default_alt", target_altitude_));
 }
 
 void TaskManager::remoteIDResponse(json &json) {
@@ -1953,9 +1920,10 @@ json TaskManager::makeTaskJson() {
         j["goal"] = goalObject;
     }
     j["taskStatus"] = getTaskString(current_task_);
-    j["minAltitude"] = min_altitude_;
-    j["maxAltitude"] = max_altitude_;
-    j["targetAltitude"] = target_altitude_;
+    // TODO, which do we want to see in HD? AGL or absolute?
+    j["minAltitude"] = min_agl_;
+    j["maxAltitude"] = max_agl_;
+    j["targetAltitude"] = target_agl_;
     j["flightMinLeft"] = (int)(flight_controller_interface_->getFlightTimeRemaining() / 60.f);
     j["operatorID"] = operator_id_;
     j["rawVoltage"] = (int)(flight_controller_interface_->getBatteryVoltage() * 100);

@@ -389,7 +389,6 @@ class TaskManager : public rclcpp::Node
         bool getMapData(const std::shared_ptr<rmw_request_id_t>/*request_header*/,
                         const std::shared_ptr<messages_88::srv::GetMapData::Request> req,
                         const std::shared_ptr<messages_88::srv::GetMapData::Response> resp);
-        void setAltitudeParams(const double max, const double min, const double target);
 
         // mapversation methods
         void setpointResponse(json &json_msg);

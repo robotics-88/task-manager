@@ -32,7 +32,6 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
   , in_guided_mode_(false)
   , compass_received_(false)
   , current_altitude_(-1.0)
-  , target_altitude_(2.0)
   , detected_utm_zone_(-1)
   , utm_set_(false)
   , battery_percentage_(0.0)
@@ -880,7 +879,7 @@ bool FlightControllerInterface::arm() {
     return true;
 }
 
-bool FlightControllerInterface::takeOff() {
+bool FlightControllerInterface::takeOff(const double takeoff_altitude) {
 
     if (!in_guided_mode_) {
         RCLCPP_WARN(this->get_logger(), "Not taking off. Not in guided mode");
@@ -902,15 +901,12 @@ bool FlightControllerInterface::takeOff() {
         }
     }
 
-    if (!this->get_parameter("default_alt", target_altitude_))
-        RCLCPP_WARN(this->get_logger(), "Flight controller interface cannot get default altitude param");
-
-    RCLCPP_INFO(this->get_logger(), "Requesting takeoff to %fm", target_altitude_);
+    RCLCPP_INFO(this->get_logger(), "Requesting takeoff to %fm", takeoff_altitude);
     std::shared_ptr<rclcpp::Node> takeoff_node = rclcpp::Node::make_shared("takeoff_client");
     auto takeoff_client = takeoff_node->create_client<mavros_msgs::srv::CommandTOL>("/mavros/cmd/takeoff");
     auto takeoff_req = std::make_shared<mavros_msgs::srv::CommandTOL::Request>();
 
-    takeoff_req->altitude = target_altitude_;
+    takeoff_req->altitude = takeoff_altitude;
     auto result = takeoff_client->async_send_request(takeoff_req);
     if (rclcpp::spin_until_future_complete(takeoff_node, result) ==
             rclcpp::FutureReturnCode::SUCCESS
