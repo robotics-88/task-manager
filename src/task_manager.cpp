@@ -62,8 +62,8 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , lawnmower_started_(false)
     , setpoint_started_(false)
     , health_check_pub_duration_(rclcpp::Duration(5.0, 0))
-    , path_planner_topic_("/kd_pointcloud_accumulated")
-    , costmap_topic_("/costmap_node/costmap/costmap_updates")
+    , path_planner_topic_("/path_planner/heartbeat")
+    , costmap_topic_("/occ_density_grid")
     , lidar_topic_("/cloud_registered")
     , thermal_topic_("/thermal_cam/image_rect_color")
     , attollo_topic_("/mapir_rgn/image_rect")
@@ -207,13 +207,15 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
 
     // Health pubs/subs
     health_pub_ = this->create_publisher<std_msgs::msg::String>("/mapversation/health_report", 10);
+    rclcpp::QoS hb_qos(10);
+	hb_qos.liveliness();
     if (do_slam_) {
-        path_planner_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(path_planner_topic_, 10, std::bind(&TaskManager::pathPlannerCallback, this, _1));
+        path_planner_sub_ = this->create_subscription<std_msgs::msg::Header>(path_planner_topic_, hb_qos, std::bind(&TaskManager::pathPlannerCallback, this, _1));
         // Pointcloud republisher only if SLAM running
         pointcloud_repub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered_map", 10);
         registered_cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered", 10, std::bind(&TaskManager::registeredPclCallback, this, _1));
     }
-    costmap_sub_ = this->create_subscription<map_msgs::msg::OccupancyGridUpdate>(costmap_topic_, 10, std::bind(&TaskManager::costmapCallback, this, _1));
+    costmap_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(costmap_topic_, 10, std::bind(&TaskManager::costmapCallback, this, _1));
     if (lidar_type == 2) {
         lidar_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(lidar_topic_, 10, std::bind(&TaskManager::pointcloudCallback, this, _1));
     }
@@ -1318,11 +1320,11 @@ void TaskManager::registeredPclCallback(const sensor_msgs::msg::PointCloud2::Sha
     }
 }
 
-void TaskManager::pathPlannerCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+void TaskManager::pathPlannerCallback(const std_msgs::msg::Header::SharedPtr msg) {
     last_path_planner_stamp_ = this->get_clock()->now();
 }
 
-void TaskManager::costmapCallback(const map_msgs::msg::OccupancyGridUpdate::SharedPtr msg) {
+void TaskManager::costmapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
     last_costmap_stamp_ = this->get_clock()->now();
 }
 

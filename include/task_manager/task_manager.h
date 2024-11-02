@@ -24,7 +24,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 #include "livox_ros_driver2/msg/custom_msg.hpp"
 
-#include "map_msgs/msg/occupancy_grid_update.hpp"
+#include "nav_msgs/msg/occupancy_grid.hpp"
 
 #include "mavros_msgs/msg/basic_id.hpp"
 #include "mavros_msgs/msg/operator_id.hpp"
@@ -120,8 +120,8 @@ class TaskManager : public rclcpp::Node
         // Subscriber callbacks
         void slamPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr slam_pose);
         void registeredPclCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
-        void pathPlannerCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
-        void costmapCallback(const map_msgs::msg::OccupancyGridUpdate::SharedPtr msg);
+        void pathPlannerCallback(const std_msgs::msg::Header::SharedPtr msg);
+        void costmapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
         void pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
         void livoxCallback(const livox_ros_driver2::msg::CustomMsg::SharedPtr msg);
         void mapirCallback(const sensor_msgs::msg::Image::SharedPtr msg);
@@ -161,8 +161,8 @@ class TaskManager : public rclcpp::Node
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr       map_region_pub_;
 
         // Subscriptions
-        rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr      path_planner_sub_;
-        rclcpp::Subscription<map_msgs::msg::OccupancyGridUpdate>::SharedPtr costmap_sub_;
+        rclcpp::Subscription<std_msgs::msg::Header>::SharedPtr              path_planner_sub_;
+        rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr       costmap_sub_;
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr      lidar_sub_;
         rclcpp::Subscription<livox_ros_driver2::msg::CustomMsg>::SharedPtr  livox_lidar_sub_;
         rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr            mapir_sub_;
