@@ -101,7 +101,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , last_ui_heartbeat_stamp_(0, 0, RCL_ROS_TIME)
     , lidar_timeout_(rclcpp::Duration::from_seconds(0.5))
     , slam_timeout_(rclcpp::Duration::from_seconds(0.5))
-    , path_timeout_(rclcpp::Duration::from_seconds(0.5))
+    , path_timeout_(rclcpp::Duration::from_seconds(1.0))
     , costmap_timeout_(rclcpp::Duration::from_seconds(3.0))
     , explore_timeout_(1s)
     , mapir_timeout_(rclcpp::Duration::from_seconds(1.0))
@@ -238,7 +238,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     rosbag_sub_ = this->create_subscription<std_msgs::msg::String>(rosbag_topic_, 10, std::bind(&TaskManager::rosbagCallback, this, _1));
 
     // Explore action setup
-    explore_action_client_ = rclcpp_action::create_client<Explore>(this, "explore");
+    explore_action_client_ = rclcpp_action::create_client<Explore>(this, "/explore");
     auto send_explore_goal_options = rclcpp_action::Client<Explore>::SendGoalOptions();
     send_explore_goal_options.goal_response_callback =
       std::bind(&TaskManager::explore_goal_response_callback, this, std::placeholders::_1);
