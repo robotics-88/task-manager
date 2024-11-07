@@ -251,12 +251,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
 
     mavros_geofence_client_ = this->create_client<mavros_msgs::srv::WaypointPush>("/mavros/geofence/push");
 
-    // If running slam, pass goals through path planner, which receives goal_topic and plans a path. 
-    // Otherwise, send direct setpoint to mavros. 
-    if (do_slam_)
-        position_setpoint_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(goal_topic, 10);
-    else
-        position_setpoint_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/setpoint_position/local", rclcpp::SensorDataQoS());
+    goal_pos_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(goal_topic, 10);
 
     local_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/mavros/setpoint_velocity/cmd_vel_unstamped", 10);
     vision_pose_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/vision_pose/pose", 10);
@@ -451,7 +446,7 @@ void TaskManager::runTaskManager() {
         }
         case Task::SETPOINT: {
             if (!setpoint_started_) {
-                position_setpoint_pub_->publish(initial_transit_point_);
+                goal_pos_pub_->publish(initial_transit_point_);
                 setpoint_started_ = true;
             }
             else {
@@ -498,7 +493,7 @@ void TaskManager::runTaskManager() {
                 }
                 else {
                     getLawnmowerGoal();
-                    position_setpoint_pub_->publish(goal_);
+                    goal_pos_pub_->publish(goal_);
                     lawnmower_started_ = true;
                 }
             }
@@ -585,7 +580,7 @@ void TaskManager::startTransit() {
 
     initial_transit_point_.header.frame_id = mavros_map_frame_;
     initial_transit_point_.header.stamp = this->get_clock()->now();
-    position_setpoint_pub_->publish(initial_transit_point_);
+    goal_pos_pub_->publish(initial_transit_point_);
 
     updateCurrentTask(Task::IN_TRANSIT);
 }
@@ -635,7 +630,7 @@ void TaskManager::startRtl88() {
         flight_controller_interface_->setMode(flight_controller_interface_->guided_mode_);
     }
 
-    position_setpoint_pub_->publish(home_pos_);
+    goal_pos_pub_->publish(home_pos_);
     updateCurrentTask(Task::RTL_88);
 }
 
