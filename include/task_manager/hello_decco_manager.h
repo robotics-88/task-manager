@@ -52,6 +52,7 @@ class HelloDeccoManager
         std_msgs::msg::String packageToTymbalHD(std::string topic, json gossip, const rclcpp::Time timestamp);
         std_msgs::msg::String packageToTymbalPuddle(std::string topic, json gossip);
         void llToMap(const double lat, const double lon, double &px, double &py);
+        void mapToLl(const double px, const double py, double &lat, double &lon);
 
         void setDroneLocationLocal(geometry_msgs::msg::PoseStamped location) {
             drone_location_ = location;

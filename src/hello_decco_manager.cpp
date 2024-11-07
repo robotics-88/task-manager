@@ -421,4 +421,8 @@ void HelloDeccoManager::llToMap(const double lat, const double lon, double &px, 
     decco_utilities::llToMap(lat, lon, px, py, utm_x_offset_, utm_y_offset_);
 }
 
+void HelloDeccoManager::mapToLl(const double px, const double py, double &lat, double &lon) {
+    decco_utilities::mapToLl(px, py, lat, lon, utm_x_offset_, utm_y_offset_, utm_zone_);
+}
+
 }

@@ -18,7 +18,7 @@ find_package(cv_bridge REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(livox_ros_driver2 REQUIRED)
 find_package(libmavconn REQUIRED)
-find_package(map_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 find_package(mavlink REQUIRED)
 find_package(mavros REQUIRED)
 find_package(mavros_msgs REQUIRED)
@@ -62,7 +62,7 @@ ament_target_dependencies(task_manager
   bag_recorder_2
   libmavconn
   livox_ros_driver2
-  map_msgs
+  nav_msgs
   messages_88
   pcl_ros
   std_msgs
