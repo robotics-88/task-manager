@@ -1922,7 +1922,6 @@ json TaskManager::makeTaskJson() {
         j["goal"] = goalObject;
     }
     j["taskStatus"] = getTaskString(current_task_);
-    // TODO, which do we want to see in HD? AGL or absolute?
     j["minAltitude"] = min_agl_;
     j["maxAltitude"] = max_agl_;
     j["targetAltitude"] = target_agl_;
