@@ -89,7 +89,7 @@ class FlightControllerInterface : public rclcpp::Node
         // General public methods
         void initUTM(double &utm_x, double &utm_y);
         bool setMode(std::string mode);
-        bool takeOff();
+        bool takeOff(const double takeoff_altitude);
 
         std::string land_mode_ = "LAND";
         std::string brake_mode_ = "BRAKE";
@@ -106,7 +106,6 @@ class FlightControllerInterface : public rclcpp::Node
         bool enable_autonomy_;
 
         // Control defaults
-        float target_altitude_;
         bool compass_received_;
 
         // Subscribers

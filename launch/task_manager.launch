@@ -27,8 +27,8 @@
     <arg name="flightleg_area_acres" default="3.0"/> <!-- 1 acre = 4046 m2-->
 
     <!-- Health topics -->
-    <arg name="path_planner_topic" default="/kd_pointcloud_accumulated"/>
-    <arg name="costmap_topic" default="/costmap_node/costmap/costmap_updates"/>
+    <arg name="path_planner_topic" default="/path_planner/heartbeat"/>
+    <arg name="costmap_topic" default="/occ_density_grid"/>
     <arg name="lidar_topic" default="/livox/lidar"/>
     <arg name="attollo_topic" default="/attollo_cam/image_rect"/>
     <arg name="mapir_topic" default="/mapir_rgn/image_rect_color"/>

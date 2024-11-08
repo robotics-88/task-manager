@@ -62,8 +62,8 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , lawnmower_started_(false)
     , setpoint_started_(false)
     , health_check_pub_duration_(rclcpp::Duration(5.0, 0))
-    , path_planner_topic_("/kd_pointcloud_accumulated")
-    , costmap_topic_("/costmap_node/costmap/costmap_updates")
+    , path_planner_topic_("/path_planner/heartbeat")
+    , costmap_topic_("/occ_density_grid")
     , lidar_topic_("/cloud_registered")
     , thermal_topic_("/thermal_cam/image_rect_color")
     , attollo_topic_("/mapir_rgn/image_rect")
@@ -101,7 +101,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , last_ui_heartbeat_stamp_(0, 0, RCL_ROS_TIME)
     , lidar_timeout_(rclcpp::Duration::from_seconds(0.5))
     , slam_timeout_(rclcpp::Duration::from_seconds(0.5))
-    , path_timeout_(rclcpp::Duration::from_seconds(0.5))
+    , path_timeout_(rclcpp::Duration::from_seconds(1.0))
     , costmap_timeout_(rclcpp::Duration::from_seconds(3.0))
     , explore_timeout_(1s)
     , mapir_timeout_(rclcpp::Duration::from_seconds(1.0))
@@ -207,13 +207,15 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
 
     // Health pubs/subs
     health_pub_ = this->create_publisher<std_msgs::msg::String>("/mapversation/health_report", 10);
+    rclcpp::QoS hb_qos(10);
+	hb_qos.liveliness();
     if (do_slam_) {
-        path_planner_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(path_planner_topic_, 10, std::bind(&TaskManager::pathPlannerCallback, this, _1));
+        path_planner_sub_ = this->create_subscription<std_msgs::msg::Header>(path_planner_topic_, hb_qos, std::bind(&TaskManager::pathPlannerCallback, this, _1));
         // Pointcloud republisher only if SLAM running
         pointcloud_repub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered_map", 10);
         registered_cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered", 10, std::bind(&TaskManager::registeredPclCallback, this, _1));
     }
-    costmap_sub_ = this->create_subscription<map_msgs::msg::OccupancyGridUpdate>(costmap_topic_, 10, std::bind(&TaskManager::costmapCallback, this, _1));
+    costmap_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(costmap_topic_, 10, std::bind(&TaskManager::costmapCallback, this, _1));
     if (lidar_type == 2) {
         lidar_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(lidar_topic_, 10, std::bind(&TaskManager::pointcloudCallback, this, _1));
     }
@@ -236,7 +238,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     rosbag_sub_ = this->create_subscription<std_msgs::msg::String>(rosbag_topic_, 10, std::bind(&TaskManager::rosbagCallback, this, _1));
 
     // Explore action setup
-    explore_action_client_ = rclcpp_action::create_client<Explore>(this, "explore");
+    explore_action_client_ = rclcpp_action::create_client<Explore>(this, "/explore");
     auto send_explore_goal_options = rclcpp_action::Client<Explore>::SendGoalOptions();
     send_explore_goal_options.goal_response_callback =
       std::bind(&TaskManager::explore_goal_response_callback, this, std::placeholders::_1);
@@ -446,12 +448,12 @@ void TaskManager::runTaskManager() {
         }
         case Task::SETPOINT: {
             if (!setpoint_started_) {
-                goal_pos_pub_->publish(initial_transit_point_);
+                goal_pos_pub_->publish(goal_);
                 setpoint_started_ = true;
             }
             else {
                 bool reached = decco_utilities::isInAcceptanceRadius(flight_controller_interface_->getCurrentLocalPosition().pose.position,
-                                                                          initial_transit_point_.pose.position,
+                                                                          goal_.pose.position,
                                                                           3.0);
                 if (reached) {
                     has_setpoint_ = false;
@@ -559,7 +561,7 @@ void TaskManager::startTakeoff() {
         return;
     }
 
-    if (flight_controller_interface_->takeOff()) {
+    if (flight_controller_interface_->takeOff(target_altitude_)) {
         if (do_record_) {
             startBag();
         }
@@ -576,11 +578,11 @@ void TaskManager::startTakeoff() {
 }
 
 void TaskManager::startTransit() {
-    padNavTarget(initial_transit_point_);
+    padNavTarget(goal_);
 
-    initial_transit_point_.header.frame_id = mavros_map_frame_;
-    initial_transit_point_.header.stamp = this->get_clock()->now();
-    goal_pos_pub_->publish(initial_transit_point_);
+    goal_.header.frame_id = mavros_map_frame_;
+    goal_.header.stamp = this->get_clock()->now();
+    goal_pos_pub_->publish(goal_);
 
     updateCurrentTask(Task::IN_TRANSIT);
 }
@@ -926,7 +928,6 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
         resp->home_offset = altitude_offset_;
         resp->target_altitude = target_altitude_;
         RCLCPP_INFO(this->get_logger(),"setting new alt params with home elev %f, alt offset %f, and target alt: %f.", home_elevation_, altitude_offset_, target_altitude_);
-        // setAltitudeParams(max_altitude_, min_altitude_, target_altitude_);
 
         this->set_parameter(rclcpp::Parameter("max_alt", max_altitude_));
         this->set_parameter(rclcpp::Parameter("min_alt", min_altitude_));
@@ -1314,11 +1315,11 @@ void TaskManager::registeredPclCallback(const sensor_msgs::msg::PointCloud2::Sha
     }
 }
 
-void TaskManager::pathPlannerCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+void TaskManager::pathPlannerCallback(const std_msgs::msg::Header::SharedPtr msg) {
     last_path_planner_stamp_ = this->get_clock()->now();
 }
 
-void TaskManager::costmapCallback(const map_msgs::msg::OccupancyGridUpdate::SharedPtr msg) {
+void TaskManager::costmapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
     last_costmap_stamp_ = this->get_clock()->now();
 }
 
@@ -1486,7 +1487,7 @@ void TaskManager::acceptFlight(json mapver_json) {
     }
     
     map_polygon_ = hello_decco_manager_->getMapPolygon();
-    if (!polygonDistanceOk(initial_transit_point_, map_polygon_)) {
+    if (!polygonDistanceOk(goal_, map_polygon_)) {
         logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Polygon rejected, exceeds maximum starting distance threshold");
         return;
     }
@@ -1536,16 +1537,13 @@ void TaskManager::getLawnmowerPattern(const geometry_msgs::msg::Polygon &polygon
     pose_stamped.header.frame_id = mavros_map_frame_;
     pose_stamped.header.stamp = this->get_clock()->now();
 
-    // TODO outer loop for testing, remove
-    for (int j = 0; j < 10; j++) {
-        for (int ii = 0; ii < points.size(); ii++) {
-            geometry_msgs::msg::Pose pose;
-            pose.position.x = points.at(ii).x;
-            pose.position.y = points.at(ii).y;
-            pose.position.z = target_altitude_;
-            pose_stamped.pose = pose;
-            lawnmower_points.push_back(pose_stamped);
-        }
+    for (int ii = 0; ii < points.size(); ii++) {
+        geometry_msgs::msg::Pose pose;
+        pose.position.x = points.at(ii).x;
+        pose.position.y = points.at(ii).y;
+        pose.position.z = target_altitude_;
+        pose_stamped.pose = pose;
+        lawnmower_points.push_back(pose_stamped);
     }
     
 }
@@ -1639,14 +1637,13 @@ void TaskManager::setpointResponse(json &json_msg) {
         else {
             updateCurrentTask(Task::SETPOINT);
         }
+        goal_.pose.position.x = px;
+        goal_.pose.position.y = py;
 
-        // Set initial transit point
-        initial_transit_point_.pose.position.x = px;
-        initial_transit_point_.pose.position.y = py;
         double yaw_target_ = atan2(diff_y, diff_x);
         tf2::Quaternion setpoint_q;
         setpoint_q.setRPY(0.0, 0.0, yaw_target_);
-        tf2::convert(setpoint_q, initial_transit_point_.pose.orientation);
+        tf2::convert(setpoint_q, goal_.pose.orientation);
 
         // Give confirmation
         auto conf_msg = hello_decco_manager_->packageToTymbalHD("confirmation", json_msg, this->get_clock()->now());
@@ -1699,45 +1696,13 @@ void TaskManager::altitudesResponse(json &json_msg) {
     min_agl_ = json_msg["min_altitude"];
     target_agl_= json_msg["default_altitude"];
 
-    // Set altitude params in all nodes that use them
-    setAltitudeParams(max_agl_ + altitude_offset_, min_agl_ + altitude_offset_, target_agl_ + altitude_offset_);
+    max_altitude_ = max_agl_ + altitude_offset_;
+    min_altitude_ = min_agl_ + altitude_offset_;
+    target_altitude_ = target_agl_ + altitude_offset_;
 
-    // TODO verify but I think can remove this. only sets values for this node anyways.
-    this->set_parameter(rclcpp::Parameter("max_alt", max_agl_ + altitude_offset_));
-    this->set_parameter(rclcpp::Parameter("min_alt", min_agl_ + altitude_offset_));
-    this->set_parameter(rclcpp::Parameter("default_alt", target_agl_ + altitude_offset_));
-}
-
-void TaskManager::setAltitudeParams(const double max, const double min, const double target) {
-    // Set altitude params in all nodes that use them
-    auto parameter = rcl_interfaces::msg::Parameter();
-    auto request = std::make_shared<rcl_interfaces::srv::SetParametersAtomically::Request>();
-
-    auto client = this->create_client<rcl_interfaces::srv::SetParametersAtomically>("universal_altitude_params"); // E.g.: serviceName = "/turtlesim/set_parameters_atomically"
-
-    parameter.name = "max_alt";  // E.g.: parameter_name = "background_b"
-    parameter.value.type = 3;          //  bool = 1,    int = 2,        float = 3,     string = 4
-    parameter.value.double_value = max; // .bool_value, .integer_value, .double_value, .string_value
-    request->parameters.push_back(parameter);
-
-    parameter.name = "min_alt";  // E.g.: parameter_name = "background_b"
-    parameter.value.type = 3;          //  bool = 1,    int = 2,        float = 3,     string = 4
-    parameter.value.double_value = min; // .bool_value, .integer_value, .double_value, .string_value
-    request->parameters.push_back(parameter);
-
-    parameter.name = "default_alt";  // E.g.: parameter_name = "background_b"
-    parameter.value.type = 3;          //  bool = 1,    int = 2,        float = 3,     string = 4
-    parameter.value.double_value = target; // .bool_value, .integer_value, .double_value, .string_value
-    request->parameters.push_back(parameter);
-
-    while (!client->wait_for_service(1s)) {
-        if (!rclcpp::ok()) {
-        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Interrupted while waiting for the service. Exiting.");
-        return;
-        }
-        RCLCPP_INFO_STREAM(this->get_logger(), "universal altitude param service not available, waiting again..."); 
-    }
-    auto result = client->async_send_request(request);
+    this->set_parameter(rclcpp::Parameter("max_alt", max_altitude_));
+    this->set_parameter(rclcpp::Parameter("min_alt", min_altitude_));
+    this->set_parameter(rclcpp::Parameter("default_alt", target_altitude_));
 }
 
 void TaskManager::remoteIDResponse(json &json) {
@@ -1941,16 +1906,20 @@ void TaskManager::logEvent(EventType type, Severity sev, std::string description
 json TaskManager::makeTaskJson() {
     json j;
     j["flightMode"] = flight_controller_interface_->getFlightMode();
-    double xval = goal_.pose.position.x;
-    double yval = goal_.pose.position.y;
-    json goalArray;
-    goalArray.push_back(xval);
-    goalArray.push_back(yval);
-    j["goal"] = goalArray;
+    if (in_autonomous_flight_) {
+        double xval = goal_.pose.position.x;
+        double yval = goal_.pose.position.y;
+        double lat, lon;
+        hello_decco_manager_->mapToLl(xval, yval, lat, lon);
+        json goalObject;
+        goalObject["latitude"] = lat;
+        goalObject["longitude"] = lon;
+        j["goal"] = goalObject;
+    }
     j["taskStatus"] = getTaskString(current_task_);
-    j["minAltitude"] = min_altitude_;
-    j["maxAltitude"] = max_altitude_;
-    j["targetAltitude"] = target_altitude_;
+    j["minAltitude"] = min_agl_;
+    j["maxAltitude"] = max_agl_;
+    j["targetAltitude"] = target_agl_;
     j["flightMinLeft"] = (int)(flight_controller_interface_->getFlightTimeRemaining() / 60.f);
     j["operatorID"] = operator_id_;
     j["rawVoltage"] = (int)(flight_controller_interface_->getBatteryVoltage() * 100);
