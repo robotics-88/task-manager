@@ -561,10 +561,11 @@ void TaskManager::startTakeoff() {
         return;
     }
 
+    if (do_record_) {
+        startBag();
+    }
+
     if (flight_controller_interface_->takeOff(target_altitude_)) {
-        if (do_record_) {
-            startBag();
-        }
         in_autonomous_flight_ = true;
         updateCurrentTask(Task::TAKING_OFF);
         needs_takeoff_ = false;
@@ -574,7 +575,6 @@ void TaskManager::startTakeoff() {
         logEvent(EventType::FLIGHT_CONTROL, Severity::MEDIUM, "Takeoff request failed. Retrying.");
         takeoff_attempts_++;
     }
-
 }
 
 void TaskManager::startTransit() {
