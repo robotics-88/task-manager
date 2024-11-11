@@ -113,6 +113,22 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
     slam_pose_subscriber_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/decco/pose", 10, std::bind(&FlightControllerInterface::slamPoseCallback, this, _1));
     battery_pub_ = this->create_publisher<messages_88::msg::Battery>("/decco/battery", 10);
 
+    // fill recent current vector with starting estimated current from param
+    for (unsigned i = 0; i < 10; i++) {
+        recent_currents_.push_back(estimated_current_);
+    }
+
+    // Initialize mavros IMU to 0s
+    mavros_imu_init_.orientation.x = 0;
+    mavros_imu_init_.orientation.y = 0;
+    mavros_imu_init_.orientation.z = 0;
+    mavros_imu_init_.orientation.w = 0;
+}
+
+FlightControllerInterface::~FlightControllerInterface() {
+}
+
+void FlightControllerInterface::initialize() {
     if (!offline_) {
 
         // Todo: allow some time for stream rates to settle
@@ -140,20 +156,6 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
         // Declare that drone is initalized for offline mode
         drone_initialized_ = true;
     }
-
-    // fill recent current vector with starting estimated current from param
-    for (unsigned i = 0; i < 10; i++) {
-        recent_currents_.push_back(estimated_current_);
-    }
-
-    // Initialize mavros IMU to 0s
-    mavros_imu_init_.orientation.x = 0;
-    mavros_imu_init_.orientation.y = 0;
-    mavros_imu_init_.orientation.z = 0;
-    mavros_imu_init_.orientation.w = 0;
-}
-
-FlightControllerInterface::~FlightControllerInterface() {
 }
 
 void FlightControllerInterface::initializeFlightController() {

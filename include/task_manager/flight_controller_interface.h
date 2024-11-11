@@ -53,6 +53,8 @@ class FlightControllerInterface : public rclcpp::Node
         FlightControllerInterface();
         ~FlightControllerInterface();
 
+        void initialize();
+
         // Getters and setters
         void setAutonomyEnabled(bool enabled);
         geometry_msgs::msg::PoseStamped getCurrentSlamPosition() {return current_slam_pose_;}

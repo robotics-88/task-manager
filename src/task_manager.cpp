@@ -109,8 +109,6 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , thermal_timeout_(rclcpp::Duration::from_seconds(1.0))
     , rosbag_timeout_(rclcpp::Duration::from_seconds(1.0))
 {
-    RCLCPP_INFO(this->get_logger(), "TM entered init");
-
     this->declare_parameter("enable_autonomy", enable_autonomy_);
     this->declare_parameter("use_failsafes", use_failsafes_);
     this->declare_parameter("default_alt", target_altitude_);
@@ -312,12 +310,9 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
 
     // Initialize hello decco manager
     hello_decco_manager_ = std::make_shared<hello_decco_manager::HelloDeccoManager>(flightleg_area_acres_, mavros_map_frame_);
-
 }
 
 TaskManager::~TaskManager() {
-
-    RCLCPP_INFO(this->get_logger(), "Calling TM destructor");
 
     if (offline_ && save_pcd_) {
         if (pcl_save_->size() > 0) {
