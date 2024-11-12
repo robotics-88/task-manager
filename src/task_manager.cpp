@@ -857,7 +857,7 @@ bool TaskManager::initialized() {
 }
 
 void TaskManager::map2UtmPoint(geometry_msgs::msg::PointStamped &in, geometry_msgs::msg::PointStamped &out) {
-    in.header.frame_id = slam_map_frame_;
+    in.header.frame_id = mavros_map_frame_;
     in.header.stamp = this->get_clock()->now();
     tf_buffer_->transform(in, out, "utm");
 }
