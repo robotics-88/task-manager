@@ -109,6 +109,8 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , thermal_timeout_(rclcpp::Duration::from_seconds(1.0))
     , rosbag_timeout_(rclcpp::Duration::from_seconds(1.0))
 {
+    RCLCPP_INFO(this->get_logger(), "Entered TM constructor");
+    
     this->declare_parameter("enable_autonomy", enable_autonomy_);
     this->declare_parameter("use_failsafes", use_failsafes_);
     this->declare_parameter("default_alt", target_altitude_);

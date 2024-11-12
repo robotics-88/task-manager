@@ -64,6 +64,8 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
   , last_resting_percent_time_(0, 0, RCL_ROS_TIME)
   , last_battery_measurement_(0, 0, RCL_ROS_TIME)
 {
+    RCLCPP_INFO(this->get_logger(), "Entered FCI constructor");
+
     // FCI specific params
     this->declare_parameter("battery_size", battery_size_);
     this->declare_parameter("estimated_current", estimated_current_);
@@ -129,6 +131,8 @@ FlightControllerInterface::~FlightControllerInterface() {
 }
 
 void FlightControllerInterface::initialize() {
+
+    RCLCPP_INFO(this->get_logger(), "Initializing FCI");
     if (!offline_) {
 
         // Todo: allow some time for stream rates to settle

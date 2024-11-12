@@ -13,6 +13,9 @@ int main(int argc, char** argv)
   auto fci_node = std::make_shared<flight_controller_interface::FlightControllerInterface>();
   auto tm_node = std::make_shared<task_manager::TaskManager>(fci_node);
 
+  // Run FCI initialize function
+  fci_node->initialize();
+
   // Start spinner
   rclcpp::executors::MultiThreadedExecutor executor;
   executor.add_node(fci_node);
@@ -21,13 +24,10 @@ int main(int argc, char** argv)
   try {
     executor.spin();
   } catch (const std::exception &e) {
-      RCLCPP_ERROR(tm_node->get_logger(), "Exception in executor spin: %s", e.what());
+    RCLCPP_ERROR(tm_node->get_logger(), "Exception in executor spin: %s", e.what());
   } catch (...) {
-      RCLCPP_ERROR(tm_node->get_logger(), "Unknown exception in executor spin");
+    RCLCPP_ERROR(tm_node->get_logger(), "Unknown exception in executor spin");
   }
-
-  // Run FCI initialize function
-  fci_node->initialize();
 
   rclcpp::shutdown();
   RCLCPP_INFO(tm_node->get_logger(), "Shutting down task manager node");
