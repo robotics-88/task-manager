@@ -84,12 +84,12 @@ std_msgs::msg::String HelloDeccoManager::acceptFlight(json msgJson, geometry_msg
 
     // Convert polygon to map coordinates and visualize
     map_region_ = polygonToMap(poly);
-    getHomeElevation(home_elevation);
+    getHomeElevation(home_elevation, nullptr);
 
     return packageToTymbalHD("burn_unit_receive", flight_json_, timestamp);
 }
 
-void HelloDeccoManager::elevationInitializer() {
+void HelloDeccoManager::elevationInitializer(nav_msgs::msg::OccupancyGrid::SharedPtr tif_grid) {
     // TODO get tif from HD, for now assumes stored in dem/<burn unit name>
     std::string tif_name;
     try {
@@ -99,14 +99,14 @@ void HelloDeccoManager::elevationInitializer() {
     catch (...) {
         tif_name = ament_index_cpp::get_package_share_directory("task_manager") + "/dem/bigilly2.tif";
     }
-    elevation_source_.init(tif_name);
+    elevation_source_.init(tif_name, tif_grid);
     elevation_init_ = true;
 }
 
 bool HelloDeccoManager::getElevationChunk(const double utm_x, const double utm_y, const int width, const int height, sensor_msgs::msg::Image &chunk, double &max, double &min) {
     cv::Mat mat;
     if (!elevation_init_) {
-        elevationInitializer();
+        elevationInitializer(nullptr);
     }
     bool worked = elevation_source_.getElevationChunk(utm_x, utm_y, width, height, mat);
     if (worked) {
@@ -119,9 +119,9 @@ bool HelloDeccoManager::getElevationChunk(const double utm_x, const double utm_y
     return worked;
 }
 
-bool HelloDeccoManager::getHomeElevation(double &value) {
+bool HelloDeccoManager::getHomeElevation(double &value, nav_msgs::msg::OccupancyGrid::SharedPtr tif_grid) {
     if (!elevation_init_) {
-        elevationInitializer();
+        elevationInitializer(tif_grid);
     }
     value = elevation_source_.getElevation(-1 * utm_x_offset_, -1 * utm_y_offset_);
     return true;
@@ -129,7 +129,7 @@ bool HelloDeccoManager::getHomeElevation(double &value) {
 
 bool HelloDeccoManager::getElevationValue(const double utm_x, const double utm_y, double &value) {
     if (!elevation_init_) {
-        elevationInitializer();
+        elevationInitializer(nullptr);
     }
     value = elevation_source_.getElevation(utm_x, utm_y);
     return true;

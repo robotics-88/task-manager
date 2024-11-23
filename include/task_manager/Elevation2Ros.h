@@ -29,7 +29,7 @@ class Elevation2Ros
 public:
     Elevation2Ros() {}
 
-    bool init(const std::string &tif_name) 
+    bool init(const std::string &tif_name, nav_msgs::msg::OccupancyGrid::SharedPtr tif_grid) 
     {
         // Load mat
         dem_cv = cv::imread(tif_name, cv::IMREAD_LOAD_GDAL | cv::IMREAD_ANYDEPTH );
@@ -59,6 +59,28 @@ public:
         GDALClose( hSrcDS );
 
         initializeValleys();
+
+        double resolution = 1.0;
+        double width = dem_cv.cols;
+        double height = dem_cv.rows;
+        double origin_x = - width / 2;
+        double origin_y = - height / 2;
+        // Initialize occupancy grid message
+        tif_grid->header.frame_id = "map";
+        tif_grid->info.resolution = resolution;
+        tif_grid->info.width = width;
+        tif_grid->info.height = height;
+        tif_grid->info.origin.position.x = origin_x;
+        tif_grid->info.origin.position.y = origin_y;
+        tif_grid->info.origin.position.z = 0.0;
+        cv::Mat dem_copy  = dem_cv.clone();
+
+        for (int y = height - 1; y >= 0; y--) {
+            for (int x = 0; x < width; x++) {
+                uint8_t tif_val = dem_copy.at<float>(y, x);
+                tif_grid->data.push_back(tif_val);
+            }
+        }
         
         return true;
     }

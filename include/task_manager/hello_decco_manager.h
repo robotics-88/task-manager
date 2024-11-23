@@ -13,6 +13,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "geometry_msgs/msg/polygon.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "nav_msgs/msg/occupancy_grid.hpp"
 #include "sensor_msgs/msg/nav_sat_fix.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "visualization_msgs/msg/marker.hpp"
@@ -70,7 +71,7 @@ class HelloDeccoManager
 
         bool getElevationChunk(const double utm_x, const double utm_y, const int width, const int height, sensor_msgs::msg::Image &chunk, double &max, double &min);
         bool getElevationValue(const double utm_x, const double utm_y, double &value);
-        bool getHomeElevation(double &value);
+        bool getHomeElevation(double &value, nav_msgs::msg::OccupancyGrid::SharedPtr tif_grid);
         bool getElevationInit() {
             return elevation_init_;
         }
@@ -111,7 +112,7 @@ class HelloDeccoManager
         std::vector<geometry_msgs::msg::Polygon> local_subpolygons_; // Flight units
         double flightleg_area_m2_;
 
-        void elevationInitializer();
+        void elevationInitializer(nav_msgs::msg::OccupancyGrid::SharedPtr tif_grid);
 };
 
 }

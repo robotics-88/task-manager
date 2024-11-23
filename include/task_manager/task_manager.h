@@ -159,6 +159,7 @@ class TaskManager : public rclcpp::Node
         rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                 tymbal_hd_pub_;
         rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                 tymbal_puddle_pub_;
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr       map_region_pub_;
+        rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr          tif_grid_pub_;
 
         // Subscriptions
         rclcpp::Subscription<std_msgs::msg::Header>::SharedPtr              path_planner_sub_;

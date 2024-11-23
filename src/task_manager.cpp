@@ -308,6 +308,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     // Initialize hello decco manager
     hello_decco_manager_ = std::make_shared<hello_decco_manager::HelloDeccoManager>(flightleg_area_acres_, mavros_map_frame_);
 
+    tif_grid_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("/tif_grid", 10);
 }
 
 TaskManager::~TaskManager() {
@@ -415,7 +416,9 @@ void TaskManager::runTaskManager() {
         }
         case Task::MANUAL_FLIGHT: {
             if (!hello_decco_manager_->getElevationInit()) {
-                hello_decco_manager_->getHomeElevation(home_elevation_);
+            auto tif_grid = std::make_shared<nav_msgs::msg::OccupancyGrid>();
+            hello_decco_manager_->getHomeElevation(home_elevation_, tif_grid);
+            tif_grid_pub_->publish(*tif_grid);
                 RCLCPP_INFO(this->get_logger(),"got home elevation in manual mode : %f", home_elevation_);
             }
             if (!flight_controller_interface_->getIsArmed()) {
@@ -1651,7 +1654,9 @@ void TaskManager::setpointResponse(json &json_msg) {
 
         if (!hello_decco_manager_->getElevationInit()) {
             hello_decco_manager_->setDroneLocationLocal(slam_pose_);
-            hello_decco_manager_->getHomeElevation(home_elevation_);
+            auto tif_grid = std::make_shared<nav_msgs::msg::OccupancyGrid>();
+            hello_decco_manager_->getHomeElevation(home_elevation_, tif_grid);
+            tif_grid_pub_->publish(*tif_grid);
         }
         RCLCPP_INFO(this->get_logger(), "got home elevation : %f", home_elevation_);
     }
@@ -1899,7 +1904,7 @@ void TaskManager::logEvent(EventType type, Severity sev, std::string description
         };
         j["location"] = ll_json;
         auto puddle_msg = hello_decco_manager_->packageToTymbalPuddle("/flight-event", j);
-        tymbal_puddle_pub_->publish(puddle_msg);
+        // tymbal_puddle_pub_->publish(puddle_msg);
     }
 }
 
