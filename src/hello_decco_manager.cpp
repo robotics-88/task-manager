@@ -18,6 +18,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <GeographicLib/Geodesic.hpp>
 #include <GeographicLib/PolygonArea.hpp>
 
+#include <boost/filesystem.hpp>
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
@@ -74,7 +75,7 @@ std_msgs::msg::String HelloDeccoManager::rejectFlight(json msgJson, const rclcpp
     RCLCPP_INFO(rclcpp::get_logger("hello_decco_manager"), "Flight received was rejected.");
 }
 
-std_msgs::msg::String HelloDeccoManager::acceptFlight(json msgJson, geometry_msgs::msg::Polygon &poly, bool &poly_valid, double &home_elevation, const rclcpp::Time timestamp) {
+std_msgs::msg::String HelloDeccoManager::acceptFlight(json msgJson, geometry_msgs::msg::Polygon &poly, bool &poly_valid, double &home_elevation, const rclcpp::Time timestamp, bool &has_elevation) {
     flightReceipt(msgJson, timestamp);
     // Parse data
     flight_json_ = msgJson["gossip"];
@@ -84,12 +85,12 @@ std_msgs::msg::String HelloDeccoManager::acceptFlight(json msgJson, geometry_msg
 
     // Convert polygon to map coordinates and visualize
     map_region_ = polygonToMap(poly);
-    getHomeElevation(home_elevation);
+    has_elevation = getHomeElevation(home_elevation);
 
     return packageToTymbalHD("burn_unit_receive", flight_json_, timestamp);
 }
 
-void HelloDeccoManager::elevationInitializer() {
+bool HelloDeccoManager::elevationInitializer() {
     // TODO get tif from HD, for now assumes stored in dem/<burn unit name>
     std::string tif_name;
     try {
@@ -99,14 +100,21 @@ void HelloDeccoManager::elevationInitializer() {
     catch (...) {
         tif_name = ament_index_cpp::get_package_share_directory("task_manager") + "/dem/bigilly2.tif";
     }
+
+    if (!boost::filesystem::exists(tif_name)){
+        return false;
+    }
+    std::cout << "tif name was " << tif_name << std::endl;
     elevation_source_.init(tif_name);
     elevation_init_ = true;
+    return true;
 }
 
 bool HelloDeccoManager::getElevationChunk(const double utm_x, const double utm_y, const int width, const int height, sensor_msgs::msg::Image &chunk, double &max, double &min) {
     cv::Mat mat;
     if (!elevation_init_) {
-        elevationInitializer();
+        bool has_elev = elevationInitializer();
+        if (!has_elev) return false;
     }
     bool worked = elevation_source_.getElevationChunk(utm_x, utm_y, width, height, mat);
     if (worked) {
@@ -121,7 +129,8 @@ bool HelloDeccoManager::getElevationChunk(const double utm_x, const double utm_y
 
 bool HelloDeccoManager::getHomeElevation(double &value) {
     if (!elevation_init_) {
-        elevationInitializer();
+        bool has_elev = elevationInitializer();
+        if (!has_elev) return false;
     }
     value = elevation_source_.getElevation(-1 * utm_x_offset_, -1 * utm_y_offset_);
     return true;
@@ -129,7 +138,8 @@ bool HelloDeccoManager::getHomeElevation(double &value) {
 
 bool HelloDeccoManager::getElevationValue(const double utm_x, const double utm_y, double &value) {
     if (!elevation_init_) {
-        elevationInitializer();
+        bool has_elev = elevationInitializer();
+        if (!has_elev) return false;
     }
     value = elevation_source_.getElevation(utm_x, utm_y);
     return true;

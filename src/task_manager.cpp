@@ -415,7 +415,10 @@ void TaskManager::runTaskManager() {
         }
         case Task::MANUAL_FLIGHT: {
             if (!hello_decco_manager_->getElevationInit()) {
-                hello_decco_manager_->getHomeElevation(home_elevation_);
+                bool got_elev = hello_decco_manager_->getHomeElevation(home_elevation_);
+                if (!got_elev) {
+                    logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "No elevation, can only perform manual flight.");
+                }
                 RCLCPP_INFO(this->get_logger(),"got home elevation in manual mode : %f", home_elevation_);
             }
             if (!flight_controller_interface_->getIsArmed()) {
@@ -1462,12 +1465,20 @@ void TaskManager::acceptFlight(json mapver_json) {
     auto receipt = hello_decco_manager_->flightReceipt(mapver_json, timestamp);
     tymbal_hd_pub_->publish(receipt);
 
-    bool poly_valid;
-    auto burn_unit_rcv = hello_decco_manager_->acceptFlight(mapver_json, polygon, poly_valid, home_elevation_, timestamp);
+    bool poly_valid, has_elevation;
+    auto burn_unit_rcv = hello_decco_manager_->acceptFlight(mapver_json, polygon, poly_valid, home_elevation_, timestamp, has_elevation);
     tymbal_hd_pub_->publish(burn_unit_rcv);
 
     if (!poly_valid) {
         logEvent(EventType::INFO, Severity::MEDIUM, "Polygon invalid, not continuing flight");
+        auto rej_msg = hello_decco_manager_->rejectFlight(mapver_json, timestamp);
+        tymbal_hd_pub_->publish(rej_msg);
+        return;
+    }
+    if (!has_elevation) {
+        logEvent(EventType::INFO, Severity::MEDIUM, "No elevation data, not continuing flight");
+        auto rej_msg = hello_decco_manager_->rejectFlight(mapver_json, timestamp);
+        tymbal_hd_pub_->publish(rej_msg);
         return;
     }
 
@@ -1651,7 +1662,13 @@ void TaskManager::setpointResponse(json &json_msg) {
 
         if (!hello_decco_manager_->getElevationInit()) {
             hello_decco_manager_->setDroneLocationLocal(slam_pose_);
-            hello_decco_manager_->getHomeElevation(home_elevation_);
+            bool got_elev = hello_decco_manager_->getHomeElevation(home_elevation_);
+            if (!got_elev) {
+                logEvent(EventType::TASK_STATUS, Severity::HIGH, "No elevation, can only perform manual flight.");
+                auto rej_msg = hello_decco_manager_->rejectFlight(json_msg, this->get_clock()->now());
+                tymbal_hd_pub_->publish(rej_msg);
+                return;
+            }
         }
         RCLCPP_INFO(this->get_logger(), "got home elevation : %f", home_elevation_);
     }
@@ -1899,7 +1916,7 @@ void TaskManager::logEvent(EventType type, Severity sev, std::string description
         };
         j["location"] = ll_json;
         auto puddle_msg = hello_decco_manager_->packageToTymbalPuddle("/flight-event", j);
-        tymbal_puddle_pub_->publish(puddle_msg);
+        // tymbal_puddle_pub_->publish(puddle_msg);
     }
 }
 
