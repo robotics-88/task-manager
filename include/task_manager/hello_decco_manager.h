@@ -40,7 +40,7 @@ class HelloDeccoManager
         ~HelloDeccoManager();
 
         std_msgs::msg::String rejectFlight(json msgJson, const rclcpp::Time timestamp);
-        std_msgs::msg::String acceptFlight(json msgJson, geometry_msgs::msg::Polygon &polygon, bool &poly_valid, double &home_elevation, const rclcpp::Time timestamp);
+        std_msgs::msg::String acceptFlight(json msgJson, geometry_msgs::msg::Polygon &polygon, bool &poly_valid, double &home_elevation, const rclcpp::Time timestamp, bool &has_elevation);
         std_msgs::msg::String updateFlightStatus(std::string flight_status, const rclcpp::Time timestamp);
         void setUtm(double utm_x, double utm_y, int zone) {
             utm_x_offset_ = -utm_x;
@@ -111,7 +111,7 @@ class HelloDeccoManager
         std::vector<geometry_msgs::msg::Polygon> local_subpolygons_; // Flight units
         double flightleg_area_m2_;
 
-        void elevationInitializer();
+        bool elevationInitializer();
 };
 
 }
