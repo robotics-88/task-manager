@@ -104,7 +104,6 @@ bool HelloDeccoManager::elevationInitializer() {
     if (!boost::filesystem::exists(tif_name)){
         return false;
     }
-    std::cout << "tif name was " << tif_name << std::endl;
     elevation_source_.init(tif_name);
     elevation_init_ = true;
     return true;
