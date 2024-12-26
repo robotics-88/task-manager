@@ -112,7 +112,7 @@ class HelloDeccoManager
         std::vector<geometry_msgs::msg::Polygon> local_subpolygons_; // Flight units
         double flightleg_area_m2_;
 
-        void elevationInitializer(nav_msgs::msg::OccupancyGrid::SharedPtr tif_grid);
+        bool elevationInitializer(nav_msgs::msg::OccupancyGrid::SharedPtr tif_grid);
 };
 
 }

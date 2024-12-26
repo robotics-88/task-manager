@@ -90,7 +90,7 @@ std_msgs::msg::String HelloDeccoManager::acceptFlight(json msgJson, geometry_msg
     return packageToTymbalHD("burn_unit_receive", flight_json_, timestamp);
 }
 
-void HelloDeccoManager::elevationInitializer(nav_msgs::msg::OccupancyGrid::SharedPtr tif_grid) {
+bool HelloDeccoManager::elevationInitializer(nav_msgs::msg::OccupancyGrid::SharedPtr tif_grid) {
     // TODO get tif from HD, for now assumes stored in dem/<burn unit name>
     std::string tif_name;
     try {
