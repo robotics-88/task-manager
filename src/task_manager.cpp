@@ -309,6 +309,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     hello_decco_manager_ = std::make_shared<hello_decco_manager::HelloDeccoManager>(flightleg_area_acres_, mavros_map_frame_);
 
     tif_grid_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("/tif_grid", 10);
+    tif_pcl_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/tif_pcl", 10);
 }
 
 TaskManager::~TaskManager() {
@@ -417,12 +418,18 @@ void TaskManager::runTaskManager() {
         case Task::MANUAL_FLIGHT: {
             if (!hello_decco_manager_->getElevationInit()) {
             auto tif_grid = std::make_shared<nav_msgs::msg::OccupancyGrid>();
-            bool got_elev = hello_decco_manager_->getHomeElevation(home_elevation_, tif_grid);
+            pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+            bool got_elev = hello_decco_manager_->getHomeElevation(home_elevation_, tif_grid, cloud);
             tif_grid_pub_->publish(*tif_grid);
-                if (!got_elev) {
-                    logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "No elevation, can only perform manual flight.");
-                }
-                RCLCPP_INFO(this->get_logger(),"got home elevation in manual mode : %f", home_elevation_);
+            sensor_msgs::msg::PointCloud2 cloud_msg;
+            pcl::toROSMsg(*cloud, cloud_msg);
+            cloud_msg.header.frame_id = tif_grid->header.frame_id;
+            cloud_msg.header.stamp = tif_grid->header.stamp;
+            tif_pcl_pub_->publish(cloud_msg);
+            if (!got_elev) {
+                logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "No elevation, can only perform manual flight.");
+            }
+            RCLCPP_INFO(this->get_logger(),"got home elevation in manual mode : %f", home_elevation_);
             }
             if (!flight_controller_interface_->getIsArmed()) {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Drone disarmed manually");
@@ -1666,8 +1673,14 @@ void TaskManager::setpointResponse(json &json_msg) {
         if (!hello_decco_manager_->getElevationInit()) {
             hello_decco_manager_->setDroneLocationLocal(slam_pose_);
             auto tif_grid = std::make_shared<nav_msgs::msg::OccupancyGrid>();
-            bool got_elev = hello_decco_manager_->getHomeElevation(home_elevation_, tif_grid);
+            pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+            bool got_elev = hello_decco_manager_->getHomeElevation(home_elevation_, tif_grid, cloud);
             tif_grid_pub_->publish(*tif_grid);
+            sensor_msgs::msg::PointCloud2 cloud_msg;
+            pcl::toROSMsg(*cloud, cloud_msg);
+            cloud_msg.header.frame_id = tif_grid->header.frame_id;
+            cloud_msg.header.stamp = tif_grid->header.stamp;
+            tif_pcl_pub_->publish(cloud_msg);
             if (!got_elev) {
                 logEvent(EventType::TASK_STATUS, Severity::HIGH, "No elevation, can only perform manual flight.");
                 auto rej_msg = hello_decco_manager_->rejectFlight(json_msg, this->get_clock()->now());

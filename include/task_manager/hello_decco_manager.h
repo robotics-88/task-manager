@@ -71,7 +71,7 @@ class HelloDeccoManager
 
         bool getElevationChunk(const double utm_x, const double utm_y, const int width, const int height, sensor_msgs::msg::Image &chunk, double &max, double &min);
         bool getElevationValue(const double utm_x, const double utm_y, double &value);
-        bool getHomeElevation(double &value, nav_msgs::msg::OccupancyGrid::SharedPtr tif_grid);
+        bool getHomeElevation(double &value, nav_msgs::msg::OccupancyGrid::SharedPtr tif_grid, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
         bool getElevationInit() {
             return elevation_init_;
         }
@@ -112,7 +112,7 @@ class HelloDeccoManager
         std::vector<geometry_msgs::msg::Polygon> local_subpolygons_; // Flight units
         double flightleg_area_m2_;
 
-        bool elevationInitializer(nav_msgs::msg::OccupancyGrid::SharedPtr tif_grid);
+        bool elevationInitializer(const double utm_x, const double utm_y, nav_msgs::msg::OccupancyGrid::SharedPtr tif_grid, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
 };
 
 }

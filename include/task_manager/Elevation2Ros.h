@@ -16,6 +16,11 @@
 #include <gdal/ogr_p.h>
 #include <gdal/ogr_spatialref.h>
 
+#include "pcl_conversions/pcl_conversions.h"
+#include "pcl_ros/transforms.hpp"
+#include "pcl/point_cloud.h"
+#include "pcl/point_types.h"
+
 namespace elevation2ros
 {
 
@@ -29,7 +34,7 @@ class Elevation2Ros
 public:
     Elevation2Ros() {}
 
-    bool init(const std::string &tif_name, nav_msgs::msg::OccupancyGrid::SharedPtr tif_grid) 
+    bool init(const std::string &tif_name, const double utm_x, const double utm_y, nav_msgs::msg::OccupancyGrid::SharedPtr tif_grid, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud) 
     {
         // Load mat
         dem_cv = cv::imread(tif_name, cv::IMREAD_LOAD_GDAL | cv::IMREAD_ANYDEPTH );
@@ -46,8 +51,6 @@ public:
             std::cout << "Could not get a geotransform!" << std::endl;
             return false;
         }
-        int x = 0;
-        int y = 0;
         // Upper left coords
         double easting=geotransform[0];// + x*geotransform[1] + y*geotransform[2]; // Longitude
         double northing=geotransform[3];// + x*geotransform[4] + y*geotransform[5]; // Latitude
@@ -63,8 +66,8 @@ public:
         double resolution = 1.0;
         double width = dem_cv.cols;
         double height = dem_cv.rows;
-        double origin_x = - width / 2;
-        double origin_y = - height / 2;
+        double origin_x = ul_x_utm - utm_x;
+        double origin_y = ul_y_utm - height - utm_y;
         // Initialize occupancy grid message
         tif_grid->header.frame_id = "map";
         tif_grid->info.resolution = resolution;
@@ -73,12 +76,18 @@ public:
         tif_grid->info.origin.position.x = origin_x;
         tif_grid->info.origin.position.y = origin_y;
         tif_grid->info.origin.position.z = 0.0;
+        tif_grid->data.resize(width * height);
         cv::Mat dem_copy  = dem_cv.clone();
-
         for (int y = height - 1; y >= 0; y--) {
             for (int x = 0; x < width; x++) {
-                uint8_t tif_val = dem_copy.at<float>(y, x);
-                tif_grid->data.push_back(tif_val);
+                float elevation = dem_cv.at<float>(y, x);
+                uint8_t occupancy_value = static_cast<uint8_t>(elevation); // Convert elevation to occupancy value
+                tif_grid->data[(height - y - 1) * width + x] = occupancy_value;
+                pcl::PointXYZ point;
+                point.x = origin_x + x * resolution;
+                point.y = origin_y + (height - y - 1) * resolution;
+                point.z = elevation;
+                cloud->points.push_back(point);
             }
         }
         

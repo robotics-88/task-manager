@@ -85,12 +85,12 @@ std_msgs::msg::String HelloDeccoManager::acceptFlight(json msgJson, geometry_msg
 
     // Convert polygon to map coordinates and visualize
     map_region_ = polygonToMap(poly);
-    has_elevation = getHomeElevation(home_elevation, nullptr);
+    has_elevation = getHomeElevation(home_elevation, nullptr, nullptr);
 
     return packageToTymbalHD("burn_unit_receive", flight_json_, timestamp);
 }
 
-bool HelloDeccoManager::elevationInitializer(nav_msgs::msg::OccupancyGrid::SharedPtr tif_grid) {
+bool HelloDeccoManager::elevationInitializer(const double utm_x, const double utm_y, nav_msgs::msg::OccupancyGrid::SharedPtr tif_grid, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud) {
     // TODO get tif from HD, for now assumes stored in dem/<burn unit name>
     std::string tif_name;
     try {
@@ -104,7 +104,7 @@ bool HelloDeccoManager::elevationInitializer(nav_msgs::msg::OccupancyGrid::Share
     if (!boost::filesystem::exists(tif_name)){
         return false;
     }
-    elevation_source_.init(tif_name, tif_grid);
+    elevation_source_.init(tif_name, utm_x, utm_y, tif_grid, cloud);
     elevation_init_ = true;
     return true;
 }
@@ -112,7 +112,7 @@ bool HelloDeccoManager::elevationInitializer(nav_msgs::msg::OccupancyGrid::Share
 bool HelloDeccoManager::getElevationChunk(const double utm_x, const double utm_y, const int width, const int height, sensor_msgs::msg::Image &chunk, double &max, double &min) {
     cv::Mat mat;
     if (!elevation_init_) {
-        bool has_elev = elevationInitializer(nullptr);
+        bool has_elev = elevationInitializer(0, 0, nullptr, nullptr);
         if (!has_elev) return false;
     }
     bool worked = elevation_source_.getElevationChunk(utm_x, utm_y, width, height, mat);
@@ -126,9 +126,9 @@ bool HelloDeccoManager::getElevationChunk(const double utm_x, const double utm_y
     return worked;
 }
 
-bool HelloDeccoManager::getHomeElevation(double &value, nav_msgs::msg::OccupancyGrid::SharedPtr tif_grid) {
+bool HelloDeccoManager::getHomeElevation(double &value, nav_msgs::msg::OccupancyGrid::SharedPtr tif_grid, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud) {
     if (!elevation_init_) {
-        bool has_elev = elevationInitializer(tif_grid);
+        bool has_elev = elevationInitializer(-1 * utm_x_offset_, -1 * utm_y_offset_, tif_grid, cloud);
         if (!has_elev) return false;
     }
     value = elevation_source_.getElevation(-1 * utm_x_offset_, -1 * utm_y_offset_);
@@ -137,7 +137,7 @@ bool HelloDeccoManager::getHomeElevation(double &value, nav_msgs::msg::Occupancy
 
 bool HelloDeccoManager::getElevationValue(const double utm_x, const double utm_y, double &value) {
     if (!elevation_init_) {
-        bool has_elev = elevationInitializer(nullptr);
+        bool has_elev = elevationInitializer(0, 0, nullptr, nullptr);
         if (!has_elev) return false;
     }
     value = elevation_source_.getElevation(utm_x, utm_y);
