@@ -201,6 +201,20 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     max_agl_ = max_altitude_;
     min_agl_ = min_altitude_;
     target_agl_ = target_altitude_;
+
+    // Add to camera names based on which devices are present
+    if (do_mapir_) {
+        camera_names_.push_back("mapir_rgn");
+    }
+    if (do_mapir_rgb_) {
+        camera_names_.push_back("mapir_rgb");
+    }
+    if (do_attollo_) {
+        camera_names_.push_back("attollo");
+    }
+    if (do_thermal_) {
+        camera_names_.push_back("see3cam");
+    }
     
     // SLAM pose sub
     slam_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(slam_pose_topic_, 10, std::bind(&TaskManager::slamPoseCallback, this, _1));
@@ -1066,9 +1080,71 @@ void TaskManager::startBag() {
     } else {
         RCLCPP_ERROR(this->get_logger(), "Failed to call service /bag_recorder/record");
     }
+
+    // Also request to start recording video from video recorder nodes
+
+    for (auto &camera_name : camera_names_) {
+        std::shared_ptr<rclcpp::Node> video_record_node = rclcpp::Node::make_shared("video_record_client");
+        std::string service_name = "/" + camera_name + "/video_recorder/record";
+        auto video_recorder_client = video_record_node->create_client<messages_88::srv::RecordVideo>(service_name);
+        auto req = std::make_shared<messages_88::srv::RecordVideo::Request>();
+
+        if (!video_recorder_client->wait_for_service(1s)) {
+            std::string error_msg = service_name + " service not available";
+            RCLCPP_INFO(this->get_logger(), error_msg.c_str());
+            return;
+        }
+
+        req->start = true;
+        req->filename = data_directory_ + burn_unit_name_ + camera_name + ".mp4";
+
+        auto result = video_recorder_client->async_send_request(req);
+        if (rclcpp::spin_until_future_complete(video_record_node, result) ==
+            rclcpp::FutureReturnCode::SUCCESS)
+        {
+            if (!result.get()->success) {
+                std::string error_msg = "Failed to start video recording on " + camera_name;
+                RCLCPP_WARN(this->get_logger(), error_msg.c_str());
+            }
+        } else {
+            std::string error_msg = "Failed to call service " + service_name;
+            RCLCPP_ERROR(this->get_logger(), error_msg.c_str());
+        }
+    }
+
 }
 
 void TaskManager::stopBag() {
+
+    // Stop all video
+    for (auto &camera_name : camera_names_) {
+        std::shared_ptr<rclcpp::Node> video_record_node = rclcpp::Node::make_shared("video_record_client");
+        auto video_recorder_client = video_record_node->create_client<messages_88::srv::RecordVideo>("/" + camera_name + "/video_recorder/record");
+        auto req = std::make_shared<messages_88::srv::RecordVideo::Request>();
+
+        if (!video_recorder_client->wait_for_service(1s)) {
+            std::string error_msg = "Video recorder service not available on " + camera_name;
+            RCLCPP_INFO(this->get_logger(), error_msg.c_str());
+            return;
+        }
+
+        req->start = false;
+
+        auto result = video_recorder_client->async_send_request(req);
+        if (rclcpp::spin_until_future_complete(video_record_node, result) ==
+            rclcpp::FutureReturnCode::SUCCESS)
+        {
+            if (!result.get()->success) {
+                std::string error_msg = "Failed to stop video recording on " + camera_name;
+                RCLCPP_WARN(this->get_logger(), error_msg.c_str());
+            }
+        } else {
+            std::string error_msg = "Failed to call service /" + camera_name + "/video_recorder/record";
+            RCLCPP_ERROR(this->get_logger(), error_msg.c_str());
+        }
+    }
+
+    // Deal with rosbag
     if (!bag_active_) {
         return;
     }
