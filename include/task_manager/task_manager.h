@@ -40,6 +40,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "messages_88/srv/geopoint.hpp"
 #include "messages_88/srv/save.hpp"
 #include "messages_88/srv/get_map_data.hpp"
+#include "messages_88/srv/record_video.hpp"
 
 #include "pcl_conversions/pcl_conversions.h"
 #include "pcl_ros/transforms.hpp"
@@ -290,6 +291,7 @@ class TaskManager : public rclcpp::Node
         bool do_record_;
         bool bag_active_;
         std::string record_config_file_;
+        std::vector<std::string> camera_names_;
 
         // Drone state params
         geometry_msgs::msg::PoseStamped slam_pose_;
