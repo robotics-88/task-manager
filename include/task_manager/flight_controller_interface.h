@@ -101,6 +101,7 @@ class FlightControllerInterface : public rclcpp::Node
         bool offline_;
         bool simulate_;
         bool do_slam_;
+        bool px4_;
 
         // Safety for enabling control
         bool enable_autonomy_;
@@ -183,6 +184,8 @@ class FlightControllerInterface : public rclcpp::Node
         bool imu_rate_ok_;
         bool battery_rate_ok_;
 
+        int init_count_;
+
         // Initialization check stuff
         bool drone_initialized_;
         unsigned compass_wait_counter_;
@@ -207,7 +210,7 @@ class FlightControllerInterface : public rclcpp::Node
 
         // FCI private methods
         bool arm();
-        void initializeFlightController();
+        void initializeArducopter();
         void checkMsgRates();
         void requestMavlinkStreams();
         float calculateBatteryPercentage(float voltage);

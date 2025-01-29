@@ -63,6 +63,7 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
   , last_prearm_text_(0, 0, RCL_ROS_TIME)
   , last_resting_percent_time_(0, 0, RCL_ROS_TIME)
   , last_battery_measurement_(0, 0, RCL_ROS_TIME)
+  , px4_(false)
 {
     // FCI specific params
     this->declare_parameter("battery_size", battery_size_);
@@ -70,12 +71,14 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
     this->declare_parameter("imu_rate", imu_rate_);
     this->declare_parameter("local_pos_rate", local_pos_rate_);
     this->declare_parameter("all_stream_rate", all_stream_rate_);
+    this->declare_parameter("px4", px4_);
     
     this->get_parameter("battery_size", battery_size_);
     this->get_parameter("estimated_current", estimated_current_);
     this->get_parameter("imu_rate", imu_rate_);
     this->get_parameter("local_pos_rate", local_pos_rate_);
     this->get_parameter("all_stream_rate", all_stream_rate_);
+    this->get_parameter("px4", px4_);
 
     // Params common w task manager
     this->declare_parameter("offline", offline_);
@@ -115,26 +118,20 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
 
     if (!offline_) {
 
+        msg_rate_timer_ = this->create_wall_timer(std::chrono::duration<float>(msg_rate_timer_dt_), std::bind(&FlightControllerInterface::checkMsgRates, this));
+
         // Todo: allow some time for stream rates to settle
         // If stream rates not okay, request them and sleep, param fetch probably needs to complete
         if (!battery_rate_ok_ || !imu_rate_ok_) {
             requestMavlinkStreams();
-
-            // Param fetch takes about 45 seconds in sim, 15 seconds on drone
-            int approx_time_to_fetch = simulate_ ? 45 : 15;
-
-            RCLCPP_INFO(this->get_logger(), "Flight controller interface waiting %is for param fetch to complete", (int)approx_time_to_fetch);
-            for (unsigned i = 0; i < approx_time_to_fetch; i++) {
-                rclcpp::Rate(1.0).sleep();
-                // rclcpp::spin_some();
-            }
         }
         
         // Now we can initialize
         attempts_ = 0;
         RCLCPP_INFO(this->get_logger(), "Initializing flight controller");
-        drone_init_timer_ = this->create_wall_timer(1s, std::bind(&FlightControllerInterface::initializeFlightController, this));
-        msg_rate_timer_ = this->create_wall_timer(std::chrono::duration<float>(msg_rate_timer_dt_), std::bind(&FlightControllerInterface::checkMsgRates, this));
+        if (!px4_) {
+            drone_init_timer_ = this->create_wall_timer(1s, std::bind(&FlightControllerInterface::initializeArducopter, this));
+        }
     }
     else {
         // Declare that drone is initalized for offline mode
@@ -156,7 +153,13 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
 FlightControllerInterface::~FlightControllerInterface() {
 }
 
-void FlightControllerInterface::initializeFlightController() {
+void FlightControllerInterface::initializeArducopter() {
+
+    int approx_time_to_fetch = simulate_ ? 45 : 15;
+    if (init_count_ < approx_time_to_fetch) {
+        init_count_++;
+        return;
+    }
 
     if (!param_fetch_complete_) {
 
@@ -403,7 +406,7 @@ void FlightControllerInterface::initializeFlightController() {
         }
     }
 
-    RCLCPP_INFO(this->get_logger(), "Drone initialization successful");
+    RCLCPP_INFO(this->get_logger(), "Arducopter initialization successful");
     drone_initialized_ = true;
     drone_init_timer_->cancel();
 }
