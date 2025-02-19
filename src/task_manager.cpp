@@ -1052,7 +1052,13 @@ void TaskManager::startBag() {
     if (bag_active_ || offline_ || !do_record_) {
         return;
     }
-    logEvent(EventType::INFO, Severity::LOW, "Bag starting, dir: " + data_directory_);
+
+    std::string start_time = decco_utilities::get_time_str();
+    std::string flight_directory = data_directory_ + burn_unit_name_ + "flight_" + start_time;
+    if (!boost::filesystem::exists(flight_directory)) {
+        boost::filesystem::create_directory(flight_directory);
+    }
+    logEvent(EventType::INFO, Severity::LOW, "Bag starting, dir: " + flight_directory);
 
     std::shared_ptr<rclcpp::Node> bag_record_node = rclcpp::Node::make_shared("bag_record_client");
     auto bag_recorder_client = bag_record_node->create_client<bag_recorder_2::srv::Record>("/bag_recorder/record");
@@ -1065,7 +1071,7 @@ void TaskManager::startBag() {
 
     req->start = true;
     req->config_file = record_config_file_;
-    req->data_directory = data_directory_ + burn_unit_name_;
+    req->data_directory = flight_directory;
 
     auto result = bag_recorder_client->async_send_request(req);
     if (rclcpp::spin_until_future_complete(bag_record_node, result) ==
@@ -1096,7 +1102,7 @@ void TaskManager::startBag() {
         }
 
         req->start = true;
-        req->filename = data_directory_ + burn_unit_name_ + camera_name + ".mp4";
+        req->filename = flight_directory + "/" + camera_name + "_" + start_time + ".mp4";
 
         auto result = video_recorder_client->async_send_request(req);
         if (rclcpp::spin_until_future_complete(video_record_node, result) ==

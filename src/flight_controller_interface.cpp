@@ -120,8 +120,7 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
         if (!battery_rate_ok_ || !imu_rate_ok_) {
             requestMavlinkStreams();
 
-            // Param fetch takes about 45 seconds in sim, 15 seconds on drone
-            int approx_time_to_fetch = simulate_ ? 45 : 15;
+            int approx_time_to_fetch = 12;
 
             RCLCPP_INFO(this->get_logger(), "Flight controller interface waiting %is for param fetch to complete", (int)approx_time_to_fetch);
             for (unsigned i = 0; i < approx_time_to_fetch; i++) {
