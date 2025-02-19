@@ -287,7 +287,7 @@ class TaskManager : public rclcpp::Node
 
         // Record
         bool do_record_;
-        bool bag_active_;
+        bool recording_;
         std::string record_config_file_;
         std::vector<std::string> camera_names_;
 

@@ -55,7 +55,6 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , slam_pose_topic_("decco/pose")
     , ui_hb_threshold_(5.0)
     , do_record_(true)
-    , bag_active_(false)
     , record_config_file_("")
     , burn_unit_name_("")
     , cmd_history_("")
@@ -578,7 +577,7 @@ void TaskManager::startTakeoff() {
         return;
     }
 
-    if (!offline_ && do_record_) {
+    if (!offline_ && do_record_ && !recording_) {
         startRecording();
     }
 
@@ -1020,18 +1019,19 @@ bool TaskManager::pauseOperations() {
 }
 
 void TaskManager::checkArmStatus() {
-    std::string mode = flight_controller_interface_->getFlightMode();
     bool armed = flight_controller_interface_->getIsArmed();
     if (!is_armed_ && armed) {
         logEvent(EventType::INFO, Severity::LOW, "Manually set armed state to true");
         is_armed_ = true;
-    }
-    if (is_armed_ && do_record_ && !offline_) {
-        startRecording();
+        if (!offline_ && do_record_ && !recording_) {
+            startRecording();
+        }
     }
     if (is_armed_ && !armed) {
         logEvent(EventType::INFO, Severity::MEDIUM, "Disarm detected");
-        stopRecording();
+        if (recording_) {
+            stopRecording();
+        }
         pauseOperations();
         is_armed_ = false; // Reset so can restart if another arming
     }
@@ -1055,40 +1055,32 @@ void TaskManager::startRecording() {
     }
     logEvent(EventType::INFO, Severity::LOW, "Recording starting, dir: " + flight_directory);
 
-    if (!bag_active_) {
-        std::shared_ptr<rclcpp::Node> bag_record_node = rclcpp::Node::make_shared("bag_record_client");
-        auto bag_recorder_client = bag_record_node->create_client<bag_recorder_2::srv::Record>("/bag_recorder/record");
-    
-        if (!bag_recorder_client->wait_for_service(1s)) {
-            RCLCPP_INFO(this->get_logger(), "Bag recorder not available. Not recording bag.");
-        }
-        else {
-            auto req = std::make_shared<bag_recorder_2::srv::Record::Request>();
-            req->start = true;
-            req->config_file = record_config_file_;
-            req->data_directory = flight_directory;
-        
-            auto result = bag_recorder_client->async_send_request(req);
-            if (rclcpp::spin_until_future_complete(bag_record_node, result) ==
-                rclcpp::FutureReturnCode::SUCCESS)
-            {
-                if (!result.get()->success) {
-                    RCLCPP_WARN(this->get_logger(), "Failed to start bag");
-                }
-                else {
-                    bag_active_ = true;
-                }
-            } else {
-                RCLCPP_ERROR(this->get_logger(), "Failed to call service /bag_recorder/record");
-            }
-        }
+    // Handle bag
+    std::shared_ptr<rclcpp::Node> bag_record_node = rclcpp::Node::make_shared("bag_record_client");
+    auto bag_recorder_client = bag_record_node->create_client<bag_recorder_2::srv::Record>("/bag_recorder/record");
+
+    if (!bag_recorder_client->wait_for_service(1s)) {
+        RCLCPP_INFO(this->get_logger(), "Bag recorder not available. Not recording bag.");
     }
     else {
-        RCLCPP_WARN(this->get_logger(), "Requested to start recording but bag already active, not recording new bag");
-    }  
+        auto req = std::make_shared<bag_recorder_2::srv::Record::Request>();
+        req->start = true;
+        req->config_file = record_config_file_;
+        req->data_directory = flight_directory;
+    
+        auto result = bag_recorder_client->async_send_request(req);
+        if (rclcpp::spin_until_future_complete(bag_record_node, result) ==
+            rclcpp::FutureReturnCode::SUCCESS)
+        {
+            if (!result.get()->success) {
+                RCLCPP_WARN(this->get_logger(), "Failed to start bag");
+            }
+        } else {
+            RCLCPP_ERROR(this->get_logger(), "Failed to call service /bag_recorder/record");
+        }
+    }
 
     // Also request to start recording video from video recorder nodes
-
     for (auto &camera_name : camera_names_) {
         std::shared_ptr<rclcpp::Node> video_record_node = rclcpp::Node::make_shared("video_record_client");
         std::string service_name = "/" + camera_name + "/video_recorder/record";
@@ -1117,6 +1109,8 @@ void TaskManager::startRecording() {
             }
         }
     }
+
+    recording_ = true;
 }
 
 void TaskManager::stopRecording() {
@@ -1151,33 +1145,29 @@ void TaskManager::stopRecording() {
     }
 
     // Deal with rosbag
-    if (bag_active_) {
+    std::shared_ptr<rclcpp::Node> bag_record_node = rclcpp::Node::make_shared("bag_record_client");
+    auto bag_recorder_client = bag_record_node->create_client<bag_recorder_2::srv::Record>("/bag_recorder/record");
+    
+    if (!bag_recorder_client->wait_for_service(1s)) {
+        RCLCPP_INFO(this->get_logger(), "Bag recorder client not available. Not stopping bag.");
+    }
+    else {
+        auto req = std::make_shared<bag_recorder_2::srv::Record::Request>();
+        req->start = false;
 
-        std::shared_ptr<rclcpp::Node> bag_record_node = rclcpp::Node::make_shared("bag_record_client");
-        auto bag_recorder_client = bag_record_node->create_client<bag_recorder_2::srv::Record>("/bag_recorder/record");
-        
-        if (!bag_recorder_client->wait_for_service(1s)) {
-            RCLCPP_INFO(this->get_logger(), "Bag recorder client not available. Not stopping bag.");
-        }
-        else {
-            auto req = std::make_shared<bag_recorder_2::srv::Record::Request>();
-            req->start = false;
-
-            auto result = bag_recorder_client->async_send_request(req);
-            if (rclcpp::spin_until_future_complete(bag_record_node, result) ==
-                rclcpp::FutureReturnCode::SUCCESS)
-            {
-                if (!result.get()->success) {
-                    RCLCPP_WARN(this->get_logger(), "Failed to stop bag");
-                }
-                else {
-                    bag_active_ = false;
-                }
-            } else {
-                RCLCPP_ERROR(this->get_logger(), "Failed to call service /bag_recorder/record");
+        auto result = bag_recorder_client->async_send_request(req);
+        if (rclcpp::spin_until_future_complete(bag_record_node, result) ==
+            rclcpp::FutureReturnCode::SUCCESS)
+        {
+            if (!result.get()->success) {
+                RCLCPP_WARN(this->get_logger(), "Failed to stop bag");
             }
+        } else {
+            RCLCPP_ERROR(this->get_logger(), "Failed to call service /bag_recorder/record");
         }
     }
+
+    recording_ = false;
 }
 
 bool TaskManager::polygonDistanceOk(geometry_msgs::msg::PoseStamped &target, geometry_msgs::msg::Polygon &map_region) {
