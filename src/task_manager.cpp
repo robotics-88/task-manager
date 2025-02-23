@@ -55,6 +55,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , slam_pose_topic_("decco/pose")
     , ui_hb_threshold_(5.0)
     , do_record_(true)
+    , recording_(false)
     , record_config_file_("")
     , burn_unit_name_("")
     , cmd_history_("")
