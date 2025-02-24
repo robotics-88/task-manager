@@ -287,7 +287,7 @@ class TaskManager : public rclcpp::Node
 
         // Record
         bool do_record_;
-        bool bag_active_;
+        bool recording_;
         std::string record_config_file_;
         std::vector<std::string> camera_names_;
 
@@ -370,8 +370,8 @@ class TaskManager : public rclcpp::Node
         bool initialized();
         void checkArmStatus();
         bool pauseOperations();
-        void startBag();
-        void stopBag();
+        void startRecording();
+        void stopRecording();
         bool polygonDistanceOk(geometry_msgs::msg::PoseStamped &target, geometry_msgs::msg::Polygon &map_region);
         void padNavTarget(geometry_msgs::msg::PoseStamped &target);
         std::string getTaskString(Task task);
