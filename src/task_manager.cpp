@@ -578,10 +578,13 @@ void TaskManager::startTakeoff() {
         return;
     }
 
-    if (!offline_ && do_record_ && !recording_) {
-        startRecording();
+    if (!offline_ && do_record_) {
+        if (!recording_)
+            startRecording();
+        else
+            logEvent(EventType::INFO, Severity::LOW, "Recording flag already true, not starting new recording");
     }
-
+    
     if (flight_controller_interface_->takeOff(target_altitude_)) {
         in_autonomous_flight_ = true;
         updateCurrentTask(Task::TAKING_OFF);
@@ -1028,7 +1031,7 @@ void TaskManager::checkArmStatus() {
             if (!recording_)
                 startRecording();
             else
-                logEvent(EventType::INFO, Severity::LOW, "Recording flag true, not starting new recording")
+                logEvent(EventType::INFO, Severity::LOW, "Recording flag already true, not starting new recording");
         }
     }
     if (is_armed_ && !armed) {
