@@ -584,12 +584,13 @@ void TaskManager::startTakeoff() {
         else
             logEvent(EventType::INFO, Severity::LOW, "Recording flag already true, not starting new recording");
     }
-    
+
     if (flight_controller_interface_->takeOff(target_altitude_)) {
         in_autonomous_flight_ = true;
         updateCurrentTask(Task::TAKING_OFF);
         needs_takeoff_ = false;
-        takeoff_attempts_ = 0; 
+        takeoff_attempts_ = 0;
+        is_armed_ = true;
     } 
     else {
         logEvent(EventType::FLIGHT_CONTROL, Severity::MEDIUM, "Takeoff request failed. Retrying.");
@@ -1056,9 +1057,9 @@ bool TaskManager::isBatteryOk() {
 void TaskManager::startRecording() {
 
     std::string start_time = decco_utilities::get_time_str();
-    std::string flight_directory = data_directory_ + burn_unit_name_ + "flight_" + start_time;
+    std::string flight_directory = data_directory_ + burn_unit_name_ + "/flight_" + start_time;
     if (!boost::filesystem::exists(flight_directory)) {
-        boost::filesystem::create_directory(flight_directory);
+        boost::filesystem::create_directories(flight_directory);
     }
     logEvent(EventType::INFO, Severity::LOW, "Recording starting, dir: " + flight_directory);
 
