@@ -1024,8 +1024,11 @@ void TaskManager::checkArmStatus() {
     if (!is_armed_ && armed) {
         logEvent(EventType::INFO, Severity::LOW, "Manually set armed state to true");
         is_armed_ = true;
-        if (!offline_ && do_record_ && !recording_) {
-            startRecording();
+        if (!offline_ && do_record_) {
+            if (!recording_)
+                startRecording();
+            else
+                logEvent(EventType::INFO, Severity::LOW, "Recording flag true, not starting new recording")
         }
     }
     if (is_armed_ && !armed) {
