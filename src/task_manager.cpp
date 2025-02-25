@@ -1091,7 +1091,6 @@ void TaskManager::startRecording() {
     // Also request to start recording video from video recorder nodes
     for (auto &camera_name : camera_names_) {
         std::shared_ptr<rclcpp::Node> video_record_node = rclcpp::Node::make_shared("video_record_client");
-        // Update this
         std::string service_name;
         if (camera_name == "seek_thermal") {
             service_name = "/seek_thermal/record";
