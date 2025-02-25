@@ -1091,7 +1091,15 @@ void TaskManager::startRecording() {
     // Also request to start recording video from video recorder nodes
     for (auto &camera_name : camera_names_) {
         std::shared_ptr<rclcpp::Node> video_record_node = rclcpp::Node::make_shared("video_record_client");
-        std::string service_name = "/" + camera_name + "/video_recorder/record";
+        // Update this
+        std::string service_name;
+        if (camera_name == "seek_thermal") {
+            service_name = "TODO";
+        }
+        else {
+            service_name = "/" + camera_name + "/opencv_cam/record";
+        }
+
         auto video_recorder_client = video_record_node->create_client<messages_88::srv::RecordVideo>(service_name);
 
         if (!video_recorder_client->wait_for_service(1s)) {
@@ -1126,7 +1134,7 @@ void TaskManager::stopRecording() {
     // Stop all video
     for (auto &camera_name : camera_names_) {
         std::shared_ptr<rclcpp::Node> video_record_node = rclcpp::Node::make_shared("video_record_client");
-        auto video_recorder_client = video_record_node->create_client<messages_88::srv::RecordVideo>("/" + camera_name + "/video_recorder/record");
+        auto video_recorder_client = video_record_node->create_client<messages_88::srv::RecordVideo>("/" + camera_name + "/opencv_cam/record");
 
         if (!video_recorder_client->wait_for_service(1s)) {
             std::string error_msg = "Video recorder service not available on " + camera_name;
