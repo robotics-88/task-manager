@@ -1091,7 +1091,14 @@ void TaskManager::startRecording() {
     // Also request to start recording video from video recorder nodes
     for (auto &camera_name : camera_names_) {
         std::shared_ptr<rclcpp::Node> video_record_node = rclcpp::Node::make_shared("video_record_client");
-        std::string service_name = "/" + camera_name + "/video_recorder/record";
+        std::string service_name;
+        if (camera_name == "seek_thermal") {
+            service_name = "/seek_thermal/record";
+        }
+        else {
+            service_name = "/" + camera_name + "/opencv_cam/record";
+        }
+
         auto video_recorder_client = video_record_node->create_client<messages_88::srv::RecordVideo>(service_name);
 
         if (!video_recorder_client->wait_for_service(1s)) {
@@ -1108,7 +1115,7 @@ void TaskManager::startRecording() {
                 rclcpp::FutureReturnCode::SUCCESS)
             {
                 if (!result.get()->success) {
-                    std::string error_msg = "Failed to start video recording on " + camera_name;
+                    std::string error_msg = "Failed to start video recording on " + service_name;
                     RCLCPP_WARN(this->get_logger(), error_msg.c_str());
                 }
             } else {
@@ -1126,10 +1133,17 @@ void TaskManager::stopRecording() {
     // Stop all video
     for (auto &camera_name : camera_names_) {
         std::shared_ptr<rclcpp::Node> video_record_node = rclcpp::Node::make_shared("video_record_client");
-        auto video_recorder_client = video_record_node->create_client<messages_88::srv::RecordVideo>("/" + camera_name + "/video_recorder/record");
+        std::string service_name;
+        if (camera_name == "seek_thermal") {
+            service_name = "/seek_thermal/record";
+        }
+        else {
+            service_name = "/" + camera_name + "/opencv_cam/record";
+        }
+        auto video_recorder_client = video_record_node->create_client<messages_88::srv::RecordVideo>(service_name);
 
         if (!video_recorder_client->wait_for_service(1s)) {
-            std::string error_msg = "Video recorder service not available on " + camera_name;
+            std::string error_msg = "Video recorder service not available on " + service_name;
             RCLCPP_INFO(this->get_logger(), error_msg.c_str());
         }
         else {
@@ -1141,11 +1155,11 @@ void TaskManager::stopRecording() {
                 rclcpp::FutureReturnCode::SUCCESS)
             {
                 if (!result.get()->success) {
-                    std::string error_msg = "Failed to stop video recording on " + camera_name;
+                    std::string error_msg = "Failed to stop video recording on " + service_name;
                     RCLCPP_WARN(this->get_logger(), error_msg.c_str());
                 }
             } else {
-                std::string error_msg = "Failed to call service /" + camera_name + "/video_recorder/record";
+                std::string error_msg = "Failed to call service " + service_name;
                 RCLCPP_ERROR(this->get_logger(), error_msg.c_str());
             }
         }
