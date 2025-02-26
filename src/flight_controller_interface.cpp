@@ -124,14 +124,6 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
         // If stream rates not okay, request them and sleep, param fetch probably needs to complete
         if (!battery_rate_ok_ || !imu_rate_ok_) {
             requestMavlinkStreams();
-
-            int approx_time_to_fetch = 12;
-
-            RCLCPP_INFO(this->get_logger(), "Flight controller interface waiting %is for param fetch to complete", (int)approx_time_to_fetch);
-            for (unsigned i = 0; i < approx_time_to_fetch; i++) {
-                rclcpp::Rate(1.0).sleep();
-                // rclcpp::spin_some();
-            }
         }
         
         // Now we can initialize
@@ -163,7 +155,8 @@ FlightControllerInterface::~FlightControllerInterface() {
 
 void FlightControllerInterface::initializeArducopter() {
 
-    int approx_time_to_fetch = simulate_ ? 45 : 15;
+    // Wait for param fetch, takes about 12s
+    int approx_time_to_fetch = 12;
     if (init_count_ < approx_time_to_fetch) {
         init_count_++;
         return;
