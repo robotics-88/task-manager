@@ -144,7 +144,6 @@ class TaskManager : public rclcpp::Node
         // Publishers
         rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                 health_pub_;
         rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr                map_yaw_pub_;
-        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr       vision_pose_publisher_;
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr         pointcloud_repub_;
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr       goal_pos_pub_;
         rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr             local_vel_pub_;

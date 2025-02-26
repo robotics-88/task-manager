@@ -38,6 +38,9 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "std_msgs/msg/float64.hpp"
 #include "std_msgs/msg/string.hpp"
 
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+#include "tf2_ros/buffer.h"
+
 #include <GeographicLib/GeoCoords.hpp>
 #include <GeographicLib/Geodesic.hpp>
 #include <GeographicLib/UTMUPS.hpp>
@@ -54,7 +57,8 @@ class FlightControllerInterface : public rclcpp::Node
         ~FlightControllerInterface();
 
         // Getters and setters
-        void setAutonomyEnabled(bool enabled);
+        void setAutonomyEnabled(bool enabled) {enable_autonomy_ = enabled;}
+        void setMapTfInit(bool init) {map_tf_init_ = init;}
         geometry_msgs::msg::PoseStamped getCurrentSlamPosition() {return current_slam_pose_;}
         geometry_msgs::msg::PoseStamped getCurrentLocalPosition() {return current_pose_;}
         sensor_msgs::msg::NavSatFix getCurrentGlobalPosition() {return current_ll_;}
@@ -101,6 +105,8 @@ class FlightControllerInterface : public rclcpp::Node
         bool offline_;
         bool simulate_;
         bool do_slam_;
+        std::string mavros_map_frame_;
+        std::string slam_map_frame_;
         bool px4_;
 
         // Safety for enabling control
@@ -125,9 +131,11 @@ class FlightControllerInterface : public rclcpp::Node
         // Publishers
         rclcpp::Publisher<messages_88::msg::Battery>::SharedPtr battery_pub_; // Publisher mostly for debug
 
-        // Param sync client;
+        // Param sync client
         std::shared_ptr<rclcpp::SyncParametersClient> sync_params_client_;
 
+        // TF buffer
+        std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
 
         // General private data
         sensor_msgs::msg::NavSatFix current_ll_;
@@ -152,6 +160,7 @@ class FlightControllerInterface : public rclcpp::Node
         std::string preflight_check_reasons_;
         std::string prearm_text_;
         rclcpp::Time last_prearm_text_;
+        bool map_tf_init_;
 
         // Battery estimation stuff
         sensor_msgs::msg::BatteryState current_battery_;
@@ -210,6 +219,7 @@ class FlightControllerInterface : public rclcpp::Node
 
         // FCI private methods
         bool arm();
+        void initializePX4();
         void initializeArducopter();
         void checkMsgRates();
         void requestMavlinkStreams();

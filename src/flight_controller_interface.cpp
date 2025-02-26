@@ -25,6 +25,8 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
   , offline_(false)
   , simulate_(false)
   , do_slam_(false)
+  , mavros_map_frame_("map")
+  , slam_map_frame_("slam_map")
   , enable_autonomy_(false)
   , connected_(false)
   , armed_(false)
@@ -84,10 +86,14 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
     this->declare_parameter("offline", offline_);
     this->declare_parameter("do_slam", do_slam_);
     this->declare_parameter("simulate", simulate_);
+    this->declare_parameter("mavros_map_frame", mavros_map_frame_);
+    this->declare_parameter("slam_map_frame", slam_map_frame_);
 
     this->get_parameter("offline", offline_);
     this->get_parameter("do_slam", do_slam_);
     this->get_parameter("simulate", simulate_);
+    this->get_parameter("mavros_map_frame", mavros_map_frame_);
+    this->get_parameter("slam_map_frame", slam_map_frame_);
 
     if (do_slam_) {
         param_map_[ "EK3_SRC1_POSXY" ] = 6;
@@ -112,6 +118,8 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
     mavros_state_subscriber_ = this->create_subscription<mavros_msgs::msg::State>("/mavros/state", state_qos, std::bind(&FlightControllerInterface::statusCallback, this, _1));
     mavros_sys_status_subscriber_ = this->create_subscription<mavros_msgs::msg::SysStatus>("/mavros/sys_status", state_qos, std::bind(&FlightControllerInterface::sysStatusCallback, this, _1));
 
+    vision_pose_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/vision_pose/pose", 10);
+
     // Decco pub/subs
     slam_pose_subscriber_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/decco/pose", 10, std::bind(&FlightControllerInterface::slamPoseCallback, this, _1));
     battery_pub_ = this->create_publisher<messages_88::msg::Battery>("/decco/battery", 10);
@@ -129,7 +137,10 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
         // Now we can initialize
         attempts_ = 0;
         RCLCPP_INFO(this->get_logger(), "Initializing flight controller");
-        if (!px4_) {
+        if (px4_) {
+            drone_init_timer_ = this->create_wall_timer(1s, std::bind(&FlightControllerInterface::initializePX4, this));
+        }
+        else {
             drone_init_timer_ = this->create_wall_timer(1s, std::bind(&FlightControllerInterface::initializeArducopter, this));
         }
     }
@@ -151,6 +162,12 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
 }
 
 FlightControllerInterface::~FlightControllerInterface() {
+}
+
+void FlightControllerInterface::initializePX4() {
+    RCLCPP_INFO(this->get_logger(), "PX4 initialization successful");
+    drone_initialized_ = true;
+    drone_init_timer_->cancel();
 }
 
 void FlightControllerInterface::initializeArducopter() {
@@ -541,10 +558,6 @@ void FlightControllerInterface::checkMsgRates() {
     battery_count_ = 0;
 }
 
-void FlightControllerInterface::setAutonomyEnabled(bool enabled) {
-    enable_autonomy_ = enabled;
-}
-
 bool FlightControllerInterface::getMapYaw(double &yaw) {
     if (compass_init_ok_) {
         yaw = home_compass_hdg_;
@@ -577,6 +590,28 @@ bool FlightControllerInterface::getAveragedOrientation(geometry_msgs::msg::Quate
 
 void FlightControllerInterface::slamPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
     current_slam_pose_ = *msg;
+
+    // Transform decco pose (in slam_map frame) and publish it in mavros_map frame as /mavros/vision_pose/pose
+    if (!map_tf_init_) {
+        return;
+    }
+
+    geometry_msgs::msg::TransformStamped tf;
+    try {
+        tf = tf_buffer_->lookupTransform(mavros_map_frame_, slam_map_frame_, tf2::TimePointZero);
+    } catch (tf2::TransformException & ex) {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "Cannot publish vision pose as map<>slam_map tf not yet available");
+        return;
+    }
+
+    // Apply the transform to the drone pose
+    geometry_msgs::msg::PoseStamped msg_body_pose;
+
+    tf2::doTransform(current_slam_pose_, msg_body_pose, tf);
+    msg_body_pose.header.frame_id = mavros_map_frame_;
+    msg_body_pose.header.stamp = current_slam_pose_.header.stamp;
+
+    vision_pose_publisher_->publish(msg_body_pose);
 }
 
 void FlightControllerInterface::globalPositionCallback(const sensor_msgs::msg::NavSatFix::SharedPtr msg) {

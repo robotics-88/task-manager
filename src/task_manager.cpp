@@ -275,7 +275,6 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     goal_pos_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(goal_topic, 10);
 
     local_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/mavros/setpoint_velocity/cmd_vel_unstamped", 10);
-    vision_pose_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/vision_pose/pose", 10);
 
     marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/lawnmower", 10);
 
@@ -852,6 +851,7 @@ bool TaskManager::initialized() {
 
     map_tf_timer_.reset();
     map_tf_init_ = true;
+    flight_controller_interface_->setMapTfInit(true);
 
     logEvent(EventType::INFO, Severity::LOW, "Waiting for global position");
     home_utm_zone_ = flight_controller_interface_->getUTMZone();
