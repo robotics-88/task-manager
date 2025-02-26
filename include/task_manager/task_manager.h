@@ -235,6 +235,7 @@ class TaskManager : public rclcpp::Node
         bool do_mapir_;
         bool do_mapir_rgb_;
         bool do_thermal_;
+        bool do_downward_rgb_;
 
         // Offline handling
         bool offline_;

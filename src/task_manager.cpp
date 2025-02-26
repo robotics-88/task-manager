@@ -148,6 +148,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     this->declare_parameter("do_mapir_rgb", do_mapir_rgb_);
     this->declare_parameter("do_attollo", do_attollo_);
     this->declare_parameter("do_thermal_cam", do_thermal_);
+    this->declare_parameter("do_downward_rgb", do_downward_rgb_);
     int lidar_type;
     this->declare_parameter("lidar_type", lidar_type);
     this->declare_parameter("lidar_pitch", lidar_pitch_);
@@ -191,6 +192,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     this->get_parameter("do_mapir_rgb", do_mapir_rgb_);
     this->get_parameter("do_attollo", do_attollo_);
     this->get_parameter("do_thermal_cam", do_thermal_);
+    this->get_parameter("do_downward_rgb", do_downward_rgb_);
     this->get_parameter("lidar_type", lidar_type);
     this->get_parameter("lidar_pitch", lidar_pitch_);
     this->get_parameter("lidar_x", lidar_x_);
@@ -213,7 +215,10 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
         camera_names_.push_back("attollo");
     }
     if (do_thermal_) {
-        camera_names_.push_back("see3cam");
+        camera_names_.push_back("seek_thermal");
+    }
+    if (do_downward_rgb_) {
+        camera_names_.push_back("downward_rgb/see3cam");
     }
     
     // SLAM pose sub
