@@ -89,7 +89,6 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , hd_drone_id_(0)
     , start_time_(0)
     , last_lidar_stamp_(0, 0, RCL_ROS_TIME)
-    , last_slam_pos_stamp_(0, 0, RCL_ROS_TIME)
     , last_path_planner_stamp_(0, 0, RCL_ROS_TIME)
     , last_costmap_stamp_(0, 0, RCL_ROS_TIME)
     , last_mapir_stamp_(0, 0, RCL_ROS_TIME)
@@ -100,7 +99,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , last_preflight_check_log_stamp_(0, 0, RCL_ROS_TIME)
     , last_ui_heartbeat_stamp_(0, 0, RCL_ROS_TIME)
     , lidar_timeout_(rclcpp::Duration::from_seconds(0.5))
-    , slam_timeout_(rclcpp::Duration::from_seconds(0.5))
+    , vision_pose_timeout_(rclcpp::Duration::from_seconds(0.5))
     , path_timeout_(rclcpp::Duration::from_seconds(1.0))
     , costmap_timeout_(rclcpp::Duration::from_seconds(3.0))
     , explore_timeout_(1s)
@@ -692,7 +691,7 @@ void TaskManager::checkHealth() {
 
     health_checks_.battery_ok = isBatteryOk();
     health_checks_.lidar_ok = now - last_lidar_stamp_ < lidar_timeout_;
-    health_checks_.slam_ok = now - last_slam_pos_stamp_ < slam_timeout_;
+    health_checks_.slam_ok = now - flight_controller_interface_->getLastVisionPosePubStamp() < vision_pose_timeout_;
     health_checks_.path_ok = now - last_path_planner_stamp_ < path_timeout_;
     health_checks_.costmap_ok = now - last_costmap_stamp_ < costmap_timeout_;
     health_checks_.explore_ok = explore_action_client_.get()->action_server_is_ready();
@@ -1345,31 +1344,6 @@ void TaskManager::slamPoseCallback(const geometry_msgs::msg::PoseStamped::Shared
 
     slam_pose_ = *slam_pose;
 
-    last_slam_pos_stamp_ = this->get_clock()->now();
-
-    // Transform decco pose (in slam_map frame) and publish it in mavros_map frame as /mavros/vision_pose/pose
-    if (!map_tf_init_) {
-        return;
-    }
-
-    geometry_msgs::msg::TransformStamped tf;
-    try {
-        tf = tf_buffer_->lookupTransform(mavros_map_frame_, slam_map_frame_, tf2::TimePointZero);
-    } catch (tf2::TransformException & ex) {
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "Cannot publish vision pose as map<>slam_map tf not yet available");
-        return;
-    }
-
-    // Apply the transform to the drone pose
-    geometry_msgs::msg::PoseStamped msg_body_pose;
-    geometry_msgs::msg::PoseStamped slam = *slam_pose;
-
-    tf2::doTransform(slam, msg_body_pose, tf);
-    msg_body_pose.header.frame_id = mavros_map_frame_;
-    msg_body_pose.header.stamp = slam_pose->header.stamp;
-
-    vision_pose_publisher_->publish(msg_body_pose);
-
     // Map tf for offline
     if (explicit_global_params_) {
         geometry_msgs::msg::PointStamped point_in, point_out;
@@ -1557,7 +1531,7 @@ void TaskManager::acceptFlight(json mapver_json) {
         survey_type_ = SurveyType::SUB;
     }
 
-    hello_decco_manager_->setDroneLocationLocal(slam_pose_);
+    hello_decco_manager_->setDroneLocationLocal(flight_controller_interface_->getCurrentLocalPosition());
     geometry_msgs::msg::Polygon polygon;
 
     // Process flight via HDM
@@ -1760,7 +1734,7 @@ void TaskManager::setpointResponse(json &json_msg) {
         tymbal_hd_pub_->publish(conf_msg);
 
         if (!hello_decco_manager_->getElevationInit()) {
-            hello_decco_manager_->setDroneLocationLocal(slam_pose_);
+            hello_decco_manager_->setDroneLocationLocal(flight_controller_interface_->getCurrentLocalPosition());
             bool got_elev = hello_decco_manager_->getHomeElevation(home_elevation_);
             if (!got_elev) {
                 logEvent(EventType::TASK_STATUS, Severity::HIGH, "No elevation, can only perform manual flight.");

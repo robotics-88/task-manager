@@ -65,6 +65,7 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
   , last_prearm_text_(0, 0, RCL_ROS_TIME)
   , last_resting_percent_time_(0, 0, RCL_ROS_TIME)
   , last_battery_measurement_(0, 0, RCL_ROS_TIME)
+  , last_vision_pose_pub_stamp_(0, 0, RCL_ROS_TIME)
   , px4_(false)
 {
     // FCI specific params
@@ -612,6 +613,8 @@ void FlightControllerInterface::slamPoseCallback(const geometry_msgs::msg::PoseS
     msg_body_pose.header.stamp = current_slam_pose_.header.stamp;
 
     vision_pose_publisher_->publish(msg_body_pose);
+
+    last_vision_pose_pub_stamp_ = this->get_clock()->now();
 }
 
 void FlightControllerInterface::globalPositionCallback(const sensor_msgs::msg::NavSatFix::SharedPtr msg) {

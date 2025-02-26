@@ -77,6 +77,7 @@ class FlightControllerInterface : public rclcpp::Node
         std::string getPreflightCheckReasons() {return preflight_check_reasons_;}
         bool getMapYaw(double &yaw);
         bool getAveragedOrientation(geometry_msgs::msg::Quaternion &orientation);
+        rclcpp::Time getLastVisionPosePubStamp() {return last_vision_pose_pub_stamp_;}
 
         // Subscriber callbacks
         void slamPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
@@ -116,20 +117,21 @@ class FlightControllerInterface : public rclcpp::Node
         bool compass_received_;
 
         // Subscribers
-        rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr mavros_global_pos_subscriber_;
-        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr mavros_local_pos_subscriber_;
-        rclcpp::Subscription<mavros_msgs::msg::State>::SharedPtr mavros_state_subscriber_;
-        rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr mavros_alt_subscriber_;
-        rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr mavros_imu_subscriber_;
-        rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr mavros_compass_subscriber_;
-        rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr mavros_battery_subscriber_;
-        rclcpp::Subscription<mavros_msgs::msg::SysStatus>::SharedPtr mavros_sys_status_subscriber_;
-        rclcpp::Subscription<mavros_msgs::msg::StatusText>::SharedPtr mavros_status_text_subscriber_;
+        rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr        mavros_global_pos_subscriber_;
+        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr    mavros_local_pos_subscriber_;
+        rclcpp::Subscription<mavros_msgs::msg::State>::SharedPtr            mavros_state_subscriber_;
+        rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr             mavros_alt_subscriber_;
+        rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr              mavros_imu_subscriber_;
+        rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr             mavros_compass_subscriber_;
+        rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr     mavros_battery_subscriber_;
+        rclcpp::Subscription<mavros_msgs::msg::SysStatus>::SharedPtr        mavros_sys_status_subscriber_;
+        rclcpp::Subscription<mavros_msgs::msg::StatusText>::SharedPtr       mavros_status_text_subscriber_;
 
-        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr slam_pose_subscriber_;
+        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr    slam_pose_subscriber_;
 
         // Publishers
-        rclcpp::Publisher<messages_88::msg::Battery>::SharedPtr battery_pub_; // Publisher mostly for debug
+        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr       vision_pose_publisher_;
+        rclcpp::Publisher<messages_88::msg::Battery>::SharedPtr             battery_pub_; // Publisher mostly for debug
 
         // Param sync client
         std::shared_ptr<rclcpp::SyncParametersClient> sync_params_client_;
@@ -161,6 +163,7 @@ class FlightControllerInterface : public rclcpp::Node
         std::string prearm_text_;
         rclcpp::Time last_prearm_text_;
         bool map_tf_init_;
+        rclcpp::Time last_vision_pose_pub_stamp_;
 
         // Battery estimation stuff
         sensor_msgs::msg::BatteryState current_battery_;

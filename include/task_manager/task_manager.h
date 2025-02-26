@@ -200,7 +200,7 @@ class TaskManager : public rclcpp::Node
         std::string rosbag_topic_;
 
         rclcpp::Duration lidar_timeout_;
-        rclcpp::Duration slam_timeout_;
+        rclcpp::Duration vision_pose_timeout_;
         rclcpp::Duration path_timeout_;
         rclcpp::Duration costmap_timeout_;
         rclcpp::Duration mapir_timeout_;
@@ -209,7 +209,6 @@ class TaskManager : public rclcpp::Node
         rclcpp::Duration rosbag_timeout_;
         std::chrono::seconds explore_timeout_;
         rclcpp::Time last_lidar_stamp_;
-        rclcpp::Time last_slam_pos_stamp_;
         rclcpp::Time last_path_planner_stamp_;
         rclcpp::Time last_costmap_stamp_;
         rclcpp::Time last_mapir_stamp_;
