@@ -1064,7 +1064,7 @@ void TaskManager::startRecording() {
         req->data_directory = flight_directory;
     
         auto result = bag_recorder_client->async_send_request(req);
-        if (rclcpp::spin_until_future_complete(bag_record_node, result) ==
+        if (rclcpp::spin_until_future_complete(bag_record_node, result, 1s) ==
             rclcpp::FutureReturnCode::SUCCESS)
         {
             if (!result.get()->success) {
@@ -1098,7 +1098,7 @@ void TaskManager::startRecording() {
             req->filename = flight_directory + "/" + camera_name + "_" + start_time + ".mp4";
     
             auto result = video_recorder_client->async_send_request(req);
-            if (rclcpp::spin_until_future_complete(video_record_node, result) ==
+            if (rclcpp::spin_until_future_complete(video_record_node, result, 1s) ==
                 rclcpp::FutureReturnCode::SUCCESS)
             {
                 if (!result.get()->success) {
@@ -1138,7 +1138,7 @@ void TaskManager::stopRecording() {
             req->start = false;
 
             auto result = video_recorder_client->async_send_request(req);
-            if (rclcpp::spin_until_future_complete(video_record_node, result) ==
+            if (rclcpp::spin_until_future_complete(video_record_node, result, 1s) ==
                 rclcpp::FutureReturnCode::SUCCESS)
             {
                 if (!result.get()->success) {
@@ -1165,7 +1165,7 @@ void TaskManager::stopRecording() {
         req->start = false;
 
         auto result = bag_recorder_client->async_send_request(req);
-        if (rclcpp::spin_until_future_complete(bag_record_node, result) ==
+        if (rclcpp::spin_until_future_complete(bag_record_node, result, 1s) ==
             rclcpp::FutureReturnCode::SUCCESS)
         {
             if (!result.get()->success) {
