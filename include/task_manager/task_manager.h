@@ -276,9 +276,6 @@ class TaskManager : public rclcpp::Node
         double lidar_x_;
         double lidar_z_;
 
-        // PCL republisher
-        geometry_msgs::msg::TransformStamped slam_to_map_tf_;
-
         // Heartbeat
         rclcpp::Time last_ui_heartbeat_stamp_;
         float ui_hb_threshold_;

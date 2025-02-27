@@ -424,10 +424,6 @@ void TaskManager::runTaskManager() {
                     
                 }
             }
-            else if (flight_controller_interface_->getIsArmed()) {
-                logEvent(EventType::STATE_MACHINE, Severity::LOW, "Drone armed manually");
-                updateCurrentTask(Task::MANUAL_FLIGHT);
-            }
             break;
         }
         case Task::MANUAL_FLIGHT: {
@@ -834,23 +830,12 @@ bool TaskManager::initialized() {
     tf2::convert(quat_tf, quat);
     map_to_slam_tf_.transform.rotation = quat;
 
-    // Save inverse
-    tf2::Transform map2, slam2;
-    tf2::convert(map_to_slam_tf_.transform, map2);
-    slam2 = map2.inverse();
-    geometry_msgs::msg::Transform slam2_tf;
-    tf2::convert(slam2, slam2_tf);
-    slam_to_map_tf_.header.frame_id = slam_map_frame_;
-    slam_to_map_tf_.header.stamp = map_to_slam_tf_.header.stamp;
-    slam_to_map_tf_.child_frame_id = mavros_map_frame_;
-    slam_to_map_tf_.transform = slam2_tf;
-
     // Send transform and stop timer
     tf_static_broadcaster_->sendTransform(map_to_slam_tf_);
 
     map_tf_timer_.reset();
     map_tf_init_ = true;
-    flight_controller_interface_->setMapTfInit(true);
+    flight_controller_interface_->setMapSlamTf(map_to_slam_tf_);
 
     logEvent(EventType::INFO, Severity::LOW, "Waiting for global position");
     home_utm_zone_ = flight_controller_interface_->getUTMZone();
@@ -920,7 +905,6 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
     geometry_msgs::msg::PointStamped in, out;
     in.point = map_point;
     map2UtmPoint(in, out);
-    RCLCPP_INFO(this->get_logger(), "at intput (%f, %f) output utm was (%f, %f)", in.point.x, in.point.y, out.point.x, out.point.y);
     sensor_msgs::msg::Image chunk;
     double ret_altitude;
     bool worked = hello_decco_manager_->getElevationValue(out.point.x, out.point.y, ret_altitude);
@@ -957,7 +941,9 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
         this->set_parameter(rclcpp::Parameter("max_alt", max_altitude_));
         this->set_parameter(rclcpp::Parameter("min_alt", min_altitude_));
         this->set_parameter(rclcpp::Parameter("default_alt", target_altitude_));
-    }
+    } 
+
+    return true;
 }
 
 void TaskManager::heartbeatTimerCallback() {
@@ -1030,7 +1016,8 @@ bool TaskManager::pauseOperations() {
 void TaskManager::checkArmStatus() {
     bool armed = flight_controller_interface_->getIsArmed();
     if (!is_armed_ && armed) {
-        logEvent(EventType::INFO, Severity::LOW, "Manually set armed state to true");
+        logEvent(EventType::INFO, Severity::LOW, "Drone armed manually");
+        updateCurrentTask(Task::MANUAL_FLIGHT);
         is_armed_ = true;
         if (!offline_ && do_record_) {
             if (!recording_)

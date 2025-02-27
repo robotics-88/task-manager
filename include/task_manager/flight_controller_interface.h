@@ -39,7 +39,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "std_msgs/msg/string.hpp"
 
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
-#include "tf2_ros/buffer.h"
 
 #include <GeographicLib/GeoCoords.hpp>
 #include <GeographicLib/Geodesic.hpp>
@@ -58,7 +57,7 @@ class FlightControllerInterface : public rclcpp::Node
 
         // Getters and setters
         void setAutonomyEnabled(bool enabled) {enable_autonomy_ = enabled;}
-        void setMapTfInit(bool init) {map_tf_init_ = init;}
+        void setMapSlamTf(geometry_msgs::msg::TransformStamped tf) {map_tf_init_ = true; map_to_slam_tf_ = tf;}
         geometry_msgs::msg::PoseStamped getCurrentSlamPosition() {return current_slam_pose_;}
         geometry_msgs::msg::PoseStamped getCurrentLocalPosition() {return current_pose_;}
         sensor_msgs::msg::NavSatFix getCurrentGlobalPosition() {return current_ll_;}
@@ -136,9 +135,6 @@ class FlightControllerInterface : public rclcpp::Node
         // Param sync client
         std::shared_ptr<rclcpp::SyncParametersClient> sync_params_client_;
 
-        // TF buffer
-        std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
-
         // General private data
         sensor_msgs::msg::NavSatFix current_ll_;
         geometry_msgs::msg::PoseStamped current_pose_;
@@ -163,6 +159,7 @@ class FlightControllerInterface : public rclcpp::Node
         std::string prearm_text_;
         rclcpp::Time last_prearm_text_;
         bool map_tf_init_;
+        geometry_msgs::msg::TransformStamped map_to_slam_tf_;
         rclcpp::Time last_vision_pose_pub_stamp_;
 
         // Battery estimation stuff

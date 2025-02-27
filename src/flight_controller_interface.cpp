@@ -36,6 +36,7 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
   , current_altitude_(-1.0)
   , detected_utm_zone_(-1)
   , utm_set_(false)
+  , map_tf_init_(false)
   , battery_percentage_(0.0)
   , battery_voltage_(0.0)
   , battery_size_(5.2)
@@ -142,6 +143,7 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
             drone_init_timer_ = this->create_wall_timer(1s, std::bind(&FlightControllerInterface::initializePX4, this));
         }
         else {
+            RCLCPP_INFO(this->get_logger(), "Waiting 12s for Arducopter param fetch to complete");
             drone_init_timer_ = this->create_wall_timer(1s, std::bind(&FlightControllerInterface::initializeArducopter, this));
         }
     }
@@ -531,7 +533,8 @@ void FlightControllerInterface::initUTM(double &utm_x, double &utm_y) {
 void FlightControllerInterface::checkMsgRates() {
 
     if (imu_count_ / msg_rate_timer_dt_ < imu_rate_ * 0.8) {
-        RCLCPP_WARN(this->get_logger(), "Warning, IMU only sending at %f / %f hz", (imu_count_ / msg_rate_timer_dt_), imu_rate_);
+        if (drone_initialized_)
+            RCLCPP_WARN(this->get_logger(), "Warning, IMU only sending at %f / %f hz", (imu_count_ / msg_rate_timer_dt_), imu_rate_);
         imu_rate_ok_ = false;
     }
     else {
@@ -540,7 +543,8 @@ void FlightControllerInterface::checkMsgRates() {
 
     // Use battery message as proxy for all generic message streams
     if (battery_count_ / msg_rate_timer_dt_ < battery_rate_ * 0.8) {
-        RCLCPP_WARN(this->get_logger(), "Warning, battery only sending at %f / %f hz", (battery_count_ / msg_rate_timer_dt_), battery_rate_);
+        if (drone_initialized_)
+            RCLCPP_WARN(this->get_logger(), "Warning, battery only sending at %f / %f hz", (battery_count_ / msg_rate_timer_dt_), battery_rate_);
         battery_rate_ok_ = false;
     }
     else {
@@ -550,7 +554,8 @@ void FlightControllerInterface::checkMsgRates() {
     // Also check local pos rate, but don't use this for initialization check b/c drone needs to initialize before
     // vision pose starts publishing (which ultimately, local position comes from)
     if (local_pos_count_ / msg_rate_timer_dt_ <  8) {
-        RCLCPP_WARN(this->get_logger(), "Warning, local position only sending at %f / 10 hz", (local_pos_count_ / msg_rate_timer_dt_));
+        if (drone_initialized_)
+            RCLCPP_WARN(this->get_logger(), "Warning, local position only sending at %f / 10 hz", (local_pos_count_ / msg_rate_timer_dt_));
     }
 
     // Reset counters
@@ -597,22 +602,14 @@ void FlightControllerInterface::slamPoseCallback(const geometry_msgs::msg::PoseS
         return;
     }
 
-    geometry_msgs::msg::TransformStamped tf;
-    try {
-        tf = tf_buffer_->lookupTransform(mavros_map_frame_, slam_map_frame_, tf2::TimePointZero);
-    } catch (tf2::TransformException & ex) {
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "Cannot publish vision pose as map<>slam_map tf not yet available");
-        return;
-    }
-
     // Apply the transform to the drone pose
-    geometry_msgs::msg::PoseStamped msg_body_pose;
+    geometry_msgs::msg::PoseStamped vision_pose;
 
-    tf2::doTransform(current_slam_pose_, msg_body_pose, tf);
-    msg_body_pose.header.frame_id = mavros_map_frame_;
-    msg_body_pose.header.stamp = current_slam_pose_.header.stamp;
+    tf2::doTransform(current_slam_pose_, vision_pose, map_to_slam_tf_);
+    vision_pose.header.frame_id = mavros_map_frame_;
+    vision_pose.header.stamp = current_slam_pose_.header.stamp;
 
-    vision_pose_publisher_->publish(msg_body_pose);
+    vision_pose_publisher_->publish(vision_pose);
 
     last_vision_pose_pub_stamp_ = this->get_clock()->now();
 }
