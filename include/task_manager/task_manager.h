@@ -254,7 +254,6 @@ class TaskManager : public rclcpp::Node
         double home_elevation_;
         double max_dist_to_polygon_;
         double flightleg_area_acres_;
-        double goal_reached_threshold_;
 
         // TF
         std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
@@ -278,7 +277,6 @@ class TaskManager : public rclcpp::Node
 
         // Heartbeat
         rclcpp::Time last_ui_heartbeat_stamp_;
-        float ui_hb_threshold_;
         rclcpp::TimerBase::SharedPtr heartbeat_timer_;
 
         // Record
@@ -334,11 +332,8 @@ class TaskManager : public rclcpp::Node
         // Explicit UTM param handling
         bool explicit_global_params_;
         geometry_msgs::msg::TransformStamped utm2map_tf_;
-        double home_lat_;
-        double home_lon_;
 
         // Burn unit handling
-        int current_index_;
         std::string data_directory_;
         std::string burn_unit_name_;
 

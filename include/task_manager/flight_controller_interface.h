@@ -67,7 +67,7 @@ class FlightControllerInterface : public rclcpp::Node
         bool getIsInAir() {return in_air_;}
         bool getIsArmed() {return armed_;}
         double getCompass() {return compass_hdg_;}
-        bool getDroneInitalized() {return drone_initialized_;}
+        bool getDroneInitalized() {std::lock_guard<std::mutex> lock(init_mutex_); return drone_initialized_;}
         float getFlightTimeRemaining() {return estimated_flight_time_remaining_;}
         float getBatteryPercentage() {return battery_percentage_;}
         float getBatteryVoltage() {return battery_voltage_;}
@@ -142,10 +142,8 @@ class FlightControllerInterface : public rclcpp::Node
         std::deque<sensor_msgs::msg::Imu> imu_averaging_vec_;
         sensor_msgs::msg::Imu mavros_imu_init_;
         unsigned imu_averaging_n_;
-        float flight_time_remaining_;
         double home_compass_hdg_;
         double compass_hdg_;
-        unsigned compass_count_;
         double current_altitude_;
         std::string current_mode_;
         bool connected_;
@@ -154,7 +152,6 @@ class FlightControllerInterface : public rclcpp::Node
         bool in_air_;
         bool in_guided_mode_;
         int detected_utm_zone_;
-        bool utm_set_;
         std::string preflight_check_reasons_;
         std::string prearm_text_;
         rclcpp::Time last_prearm_text_;
@@ -174,7 +171,8 @@ class FlightControllerInterface : public rclcpp::Node
         float battery_size_;
         float estimated_current_;
         float estimated_flight_time_remaining_;
-        
+
+        std::mutex init_mutex_;
 
         // Slam pose
         geometry_msgs::msg::PoseStamped current_slam_pose_;
@@ -192,21 +190,8 @@ class FlightControllerInterface : public rclcpp::Node
 
         bool imu_rate_ok_;
         bool battery_rate_ok_;
-
-        int init_count_;
-
-        // Initialization check stuff
-        bool drone_initialized_;
-        unsigned compass_wait_counter_;
-        unsigned attempts_;
-        rclcpp::TimerBase::SharedPtr drone_init_timer_;
-        bool param_fetch_complete_;
-        bool heading_src_ok_;
-        bool stream_rates_ok_;
-        bool geofence_clear_ok_;
-        bool mission_clear_ok_;
         bool compass_init_ok_;
-        bool param_set_ok_;
+        bool drone_initialized_;
 
         std::map<std::string, int> param_map_ = {
             { "EK3_SRC1_POSXY", 3 },

@@ -47,13 +47,11 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , home_elevation_(0.0)
     , max_dist_to_polygon_(300.0)
     , flightleg_area_acres_(3.0)
-    , goal_reached_threshold_(2.0)
     , map_tf_init_(false)
     , home_utm_zone_(-1)
     , mavros_map_frame_("map")
     , slam_map_frame_("slam_map")
     , slam_pose_topic_("decco/pose")
-    , ui_hb_threshold_(5.0)
     , do_record_(true)
     , recording_(false)
     , record_config_file_("")
@@ -148,7 +146,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     this->declare_parameter("do_attollo", do_attollo_);
     this->declare_parameter("do_thermal_cam", do_thermal_);
     this->declare_parameter("do_downward_rgb", do_downward_rgb_);
-    int lidar_type;
+    int lidar_type = 4;
     this->declare_parameter("lidar_type", lidar_type);
     this->declare_parameter("lidar_pitch", lidar_pitch_);
     this->declare_parameter("lidar_x", lidar_x_);
@@ -900,8 +898,6 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
                              const std::shared_ptr<messages_88::srv::GetMapData::Request> req,
                              const std::shared_ptr<messages_88::srv::GetMapData::Response> resp){
     geometry_msgs::msg::Point map_point = req->map_position;
-    int width = req->width;
-    int height = req->height;
     geometry_msgs::msg::PointStamped in, out;
     in.point = map_point;
     map2UtmPoint(in, out);
@@ -1094,7 +1090,7 @@ void TaskManager::startRecording() {
 
         if (!video_recorder_client->wait_for_service(1s)) {
             std::string error_msg = service_name + " service not available";
-            RCLCPP_INFO(this->get_logger(), error_msg.c_str());
+            RCLCPP_INFO(this->get_logger(), "%s", error_msg.c_str());
         }
         else {
             auto req = std::make_shared<messages_88::srv::RecordVideo::Request>();
@@ -1107,11 +1103,11 @@ void TaskManager::startRecording() {
             {
                 if (!result.get()->success) {
                     std::string error_msg = "Failed to start video recording on " + service_name;
-                    RCLCPP_WARN(this->get_logger(), error_msg.c_str());
+                    RCLCPP_WARN(this->get_logger(), "%s", error_msg.c_str());
                 }
             } else {
                 std::string error_msg = "Failed to call service " + service_name;
-                RCLCPP_ERROR(this->get_logger(), error_msg.c_str());
+                RCLCPP_ERROR(this->get_logger(), "%s", error_msg.c_str());
             }
         }
     }
@@ -1135,7 +1131,7 @@ void TaskManager::stopRecording() {
 
         if (!video_recorder_client->wait_for_service(1s)) {
             std::string error_msg = "Video recorder service not available on " + service_name;
-            RCLCPP_INFO(this->get_logger(), error_msg.c_str());
+            RCLCPP_INFO(this->get_logger(), "%s", error_msg.c_str());
         }
         else {
             auto req = std::make_shared<messages_88::srv::RecordVideo::Request>();
@@ -1147,11 +1143,11 @@ void TaskManager::stopRecording() {
             {
                 if (!result.get()->success) {
                     std::string error_msg = "Failed to stop video recording on " + service_name;
-                    RCLCPP_WARN(this->get_logger(), error_msg.c_str());
+                    RCLCPP_WARN(this->get_logger(), "%s", error_msg.c_str());
                 }
             } else {
                 std::string error_msg = "Failed to call service " + service_name;
-                RCLCPP_ERROR(this->get_logger(), error_msg.c_str());
+                RCLCPP_ERROR(this->get_logger(), "%s", error_msg.c_str());
             }
         }
         
