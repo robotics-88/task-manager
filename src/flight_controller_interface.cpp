@@ -47,7 +47,7 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
   , battery_count_(0)
   , imu_rate_ok_(false)
   , battery_rate_ok_(false)
-  , msg_rate_timer_dt_(5.0)
+  , msg_rate_timer_dt_(2.0)
   , imu_rate_(120.0)
   , local_pos_rate_(60.0)
   , battery_rate_(10.0)
@@ -135,8 +135,8 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
         else {
             // Run this in a different thread so it doesn't block other important subscription callbacks.
             std::thread([this]() {
-                RCLCPP_INFO(this->get_logger(), "Waiting 12s for Arducopter param fetch to complete");
-                rclcpp::sleep_for(12s);
+                RCLCPP_INFO(this->get_logger(), "Waiting 15s for Arducopter param fetch to complete");
+                rclcpp::sleep_for(15s);
                 initializeArducopter();
             }).detach();
         }
@@ -203,30 +203,6 @@ void FlightControllerInterface::initializeArducopter() {
         
         if (i == attempts - 1) {
             RCLCPP_ERROR(this->get_logger(), "Heading src param set unsuccessful after 5 attempts, not initializing drone");
-            return;
-        }
-
-        rclcpp::sleep_for(1s);
-    }
-
-    // Check message rates
-    attempts = 5;
-    for (unsigned i = 0; i < attempts; i++) {
-        {
-            std::lock_guard<std::mutex> lock(init_mutex_);
-            if (battery_rate_ok_ && imu_rate_ok_) {
-                RCLCPP_INFO(this->get_logger(), "Mavlink streaming rates OK");
-                break;
-            }
-            else {
-                RCLCPP_INFO(this->get_logger(), "Mavlink streaming rates not OK, trying again");
-                requestMavlinkStreams();
-                
-            }
-        }
-
-        if (i == attempts - 1) {
-            RCLCPP_ERROR(this->get_logger(), "Mavlink stream rates not OK after 5 attempts, not initializing drone");
             return;
         }
 
@@ -343,6 +319,32 @@ void FlightControllerInterface::initializeArducopter() {
             RCLCPP_ERROR(this->get_logger(), "Param set unsuccessful after 3 attempts, not initializing drone");
             return;
         }
+    }
+
+    // Check message rates, after waiting between param fetch and time for check message loop
+    auto nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<float>(msg_rate_timer_dt_));
+    rclcpp::sleep_for(nanoseconds);
+    attempts = 3;
+    for (unsigned i = 0; i < attempts; i++) {
+        {
+            std::lock_guard<std::mutex> lock(init_mutex_);
+            if (battery_rate_ok_ && imu_rate_ok_) {
+                RCLCPP_INFO(this->get_logger(), "Mavlink streaming rates OK");
+                break;
+            }
+            else {
+                RCLCPP_INFO(this->get_logger(), "Mavlink streaming rates not OK, trying again");
+                if (i == 0)
+                    requestMavlinkStreams();
+            }
+        }
+
+        if (i == attempts - 1) {
+            RCLCPP_ERROR(this->get_logger(), "Mavlink stream rates not OK after 5 attempts, not initializing drone");
+            return;
+        }
+
+        rclcpp::sleep_for(nanoseconds);
     }
 
     std::lock_guard<std::mutex> lock(init_mutex_);
@@ -533,7 +535,7 @@ void FlightControllerInterface::slamPoseCallback(const geometry_msgs::msg::PoseS
     vision_pose_publisher_->publish(vision_pose);
 
     double time_since_last_pub = (this->get_clock()->now() - last_vision_pose_pub_stamp_).seconds();
-    if (time_since_last_pub > 0.25) {
+    if (time_since_last_pub > 0.25 && last_vision_pose_pub_stamp_.nanoseconds() > 0) {
         RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Vision pose delay, time since last pub: %f", time_since_last_pub);
     }
 
