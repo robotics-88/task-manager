@@ -6,11 +6,12 @@
     <arg name="goal_topic" default="/mavros/setpoint_position/local"/> <!-- for mavros without OA, use /mavros/setpoint_position/local. default is /goal.-->
 
     <!-- Which hardware to add to health report -->
-    <arg name="do_mapir" default="false"/>
+    <arg name="do_mapir_rgn" default="false"/>
     <arg name="do_mapir_rgb" default="false"/>
     <arg name="do_attollo" default="false"/>
     <arg name="do_seek_thermal" default="true"/>
-    <arg name="do_downward_rgb" default="true"/>
+    <arg name="do_see3cam_down" default="true"/>
+    <arg name="do_see3cam_fwd" default="false"/>
     <arg name="lidar_type" default="4"/> <!-- 2 = Velodyne, 4 = Mid360-->
     <arg name="lidar_pitch" default="0.0"/>
     <arg name="lidar_x" default="0.0"/>
@@ -90,7 +91,8 @@
         <param name="do_mapir_rgb" value="$(var do_mapir_rgb)"/>
         <param name="do_attollo" value="$(var do_attollo)"/>
         <param name="do_seek_thermal" value="$(var do_seek_thermal)"/>
-        <param name="do_downward_rgb" value="$(var do_downward_rgb)"/>
+        <param name="do_see3cam_down" value="$(var do_see3cam_down)"/>
+        <param name="do_see3cam_down" value="$(var do_see3cam_fwd)"/>
         <param name="lidar_type" value="$(var lidar_type)"/>
         <param name="lidar_pitch" value="$(var lidar_pitch)"/>
         <param name="lidar_x" value="$(var lidar_x)"/>
