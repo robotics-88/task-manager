@@ -9,8 +9,8 @@
     <arg name="do_mapir_rgn" default="false"/>
     <arg name="do_mapir_rgb" default="false"/>
     <arg name="do_attollo" default="false"/>
-    <arg name="do_seek_thermal" default="true"/>
-    <arg name="do_see3cam_down" default="true"/>
+    <arg name="do_seek_thermal" default="false"/>
+    <arg name="do_see3cam_down" default="false"/>
     <arg name="do_see3cam_fwd" default="false"/>
     <arg name="lidar_type" default="4"/> <!-- 2 = Velodyne, 4 = Mid360-->
     <arg name="lidar_pitch" default="0.0"/>
