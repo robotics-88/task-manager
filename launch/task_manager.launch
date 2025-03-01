@@ -9,9 +9,8 @@
     <arg name="do_mapir" default="false"/>
     <arg name="do_mapir_rgb" default="false"/>
     <arg name="do_attollo" default="false"/>
-    <arg name="do_thermal_cam" default="true"/>
+    <arg name="do_seek_thermal" default="true"/>
     <arg name="do_downward_rgb" default="true"/>
-    <arg name="thermal_type" default="0"/>
     <arg name="lidar_type" default="4"/> <!-- 2 = Velodyne, 4 = Mid360-->
     <arg name="lidar_pitch" default="0.0"/>
     <arg name="lidar_x" default="0.0"/>
@@ -87,10 +86,10 @@
         
         <param name="estimated_drone_speed" value="2.0"/>
         <param name="battery_failsafe_safety_factor" value="2.0"/>
-        <param name="do_mapir" value="$(var do_mapir)"/>
+        <param name="do_mapir_rgn" value="$(var do_mapir_rgn)"/>
         <param name="do_mapir_rgb" value="$(var do_mapir_rgb)"/>
         <param name="do_attollo" value="$(var do_attollo)"/>
-        <param name="do_thermal_cam" value="$(var do_thermal_cam)"/>
+        <param name="do_seek_thermal" value="$(var do_seek_thermal)"/>
         <param name="do_downward_rgb" value="$(var do_downward_rgb)"/>
         <param name="lidar_type" value="$(var lidar_type)"/>
         <param name="lidar_pitch" value="$(var lidar_pitch)"/>
