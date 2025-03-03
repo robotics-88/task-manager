@@ -1161,7 +1161,7 @@ void TaskManager::stopRecording() {
             req->start = false;
 
             auto result = video_recorder_client->async_send_request(req);
-            if (rclcpp::spin_until_future_complete(video_record_node, result, 1s) ==
+            if (rclcpp::spin_until_future_complete(video_record_node, result, 10s) ==
                 rclcpp::FutureReturnCode::SUCCESS)
             {
                 if (!result.get()->success) {
