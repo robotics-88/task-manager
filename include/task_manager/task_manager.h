@@ -144,7 +144,6 @@ class TaskManager : public rclcpp::Node
         // Publishers
         rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                 health_pub_;
         rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr                map_yaw_pub_;
-        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr       vision_pose_publisher_;
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr         pointcloud_repub_;
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr       goal_pos_pub_;
         rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr             local_vel_pub_;
@@ -201,7 +200,7 @@ class TaskManager : public rclcpp::Node
         std::string rosbag_topic_;
 
         rclcpp::Duration lidar_timeout_;
-        rclcpp::Duration slam_timeout_;
+        rclcpp::Duration vision_pose_timeout_;
         rclcpp::Duration path_timeout_;
         rclcpp::Duration costmap_timeout_;
         rclcpp::Duration mapir_timeout_;
@@ -210,7 +209,6 @@ class TaskManager : public rclcpp::Node
         rclcpp::Duration rosbag_timeout_;
         std::chrono::seconds explore_timeout_;
         rclcpp::Time last_lidar_stamp_;
-        rclcpp::Time last_slam_pos_stamp_;
         rclcpp::Time last_path_planner_stamp_;
         rclcpp::Time last_costmap_stamp_;
         rclcpp::Time last_mapir_stamp_;
@@ -257,7 +255,6 @@ class TaskManager : public rclcpp::Node
         double home_elevation_;
         double max_dist_to_polygon_;
         double flightleg_area_acres_;
-        double goal_reached_threshold_;
 
         // TF
         std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
@@ -279,12 +276,8 @@ class TaskManager : public rclcpp::Node
         double lidar_x_;
         double lidar_z_;
 
-        // PCL republisher
-        geometry_msgs::msg::TransformStamped slam_to_map_tf_;
-
         // Heartbeat
         rclcpp::Time last_ui_heartbeat_stamp_;
-        float ui_hb_threshold_;
         rclcpp::TimerBase::SharedPtr heartbeat_timer_;
 
         // Record
@@ -340,11 +333,8 @@ class TaskManager : public rclcpp::Node
         // Explicit UTM param handling
         bool explicit_global_params_;
         geometry_msgs::msg::TransformStamped utm2map_tf_;
-        double home_lat_;
-        double home_lon_;
 
         // Burn unit handling
-        int current_index_;
         std::string data_directory_;
         std::string burn_unit_name_;
 
