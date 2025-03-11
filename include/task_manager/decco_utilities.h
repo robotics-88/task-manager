@@ -108,13 +108,13 @@ namespace decco_utilities
     }
 
     unsigned long rosTimeToMilliseconds(const rclcpp::Time ros_time);
-    
     void llToUtm(const double lat, const double lon, int &zone, double &utm_x, double &utm_y);
     void utmToLL(const double utm_x, const double utm_y, const int zone, double &lat, double &lon);
     void mapToLl(const double px, const double py, double &lat, double &lon,
                  const double utm_x_offset, const double utm_y_offset, const double utm_zone);
     void llToMap(const double lat, const double lon, double &px, double &py,
                  const double utm_x_offset, const double utm_y_offset);
+    std::string get_time_str();
 
 } // namespace decco_utilities
 

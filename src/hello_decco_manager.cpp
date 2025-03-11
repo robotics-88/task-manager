@@ -98,15 +98,16 @@ bool HelloDeccoManager::elevationInitializer(const double utm_x, const double ut
         tif_name = ament_index_cpp::get_package_share_directory("task_manager") + "/dem/" + burn_unit_name + ".tif";
     }
     catch (...) {
-        tif_name = ament_index_cpp::get_package_share_directory("task_manager") + "/dem/bigilly2.tif";
+        tif_name = ament_index_cpp::get_package_share_directory("task_manager") + "/dem/test.tif";
     }
 
     if (!boost::filesystem::exists(tif_name)){
         return false;
     }
-    elevation_source_.init(tif_name, utm_x, utm_y, tif_grid, cloud);
-    elevation_init_ = true;
-    return true;
+    RCLCPP_INFO(rclcpp::get_logger("hello_decco_manager"), "Elevation file found at: %s", tif_name.c_str());
+
+    elevation_init_ = elevation_source_.init(tif_name, utm_x, utm_y, tif_grid, cloud);
+    return elevation_init_;
 }
 
 bool HelloDeccoManager::getElevationChunk(const double utm_x, const double utm_y, const int width, const int height, sensor_msgs::msg::Image &chunk, double &max, double &min) {

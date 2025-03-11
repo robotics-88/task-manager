@@ -38,4 +38,13 @@ void llToMap(const double lat, const double lon, double &px, double &py,
     py = utm_y + utm_y_offset;
 }
 
+std::string get_time_str() {
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+    std::tm now_tm = *std::gmtime(&now_time);
+    std::stringstream ss;
+    ss << std::put_time(&now_tm, "%Y-%m-%d_%H-%M-%S");
+    return ss.str();
+}
+
 } // namespace decco_utilities

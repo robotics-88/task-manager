@@ -47,15 +47,13 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , home_elevation_(0.0)
     , max_dist_to_polygon_(300.0)
     , flightleg_area_acres_(3.0)
-    , goal_reached_threshold_(2.0)
     , map_tf_init_(false)
     , home_utm_zone_(-1)
     , mavros_map_frame_("map")
     , slam_map_frame_("slam_map")
     , slam_pose_topic_("decco/pose")
-    , ui_hb_threshold_(5.0)
     , do_record_(true)
-    , bag_active_(false)
+    , recording_(false)
     , record_config_file_("")
     , burn_unit_name_("")
     , cmd_history_("")
@@ -89,7 +87,6 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , hd_drone_id_(0)
     , start_time_(0)
     , last_lidar_stamp_(0, 0, RCL_ROS_TIME)
-    , last_slam_pos_stamp_(0, 0, RCL_ROS_TIME)
     , last_path_planner_stamp_(0, 0, RCL_ROS_TIME)
     , last_costmap_stamp_(0, 0, RCL_ROS_TIME)
     , last_mapir_stamp_(0, 0, RCL_ROS_TIME)
@@ -100,7 +97,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , last_preflight_check_log_stamp_(0, 0, RCL_ROS_TIME)
     , last_ui_heartbeat_stamp_(0, 0, RCL_ROS_TIME)
     , lidar_timeout_(rclcpp::Duration::from_seconds(0.5))
-    , slam_timeout_(rclcpp::Duration::from_seconds(0.5))
+    , vision_pose_timeout_(rclcpp::Duration::from_seconds(0.5))
     , path_timeout_(rclcpp::Duration::from_seconds(1.0))
     , costmap_timeout_(rclcpp::Duration::from_seconds(3.0))
     , explore_timeout_(1s)
@@ -148,7 +145,8 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     this->declare_parameter("do_mapir_rgb", do_mapir_rgb_);
     this->declare_parameter("do_attollo", do_attollo_);
     this->declare_parameter("do_thermal_cam", do_thermal_);
-    int lidar_type;
+    this->declare_parameter("do_downward_rgb", do_downward_rgb_);
+    int lidar_type = 4;
     this->declare_parameter("lidar_type", lidar_type);
     this->declare_parameter("lidar_pitch", lidar_pitch_);
     this->declare_parameter("lidar_x", lidar_x_);
@@ -191,6 +189,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     this->get_parameter("do_mapir_rgb", do_mapir_rgb_);
     this->get_parameter("do_attollo", do_attollo_);
     this->get_parameter("do_thermal_cam", do_thermal_);
+    this->get_parameter("do_downward_rgb", do_downward_rgb_);
     this->get_parameter("lidar_type", lidar_type);
     this->get_parameter("lidar_pitch", lidar_pitch_);
     this->get_parameter("lidar_x", lidar_x_);
@@ -213,7 +212,10 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
         camera_names_.push_back("attollo");
     }
     if (do_thermal_) {
-        camera_names_.push_back("see3cam");
+        camera_names_.push_back("seek_thermal");
+    }
+    if (do_downward_rgb_) {
+        camera_names_.push_back("downward_rgb/see3cam");
     }
     
     // SLAM pose sub
@@ -270,7 +272,6 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     goal_pos_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(goal_topic, 10);
 
     local_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/mavros/setpoint_velocity/cmd_vel_unstamped", 10);
-    vision_pose_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/vision_pose/pose", 10);
 
     marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/lawnmower", 10);
 
@@ -423,27 +424,24 @@ void TaskManager::runTaskManager() {
                     
                 }
             }
-            else if (flight_controller_interface_->getIsArmed()) {
-                logEvent(EventType::STATE_MACHINE, Severity::LOW, "Drone armed manually");
-                updateCurrentTask(Task::MANUAL_FLIGHT);
-            }
             break;
         }
         case Task::MANUAL_FLIGHT: {
             if (!hello_decco_manager_->getElevationInit()) {
-            auto tif_grid = std::make_shared<nav_msgs::msg::OccupancyGrid>();
-            pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
-            bool got_elev = hello_decco_manager_->getHomeElevation(home_elevation_, tif_grid, cloud);
-            tif_grid_pub_->publish(*tif_grid);
-            sensor_msgs::msg::PointCloud2 cloud_msg;
-            pcl::toROSMsg(*cloud, cloud_msg);
-            cloud_msg.header.frame_id = tif_grid->header.frame_id;
-            cloud_msg.header.stamp = tif_grid->header.stamp;
-            tif_pcl_pub_->publish(cloud_msg);
+                auto tif_grid = std::make_shared<nav_msgs::msg::OccupancyGrid>();
+                pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+                bool got_elev = hello_decco_manager_->getHomeElevation(home_elevation_, tif_grid, cloud);
+                tif_grid_pub_->publish(*tif_grid);
+                sensor_msgs::msg::PointCloud2 cloud_msg;
+                pcl::toROSMsg(*cloud, cloud_msg);
+                cloud_msg.header.frame_id = tif_grid->header.frame_id;
+                cloud_msg.header.stamp = tif_grid->header.stamp;
+                tif_pcl_pub_->publish(cloud_msg);
+                RCLCPP_INFO(this->get_logger(),"Publishing PCL, point 0: %f, %f, %f", cloud->points[0].x, cloud->points[0].y, cloud->points[0].z);
             if (!got_elev) {
                 logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "No elevation, can only perform manual flight.");
             }
-            RCLCPP_INFO(this->get_logger(),"got home elevation in manual mode : %f", home_elevation_);
+            RCLCPP_INFO(this->get_logger(), "Got home elevation in manual mode : %f", home_elevation_);
             }
             if (!flight_controller_interface_->getIsArmed()) {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Drone disarmed manually");
@@ -588,15 +586,19 @@ void TaskManager::startTakeoff() {
         return;
     }
 
-    if (do_record_) {
-        startBag();
+    if (!offline_ && do_record_) {
+        if (!recording_)
+            startRecording();
+        else
+            logEvent(EventType::INFO, Severity::LOW, "Recording flag already true, not starting new recording");
     }
 
     if (flight_controller_interface_->takeOff(target_altitude_)) {
         in_autonomous_flight_ = true;
         updateCurrentTask(Task::TAKING_OFF);
         needs_takeoff_ = false;
-        takeoff_attempts_ = 0; 
+        takeoff_attempts_ = 0;
+        is_armed_ = true;
     } 
     else {
         logEvent(EventType::FLIGHT_CONTROL, Severity::MEDIUM, "Takeoff request failed. Retrying.");
@@ -694,7 +696,7 @@ void TaskManager::checkHealth() {
 
     health_checks_.battery_ok = isBatteryOk();
     health_checks_.lidar_ok = now - last_lidar_stamp_ < lidar_timeout_;
-    health_checks_.slam_ok = now - last_slam_pos_stamp_ < slam_timeout_;
+    health_checks_.slam_ok = now - flight_controller_interface_->getLastVisionPosePubStamp() < vision_pose_timeout_;
     health_checks_.path_ok = now - last_path_planner_stamp_ < path_timeout_;
     health_checks_.costmap_ok = now - last_costmap_stamp_ < costmap_timeout_;
     health_checks_.explore_ok = explore_action_client_.get()->action_server_is_ready();
@@ -837,22 +839,12 @@ bool TaskManager::initialized() {
     tf2::convert(quat_tf, quat);
     map_to_slam_tf_.transform.rotation = quat;
 
-    // Save inverse
-    tf2::Transform map2, slam2;
-    tf2::convert(map_to_slam_tf_.transform, map2);
-    slam2 = map2.inverse();
-    geometry_msgs::msg::Transform slam2_tf;
-    tf2::convert(slam2, slam2_tf);
-    slam_to_map_tf_.header.frame_id = slam_map_frame_;
-    slam_to_map_tf_.header.stamp = map_to_slam_tf_.header.stamp;
-    slam_to_map_tf_.child_frame_id = mavros_map_frame_;
-    slam_to_map_tf_.transform = slam2_tf;
-
     // Send transform and stop timer
     tf_static_broadcaster_->sendTransform(map_to_slam_tf_);
 
     map_tf_timer_.reset();
     map_tf_init_ = true;
+    flight_controller_interface_->setMapSlamTf(map_to_slam_tf_);
 
     logEvent(EventType::INFO, Severity::LOW, "Waiting for global position");
     home_utm_zone_ = flight_controller_interface_->getUTMZone();
@@ -917,12 +909,9 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
                              const std::shared_ptr<messages_88::srv::GetMapData::Request> req,
                              const std::shared_ptr<messages_88::srv::GetMapData::Response> resp){
     geometry_msgs::msg::Point map_point = req->map_position;
-    int width = req->width;
-    int height = req->height;
     geometry_msgs::msg::PointStamped in, out;
     in.point = map_point;
     map2UtmPoint(in, out);
-    RCLCPP_INFO(this->get_logger(), "at intput (%f, %f) output utm was (%f, %f)", in.point.x, in.point.y, out.point.x, out.point.y);
     sensor_msgs::msg::Image chunk;
     double ret_altitude;
     bool worked = hello_decco_manager_->getElevationValue(out.point.x, out.point.y, ret_altitude);
@@ -959,7 +948,9 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
         this->set_parameter(rclcpp::Parameter("max_alt", max_altitude_));
         this->set_parameter(rclcpp::Parameter("min_alt", min_altitude_));
         this->set_parameter(rclcpp::Parameter("default_alt", target_altitude_));
-    }
+    } 
+
+    return true;
 }
 
 void TaskManager::heartbeatTimerCallback() {
@@ -1030,19 +1021,23 @@ bool TaskManager::pauseOperations() {
 }
 
 void TaskManager::checkArmStatus() {
-    std::string mode = flight_controller_interface_->getFlightMode();
     bool armed = flight_controller_interface_->getIsArmed();
     if (!is_armed_ && armed) {
-        logEvent(EventType::INFO, Severity::LOW, "Manually set armed state to true");
+        logEvent(EventType::INFO, Severity::LOW, "Drone armed manually");
+        updateCurrentTask(Task::MANUAL_FLIGHT);
         is_armed_ = true;
-    }
-    if (is_armed_ && !bag_active_ && do_record_) {
-        logEvent(EventType::INFO, Severity::LOW, "Armed but bag not active"); 
-        startBag();
+        if (!offline_ && do_record_) {
+            if (!recording_)
+                startRecording();
+            else
+                logEvent(EventType::INFO, Severity::LOW, "Recording flag already true, not starting new recording");
+        }
     }
     if (is_armed_ && !armed) {
         logEvent(EventType::INFO, Severity::MEDIUM, "Disarm detected");
-        stopBag();
+        if (recording_) {
+            stopRecording();
+        }
         pauseOperations();
         is_armed_ = false; // Reset so can restart if another arming
     }
@@ -1057,131 +1052,142 @@ bool TaskManager::isBatteryOk() {
     return (flight_time_remaining > battery_failsafe_safety_factor_ * time_to_home);
 }
 
-void TaskManager::startBag() {
+void TaskManager::startRecording() {
 
-    if (bag_active_ || offline_ || !do_record_) {
-        return;
+    std::string start_time = decco_utilities::get_time_str();
+    std::string flight_directory = data_directory_ + burn_unit_name_ + "/flight_" + start_time;
+    if (!boost::filesystem::exists(flight_directory)) {
+        boost::filesystem::create_directories(flight_directory);
     }
-    logEvent(EventType::INFO, Severity::LOW, "Bag starting, dir: " + data_directory_);
+    logEvent(EventType::INFO, Severity::LOW, "Recording starting, dir: " + flight_directory);
 
+    // Handle bag
     std::shared_ptr<rclcpp::Node> bag_record_node = rclcpp::Node::make_shared("bag_record_client");
     auto bag_recorder_client = bag_record_node->create_client<bag_recorder_2::srv::Record>("/bag_recorder/record");
-    auto req = std::make_shared<bag_recorder_2::srv::Record::Request>();
 
     if (!bag_recorder_client->wait_for_service(1s)) {
         RCLCPP_INFO(this->get_logger(), "Bag recorder not available. Not recording bag.");
-        return;
     }
-
-    req->start = true;
-    req->config_file = record_config_file_;
-    req->data_directory = data_directory_ + burn_unit_name_;
-
-    auto result = bag_recorder_client->async_send_request(req);
-    if (rclcpp::spin_until_future_complete(bag_record_node, result) ==
-        rclcpp::FutureReturnCode::SUCCESS)
-    {
-        if (!result.get()->success) {
-            RCLCPP_WARN(this->get_logger(), "Failed to start bag");
-        }
-        else {
-            bag_active_ = true;
-        }
-    } else {
-        RCLCPP_ERROR(this->get_logger(), "Failed to call service /bag_recorder/record");
-    }
-
-    // Also request to start recording video from video recorder nodes
-
-    for (auto &camera_name : camera_names_) {
-        std::shared_ptr<rclcpp::Node> video_record_node = rclcpp::Node::make_shared("video_record_client");
-        std::string service_name = "/" + camera_name + "/video_recorder/record";
-        auto video_recorder_client = video_record_node->create_client<messages_88::srv::RecordVideo>(service_name);
-        auto req = std::make_shared<messages_88::srv::RecordVideo::Request>();
-
-        if (!video_recorder_client->wait_for_service(1s)) {
-            std::string error_msg = service_name + " service not available";
-            RCLCPP_INFO(this->get_logger(), error_msg.c_str());
-            return;
-        }
-
+    else {
+        auto req = std::make_shared<bag_recorder_2::srv::Record::Request>();
         req->start = true;
-        req->filename = data_directory_ + burn_unit_name_ + camera_name + ".mp4";
-
-        auto result = video_recorder_client->async_send_request(req);
-        if (rclcpp::spin_until_future_complete(video_record_node, result) ==
+        req->config_file = record_config_file_;
+        req->data_directory = flight_directory;
+    
+        auto result = bag_recorder_client->async_send_request(req);
+        if (rclcpp::spin_until_future_complete(bag_record_node, result, 1s) ==
             rclcpp::FutureReturnCode::SUCCESS)
         {
             if (!result.get()->success) {
-                std::string error_msg = "Failed to start video recording on " + camera_name;
-                RCLCPP_WARN(this->get_logger(), error_msg.c_str());
+                RCLCPP_WARN(this->get_logger(), "Failed to start bag");
             }
         } else {
-            std::string error_msg = "Failed to call service " + service_name;
-            RCLCPP_ERROR(this->get_logger(), error_msg.c_str());
+            RCLCPP_ERROR(this->get_logger(), "Failed to call service /bag_recorder/record");
         }
     }
 
+    // Also request to start recording video from video recorder nodes
+    for (auto &camera_name : camera_names_) {
+        std::shared_ptr<rclcpp::Node> video_record_node = rclcpp::Node::make_shared("video_record_client");
+        std::string service_name;
+        if (camera_name == "seek_thermal") {
+            service_name = "/seek_thermal/record";
+        }
+        else {
+            service_name = "/" + camera_name + "/opencv_cam/record";
+        }
+
+        auto video_recorder_client = video_record_node->create_client<messages_88::srv::RecordVideo>(service_name);
+
+        if (!video_recorder_client->wait_for_service(1s)) {
+            std::string error_msg = service_name + " service not available";
+            RCLCPP_INFO(this->get_logger(), "%s", error_msg.c_str());
+        }
+        else {
+            auto req = std::make_shared<messages_88::srv::RecordVideo::Request>();
+            req->start = true;
+            req->filename = flight_directory + "/" + camera_name + "_" + start_time + ".mp4";
+    
+            auto result = video_recorder_client->async_send_request(req);
+            if (rclcpp::spin_until_future_complete(video_record_node, result, 1s) ==
+                rclcpp::FutureReturnCode::SUCCESS)
+            {
+                if (!result.get()->success) {
+                    std::string error_msg = "Failed to start video recording on " + service_name;
+                    RCLCPP_WARN(this->get_logger(), "%s", error_msg.c_str());
+                }
+            } else {
+                std::string error_msg = "Failed to call service " + service_name;
+                RCLCPP_ERROR(this->get_logger(), "%s", error_msg.c_str());
+            }
+        }
+    }
+
+    recording_ = true;
 }
 
-void TaskManager::stopBag() {
+void TaskManager::stopRecording() {
 
     // Stop all video
     for (auto &camera_name : camera_names_) {
         std::shared_ptr<rclcpp::Node> video_record_node = rclcpp::Node::make_shared("video_record_client");
-        auto video_recorder_client = video_record_node->create_client<messages_88::srv::RecordVideo>("/" + camera_name + "/video_recorder/record");
-        auto req = std::make_shared<messages_88::srv::RecordVideo::Request>();
+        std::string service_name;
+        if (camera_name == "seek_thermal") {
+            service_name = "/seek_thermal/record";
+        }
+        else {
+            service_name = "/" + camera_name + "/opencv_cam/record";
+        }
+        auto video_recorder_client = video_record_node->create_client<messages_88::srv::RecordVideo>(service_name);
 
         if (!video_recorder_client->wait_for_service(1s)) {
-            std::string error_msg = "Video recorder service not available on " + camera_name;
-            RCLCPP_INFO(this->get_logger(), error_msg.c_str());
-            return;
+            std::string error_msg = "Video recorder service not available on " + service_name;
+            RCLCPP_INFO(this->get_logger(), "%s", error_msg.c_str());
         }
+        else {
+            auto req = std::make_shared<messages_88::srv::RecordVideo::Request>();
+            req->start = false;
 
-        req->start = false;
-
-        auto result = video_recorder_client->async_send_request(req);
-        if (rclcpp::spin_until_future_complete(video_record_node, result) ==
-            rclcpp::FutureReturnCode::SUCCESS)
-        {
-            if (!result.get()->success) {
-                std::string error_msg = "Failed to stop video recording on " + camera_name;
-                RCLCPP_WARN(this->get_logger(), error_msg.c_str());
+            auto result = video_recorder_client->async_send_request(req);
+            if (rclcpp::spin_until_future_complete(video_record_node, result, 1s) ==
+                rclcpp::FutureReturnCode::SUCCESS)
+            {
+                if (!result.get()->success) {
+                    std::string error_msg = "Failed to stop video recording on " + service_name;
+                    RCLCPP_WARN(this->get_logger(), "%s", error_msg.c_str());
+                }
+            } else {
+                std::string error_msg = "Failed to call service " + service_name;
+                RCLCPP_ERROR(this->get_logger(), "%s", error_msg.c_str());
             }
-        } else {
-            std::string error_msg = "Failed to call service /" + camera_name + "/video_recorder/record";
-            RCLCPP_ERROR(this->get_logger(), error_msg.c_str());
         }
+        
     }
 
     // Deal with rosbag
-    if (!bag_active_) {
-        return;
-    }
     std::shared_ptr<rclcpp::Node> bag_record_node = rclcpp::Node::make_shared("bag_record_client");
     auto bag_recorder_client = bag_record_node->create_client<bag_recorder_2::srv::Record>("/bag_recorder/record");
-    auto req = std::make_shared<bag_recorder_2::srv::Record::Request>();
-
+    
     if (!bag_recorder_client->wait_for_service(1s)) {
-        RCLCPP_INFO(this->get_logger(), "Bag recorder client not available. Not stop bag.");
-        return;
+        RCLCPP_INFO(this->get_logger(), "Bag recorder client not available. Not stopping bag.");
+    }
+    else {
+        auto req = std::make_shared<bag_recorder_2::srv::Record::Request>();
+        req->start = false;
+
+        auto result = bag_recorder_client->async_send_request(req);
+        if (rclcpp::spin_until_future_complete(bag_record_node, result, 1s) ==
+            rclcpp::FutureReturnCode::SUCCESS)
+        {
+            if (!result.get()->success) {
+                RCLCPP_WARN(this->get_logger(), "Failed to stop bag");
+            }
+        } else {
+            RCLCPP_ERROR(this->get_logger(), "Failed to call service /bag_recorder/record");
+        }
     }
 
-    req->start = false;
-
-    auto result = bag_recorder_client->async_send_request(req);
-    if (rclcpp::spin_until_future_complete(bag_record_node, result) ==
-        rclcpp::FutureReturnCode::SUCCESS)
-    {
-        if (!result.get()->success) {
-            RCLCPP_WARN(this->get_logger(), "Failed to stop bag");
-        }
-        else {
-            bag_active_ = false;
-        }
-    } else {
-        RCLCPP_ERROR(this->get_logger(), "Failed to call service /bag_recorder/record");
-    }
+    recording_ = false;
 }
 
 bool TaskManager::polygonDistanceOk(geometry_msgs::msg::PoseStamped &target, geometry_msgs::msg::Polygon &map_region) {
@@ -1331,31 +1337,6 @@ std::string TaskManager::getSeverityString(Severity sev) {
 void TaskManager::slamPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr slam_pose) {
 
     slam_pose_ = *slam_pose;
-
-    last_slam_pos_stamp_ = this->get_clock()->now();
-
-    // Transform decco pose (in slam_map frame) and publish it in mavros_map frame as /mavros/vision_pose/pose
-    if (!map_tf_init_) {
-        return;
-    }
-
-    geometry_msgs::msg::TransformStamped tf;
-    try {
-        tf = tf_buffer_->lookupTransform(mavros_map_frame_, slam_map_frame_, tf2::TimePointZero);
-    } catch (tf2::TransformException & ex) {
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "Cannot publish vision pose as map<>slam_map tf not yet available");
-        return;
-    }
-
-    // Apply the transform to the drone pose
-    geometry_msgs::msg::PoseStamped msg_body_pose;
-    geometry_msgs::msg::PoseStamped slam = *slam_pose;
-
-    tf2::doTransform(slam, msg_body_pose, tf);
-    msg_body_pose.header.frame_id = mavros_map_frame_;
-    msg_body_pose.header.stamp = slam_pose->header.stamp;
-
-    vision_pose_publisher_->publish(msg_body_pose);
 
     // Map tf for offline
     if (explicit_global_params_) {
@@ -1544,7 +1525,7 @@ void TaskManager::acceptFlight(json mapver_json) {
         survey_type_ = SurveyType::SUB;
     }
 
-    hello_decco_manager_->setDroneLocationLocal(slam_pose_);
+    hello_decco_manager_->setDroneLocationLocal(flight_controller_interface_->getCurrentLocalPosition());
     geometry_msgs::msg::Polygon polygon;
 
     // Process flight via HDM
@@ -1747,7 +1728,7 @@ void TaskManager::setpointResponse(json &json_msg) {
         tymbal_hd_pub_->publish(conf_msg);
 
         if (!hello_decco_manager_->getElevationInit()) {
-            hello_decco_manager_->setDroneLocationLocal(slam_pose_);
+            hello_decco_manager_->setDroneLocationLocal(flight_controller_interface_->getCurrentLocalPosition());
             auto tif_grid = std::make_shared<nav_msgs::msg::OccupancyGrid>();
             pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
             bool got_elev = hello_decco_manager_->getHomeElevation(home_elevation_, tif_grid, cloud);

@@ -6,10 +6,11 @@
     <arg name="goal_topic" default="/mavros/setpoint_position/local"/> <!-- for mavros without OA, use /mavros/setpoint_position/local. default is /goal.-->
 
     <!-- Which hardware to add to health report -->
-    <arg name="do_mapir" default="true"/>
+    <arg name="do_mapir" default="false"/>
     <arg name="do_mapir_rgb" default="false"/>
-    <arg name="do_attollo" default="true"/>
-    <arg name="do_thermal_cam" default="false"/>
+    <arg name="do_attollo" default="false"/>
+    <arg name="do_thermal_cam" default="true"/>
+    <arg name="do_downward_rgb" default="true"/>
     <arg name="thermal_type" default="0"/>
     <arg name="lidar_type" default="4"/> <!-- 2 = Velodyne, 4 = Mid360-->
     <arg name="lidar_pitch" default="0.0"/>
@@ -19,6 +20,7 @@
     <arg name="enable_autonomy" default="false"/>
     <arg name="use_failsafes" default="false"/>
     <arg name="do_trail" default="false"/>
+    <arg name="px4" default="false"/>
     
     <arg name="default_alt" default="2.0"/>
     <arg name="min_alt" default="2.0"/>
@@ -46,6 +48,12 @@
 
     <arg name="simulate" default="false"/>
     <arg name="offline" default="false"/>
+
+    <arg name="estimated_current" default="20.0"/> 
+    <arg name="battery_size" default="5.21"/> 
+    <arg name="all_stream_rate" default="5.0"/>
+    <arg name="imu_rate" default="120.0"/>
+    <arg name="local_pos_rate" default="60.0"/>
 
     <node pkg="task_manager" exec="task_manager_node" namespace="task_manager" output="screen">
         <param name="do_slam" value="$(var do_slam)"/>
@@ -83,16 +91,18 @@
         <param name="do_mapir_rgb" value="$(var do_mapir_rgb)"/>
         <param name="do_attollo" value="$(var do_attollo)"/>
         <param name="do_thermal_cam" value="$(var do_thermal_cam)"/>
+        <param name="do_downward_rgb" value="$(var do_downward_rgb)"/>
         <param name="lidar_type" value="$(var lidar_type)"/>
         <param name="lidar_pitch" value="$(var lidar_pitch)"/>
         <param name="lidar_x" value="$(var lidar_x)"/>
         <param name="lidar_z" value="$(var lidar_z)"/>
 
         <!-- Flight Controller Interface params -->
-        <param name="estimated_current" value="20.0"/> 
-        <param name="battery_size" value="5.21"/> 
-        <param name="all_stream_rate" value="5.0"/>
-        <param name="imu_rate" value="120.0"/>
-        <param name="local_pos_rate" value="60.0"/>
+        <param name="estimated_current" value="$(var estimated_current)"/> 
+        <param name="battery_size" value="$(var battery_size)"/> 
+        <param name="all_stream_rate" value="$(var all_stream_rate)"/>
+        <param name="imu_rate" value="$(var imu_rate)"/>
+        <param name="local_pos_rate" value="$(var local_pos_rate)"/>
+        <param name="px4" value="$(var px4)"/>
     </node>
 </launch>
