@@ -26,15 +26,10 @@ namespace elevation2ros
 
 class Elevation2Ros
 {
-    cv::Mat dem_cv;
-    cv::Mat slope_cv;
-    double ul_y_utm;
-    double ul_x_utm;
-
 public:
     Elevation2Ros() {}
 
-    bool init(const std::string &tif_name, const double utm_x, const double utm_y, nav_msgs::msg::OccupancyGrid::SharedPtr tif_grid, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud) 
+    bool init(const std::string &tif_name, const double utm_x, const double utm_y) 
     {
         // Load mat
         dem_cv = cv::imread(tif_name, cv::IMREAD_LOAD_GDAL | cv::IMREAD_ANYDEPTH );
@@ -69,25 +64,25 @@ public:
         double origin_x = ul_x_utm - utm_x;
         double origin_y = ul_y_utm - height - utm_y;
         // Initialize occupancy grid message
-        tif_grid->header.frame_id = "map";
-        tif_grid->info.resolution = resolution;
-        tif_grid->info.width = width;
-        tif_grid->info.height = height;
-        tif_grid->info.origin.position.x = origin_x;
-        tif_grid->info.origin.position.y = origin_y;
-        tif_grid->info.origin.position.z = 0.0;
-        tif_grid->data.resize(width * height);
+        grid.header.frame_id = "map";
+        grid.info.resolution = resolution;
+        grid.info.width = width;
+        grid.info.height = height;
+        grid.info.origin.position.x = origin_x;
+        grid.info.origin.position.y = origin_y;
+        grid.info.origin.position.z = 0.0;
+        grid.data.resize(width * height);
         cv::Mat dem_copy  = dem_cv.clone();
         for (int y = height - 1; y >= 0; y--) {
             for (int x = 0; x < width; x++) {
                 float elevation = dem_cv.at<float>(y, x);
                 uint8_t occupancy_value = static_cast<uint8_t>(elevation); // Convert elevation to occupancy value
-                tif_grid->data[(height - y - 1) * width + x] = occupancy_value;
+                grid.data[(height - y - 1) * width + x] = occupancy_value;
                 pcl::PointXYZ point;
                 point.x = origin_x + x * resolution;
                 point.y = origin_y + (height - y - 1) * resolution;
                 point.z = elevation;
-                cloud->points.push_back(point);
+                cloud.points.push_back(point);
             }
         }
         
@@ -130,7 +125,24 @@ public:
         return value;
     }
 
+    nav_msgs::msg::OccupancyGrid getGrid() {
+        return grid;
+    }
+
+    pcl::PointCloud<pcl::PointXYZ> getCloud() {
+        return cloud;
+    }
+
 private:
+
+    cv::Mat dem_cv;
+    cv::Mat slope_cv;
+    double ul_y_utm;
+    double ul_x_utm;
+
+    nav_msgs::msg::OccupancyGrid grid;
+    pcl::PointCloud<pcl::PointXYZ> cloud;
+
     void makeOutputFile(GDALDataset* hSrcDS, std::string filename) {
         GDALDriverH hDriver;
         GDALDataType eDT;

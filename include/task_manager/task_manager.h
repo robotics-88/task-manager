@@ -119,6 +119,7 @@ class TaskManager : public rclcpp::Node
         void odidTimerCallback();
 
         // Subscriber callbacks
+        void clickedPointCallback(const geometry_msgs::msg::PointStamped::SharedPtr msg);
         void slamPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr slam_pose);
         void registeredPclCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
         void pathPlannerCallback(const std_msgs::msg::Header::SharedPtr msg);
@@ -163,6 +164,7 @@ class TaskManager : public rclcpp::Node
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr         tif_pcl_pub_;
 
         // Subscriptions
+        rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr   clicked_point_sub_;
         rclcpp::Subscription<std_msgs::msg::Header>::SharedPtr              path_planner_sub_;
         rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr       costmap_sub_;
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr      lidar_sub_;
@@ -375,12 +377,14 @@ class TaskManager : public rclcpp::Node
         void getLawnmowerGoal();
         bool lawnmowerGoalComplete();
         void visualizeLawnmower();
+        void publishTif();
 
         // Service server callbacks and helpers
         bool convert2Geo(const std::shared_ptr<rmw_request_id_t>/*request_header*/,
                          const std::shared_ptr<messages_88::srv::Geopoint::Request> req,
                          const std::shared_ptr<messages_88::srv::Geopoint::Response> resp);
         void map2UtmPoint(geometry_msgs::msg::PointStamped &in, geometry_msgs::msg::PointStamped &out);
+        bool getElevationAtPoint(geometry_msgs::msg::PointStamped &point, double &elevation);
         bool getMapData(const std::shared_ptr<rmw_request_id_t>/*request_header*/,
                         const std::shared_ptr<messages_88::srv::GetMapData::Request> req,
                         const std::shared_ptr<messages_88::srv::GetMapData::Response> resp);
