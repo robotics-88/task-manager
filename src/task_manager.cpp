@@ -1127,7 +1127,7 @@ void TaskManager::stopRecording() {
         std::shared_ptr<rclcpp::Node> video_record_node = rclcpp::Node::make_shared("video_record_client");
         std::string service_name;
         if (camera_name == "seek_thermal") {
-            service_name = "/seek_thermal/record";
+            service_name = "/seek_thermal/seek_wrapper/record";
         }
         else {
             service_name = "/" + camera_name + "/opencv_cam/record";
