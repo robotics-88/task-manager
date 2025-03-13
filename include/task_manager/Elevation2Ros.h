@@ -200,8 +200,8 @@ private:
 
     bool getMapValue(const double utm_x, const double utm_y, const cv::Mat &mat, double &value) {
         int pixel_r, pixel_c;
-        pixel_c = utm_x - ul_x_utm;
-        pixel_r = mat.rows - floor(ul_y_utm - utm_y);
+        pixel_c = floor(utm_x - ul_x_utm);
+        pixel_r = floor(ul_y_utm - utm_y);
         bool cols_outofbounds = pixel_c < 0 || pixel_c >= mat.cols;
         bool rows_outofbounds = pixel_r < 0 || pixel_r >= mat.rows;
         if (cols_outofbounds || rows_outofbounds ) {
