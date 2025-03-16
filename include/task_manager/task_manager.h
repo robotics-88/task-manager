@@ -230,10 +230,11 @@ class TaskManager : public rclcpp::Node
         bool do_trail_;
 
         bool do_attollo_;
-        bool do_mapir_;
+        bool do_mapir_rgn_;
         bool do_mapir_rgb_;
-        bool do_thermal_;
-        bool do_downward_rgb_;
+        bool do_seek_thermal_;
+        bool do_see3cam_down_;
+        bool do_see3cam_fwd_;
 
         // Offline handling
         bool offline_;
