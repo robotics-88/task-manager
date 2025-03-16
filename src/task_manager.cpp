@@ -141,11 +141,12 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     this->declare_parameter("estimated_drone_speed", estimated_drone_speed_);
     estimated_drone_speed_ = estimated_drone_speed_ < 1 ? 1.0 : estimated_drone_speed_; // this protects against a later potential div by 0
     this->declare_parameter("battery_failsafe_safety_factor", battery_failsafe_safety_factor_);
-    this->declare_parameter("do_mapir", do_mapir_);
+    this->declare_parameter("do_mapir_rgn", do_mapir_rgn_);
     this->declare_parameter("do_mapir_rgb", do_mapir_rgb_);
     this->declare_parameter("do_attollo", do_attollo_);
-    this->declare_parameter("do_thermal_cam", do_thermal_);
-    this->declare_parameter("do_downward_rgb", do_downward_rgb_);
+    this->declare_parameter("do_seek_thermal", do_seek_thermal_);
+    this->declare_parameter("do_see3cam_down", do_see3cam_down_);
+    this->declare_parameter("do_see3cam_fwd", do_see3cam_fwd_);
     int lidar_type = 4;
     this->declare_parameter("lidar_type", lidar_type);
     this->declare_parameter("lidar_pitch", lidar_pitch_);
@@ -185,11 +186,12 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     this->get_parameter("estimated_drone_speed", estimated_drone_speed_);
     estimated_drone_speed_ = estimated_drone_speed_ < 1 ? 1.0 : estimated_drone_speed_; // this protects against a later potential div by 0
     this->get_parameter("battery_failsafe_safety_factor", battery_failsafe_safety_factor_);
-    this->get_parameter("do_mapir", do_mapir_);
+    this->get_parameter("do_mapir_rgn", do_mapir_rgn_);
     this->get_parameter("do_mapir_rgb", do_mapir_rgb_);
     this->get_parameter("do_attollo", do_attollo_);
-    this->get_parameter("do_thermal_cam", do_thermal_);
-    this->get_parameter("do_downward_rgb", do_downward_rgb_);
+    this->get_parameter("do_seek_thermal", do_seek_thermal_);
+    this->get_parameter("do_see3cam_down", do_see3cam_down_);
+    this->get_parameter("do_see3cam_fwd", do_see3cam_fwd_);
     this->get_parameter("lidar_type", lidar_type);
     this->get_parameter("lidar_pitch", lidar_pitch_);
     this->get_parameter("lidar_x", lidar_x_);
@@ -202,7 +204,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     target_agl_ = target_altitude_;
 
     // Add to camera names based on which devices are present
-    if (do_mapir_) {
+    if (do_mapir_rgn_) {
         camera_names_.push_back("mapir_rgn");
     }
     if (do_mapir_rgb_) {
@@ -211,11 +213,14 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     if (do_attollo_) {
         camera_names_.push_back("attollo");
     }
-    if (do_thermal_) {
+    if (do_seek_thermal_) {
         camera_names_.push_back("seek_thermal");
     }
-    if (do_downward_rgb_) {
-        camera_names_.push_back("downward_rgb/see3cam");
+    if (do_see3cam_down_) {
+        camera_names_.push_back("see3cam_down");
+    }
+    if (do_see3cam_fwd_) {
+        camera_names_.push_back("see3cam_fwd");
     }
 
     // Clicked point sub
@@ -241,7 +246,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     else if (lidar_type == 4) {
         livox_lidar_sub_ = this->create_subscription<livox_ros_driver2::msg::CustomMsg>(lidar_topic_, 10, std::bind(&TaskManager::livoxCallback, this, _1));
     }
-    if (do_mapir_) {
+    if (do_mapir_rgn_) {
         mapir_sub_ = this->create_subscription<sensor_msgs::msg::Image>(mapir_topic_, 10, std::bind(&TaskManager::mapirCallback, this, _1));
     }
     else if (do_mapir_rgb_) {
@@ -250,7 +255,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     if (do_attollo_) {
         attollo_sub_ = this->create_subscription<sensor_msgs::msg::Image>(attollo_topic_, 10, std::bind(&TaskManager::attolloCallback, this, _1));
     }
-    if (do_thermal_) {
+    if (do_seek_thermal_) {
         thermal_sub_ = this->create_subscription<sensor_msgs::msg::Image>(thermal_topic_, 10, std::bind(&TaskManager::thermalCallback, this, _1));
     }
 
@@ -1921,7 +1926,7 @@ void TaskManager::publishHealth() {
         healthObjects.push_back(j);
     }
     // MAPIR
-    if (do_mapir_ || do_mapir_rgb_) {
+    if (do_mapir_rgn_ || do_mapir_rgb_) {
         j = {
             {"name", "mapir"},
             {"label", "MAPIR Camera"},
@@ -1939,7 +1944,7 @@ void TaskManager::publishHealth() {
         healthObjects.push_back(j);
     }
     // Thermal
-    if (do_thermal_) {
+    if (do_seek_thermal_) {
         j = {
             {"name", "thermal"},
             {"label", "Thermal Camera"},
