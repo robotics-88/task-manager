@@ -55,15 +55,12 @@ class HelloDeccoManager
         void llToMap(const double lat, const double lon, double &px, double &py);
         void mapToLl(const double px, const double py, double &lat, double &lon);
 
-        void setDroneLocationLocal(geometry_msgs::msg::PoseStamped location) {
-            drone_location_ = location;
-        }
-
         std_msgs::msg::String flightReceipt(json msgJson, const rclcpp::Time timestamp);
 
         visualization_msgs::msg::Marker visualizePolygon(const rclcpp::Time timestamp);
 
-        bool polygonToGeofence(const geometry_msgs::msg::Polygon &polygon, std::shared_ptr<mavros_msgs::srv::WaypointPush::Request> &req);
+        bool polygonToGeofence(const geometry_msgs::msg::Polygon &polygon, std::shared_ptr<mavros_msgs::srv::WaypointPush::Request> &req,
+                               const geometry_msgs::msg::PoseStamped drone_position);
 
         geometry_msgs::msg::Polygon getMapPolygon() { 
             return map_region_;
@@ -96,7 +93,6 @@ class HelloDeccoManager
         double utm_x_offset_;
         double utm_y_offset_;
         int utm_zone_;
-        geometry_msgs::msg::PoseStamped drone_location_;
 
         json flight_json_;
         unsigned long start_time_;

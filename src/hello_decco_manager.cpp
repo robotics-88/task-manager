@@ -101,7 +101,8 @@ bool HelloDeccoManager::elevationInitializer(const double utm_x, const double ut
         tif_name = ament_index_cpp::get_package_share_directory("task_manager") + "/dem/test.tif";
     }
 
-    if (!boost::filesystem::exists(tif_name)){
+    if (!boost::filesystem::exists(tif_name)) {
+        RCLCPP_INFO(rclcpp::get_logger("hello_decco_manager"), "No elevation file found at: %s", tif_name.c_str());
         return false;
     }
     RCLCPP_INFO(rclcpp::get_logger("hello_decco_manager"), "Elevation file found at: %s", tif_name.c_str());
@@ -226,7 +227,8 @@ geometry_msgs::msg::Polygon HelloDeccoManager::polygonToMap(const geometry_msgs:
     return map_polygon;
 }
 
-bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::msg::Polygon &polygon, std::shared_ptr<mavros_msgs::srv::WaypointPush::Request> &request) {
+bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::msg::Polygon &polygon, std::shared_ptr<mavros_msgs::srv::WaypointPush::Request> &request,
+                                          const geometry_msgs::msg::PoseStamped drone_position) {
 
     if (polygon.points.size() < 3) {
         RCLCPP_WARN(rclcpp::get_logger("hello_decco_manager"), "Invalid polygon, not creating geofence");
@@ -237,9 +239,9 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::msg::Polygon &pol
 
     // Convert drone location to point32 instead of posestamped
     geometry_msgs::msg::Point32 drone_location;
-    drone_location.x = drone_location_.pose.position.x;
-    drone_location.y = drone_location_.pose.position.y;
-    drone_location.z = drone_location_.pose.position.z;
+    drone_location.x = drone_position.pose.position.x;
+    drone_location.y = drone_position.pose.position.y;
+    drone_location.z = drone_position.pose.position.z;
 
     // Convert to map first so that we can calculate distances
     geometry_msgs::msg::Polygon polygon_map;

@@ -1550,7 +1550,6 @@ void TaskManager::acceptFlight(json mapver_json) {
         survey_type_ = SurveyType::SUB;
     }
 
-    hello_decco_manager_->setDroneLocationLocal(flight_controller_interface_->getCurrentLocalPosition());
     geometry_msgs::msg::Polygon polygon;
 
     // Process flight via HDM
@@ -1574,6 +1573,7 @@ void TaskManager::acceptFlight(json mapver_json) {
         return;
     }
 
+    publishTif();
     RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
 
     // Now publish polygon visualization
@@ -1581,7 +1581,7 @@ void TaskManager::acceptFlight(json mapver_json) {
     map_region_pub_->publish(vis);
 
     auto req = std::make_shared<mavros_msgs::srv::WaypointPush::Request>();
-    if (hello_decco_manager_->polygonToGeofence(polygon, req)) {
+    if (hello_decco_manager_->polygonToGeofence(polygon, req, flight_controller_interface_->getCurrentLocalPosition())) {
         auto result = mavros_geofence_client_->async_send_request(req);
         // TODO see if there is a clean way to handle result - I think I had issues with this last time I tried
     }
