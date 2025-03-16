@@ -413,6 +413,11 @@ void TaskManager::runTaskManager() {
             break;
         }
         case Task::READY: {
+            // Return to preflight check state if not armed and drone isn't ready to arm
+            if (!flight_controller_interface_->getIsArmed() && !flight_controller_interface_->getDroneReadyToArm() && !simulate_) {
+                updateCurrentTask(Task::PREFLIGHT_CHECK);
+                break;
+            }
             // this flag gets triggered when received a burn unit
             if (needs_takeoff_) 
             {
@@ -436,21 +441,7 @@ void TaskManager::runTaskManager() {
             break;
         }
         case Task::MANUAL_FLIGHT: {
-            if (!hello_decco_manager_->getElevationInit()) {
-
-                if (hello_decco_manager_->getHomeElevation(home_elevation_)) {
-                    publishTif();
-                    RCLCPP_INFO(this->get_logger(), "Got home elevation in manual mode : %f", home_elevation_);
-                }
-                else {
-                    logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "No elevation, can only perform manual flight.");
-                }
-            }
-            
-            if (!flight_controller_interface_->getIsArmed()) {
-                logEvent(EventType::STATE_MACHINE, Severity::LOW, "Drone disarmed manually");
-                updateCurrentTask(Task::COMPLETE);
-            }
+            // Nothing to do in manual flight mode
             break;
         }
         case Task::PAUSE: {
@@ -542,10 +533,7 @@ void TaskManager::runTaskManager() {
         }
         case Task::LANDING:
         case Task::FAILSAFE_LANDING: {
-            if (!flight_controller_interface_->getIsArmed()) {
-                logEvent(EventType::STATE_MACHINE, Severity::LOW, "Flight complete");
-                updateCurrentTask(Task::COMPLETE);
-            }
+
             break;
         }
         case Task::COMPLETE: {
@@ -1047,15 +1035,27 @@ void TaskManager::checkArmStatus() {
         logEvent(EventType::INFO, Severity::LOW, "Drone armed manually");
         updateCurrentTask(Task::MANUAL_FLIGHT);
         is_armed_ = true;
+
         if (!offline_ && do_record_) {
             if (!recording_)
                 startRecording();
             else
                 logEvent(EventType::INFO, Severity::LOW, "Recording flag already true, not starting new recording");
         }
+
+        if (!hello_decco_manager_->getElevationInit()) {
+            if (hello_decco_manager_->getHomeElevation(home_elevation_)) {
+                publishTif();
+                RCLCPP_INFO(this->get_logger(), "Got home elevation in manual mode : %f", home_elevation_);
+            }
+            else {
+                logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "No elevation, can only perform manual flight.");
+            }
+        }
     }
     if (is_armed_ && !armed) {
         logEvent(EventType::INFO, Severity::MEDIUM, "Disarm detected");
+        updateCurrentTask(Task::COMPLETE);
         if (recording_) {
             stopRecording();
         }
@@ -1763,7 +1763,7 @@ void TaskManager::setpointResponse(json &json_msg) {
                 return;
             }
         }
-        RCLCPP_INFO(this->get_logger(), "got home elevation : %f", home_elevation_);
+        RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
     }
     else {
         logEvent(EventType::TASK_STATUS, Severity::HIGH, "Setpoint rejected, farther than max distance.");
