@@ -418,7 +418,7 @@ void TaskManager::runTaskManager() {
                 updateCurrentTask(Task::PREFLIGHT_CHECK);
                 break;
             }
-            // this flag gets triggered when received a burn unit
+            // this flag gets triggered when received a burn unit or setpoint
             if (needs_takeoff_) 
             {
                 if (takeoff_attempts_ > 5) {
@@ -1734,12 +1734,7 @@ void TaskManager::setpointResponse(json &json_msg) {
     if (std::abs(diff_x) < max_dist && std::abs(diff_y) < max_dist) {
         has_setpoint_ = true;
         setpoint_started_ = false;
-        if (!is_armed_) {
-            needs_takeoff_ = true;
-        }
-        else {
-            updateCurrentTask(Task::SETPOINT);
-        }
+
         goal_.pose.position.x = px;
         goal_.pose.position.y = py;
 
@@ -1755,6 +1750,10 @@ void TaskManager::setpointResponse(json &json_msg) {
         if (!hello_decco_manager_->getElevationInit()) {
             if (hello_decco_manager_->getHomeElevation(home_elevation_)) {
                 publishTif();
+                // Got home elevation, now attempt takeoff
+                if (!is_armed_) {
+                    needs_takeoff_ = true;
+                }
             }
             else {
                 logEvent(EventType::TASK_STATUS, Severity::HIGH, "No elevation, can only perform manual flight.");
