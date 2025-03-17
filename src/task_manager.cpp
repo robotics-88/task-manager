@@ -441,7 +441,10 @@ void TaskManager::runTaskManager() {
             break;
         }
         case Task::MANUAL_FLIGHT: {
-            // Nothing to do in manual flight mode
+            // Allow for moving to setpoint from manual mode
+            if (has_setpoint_) {
+                updateCurrentTask(Task::SETPOINT);
+            }
             break;
         }
         case Task::PAUSE: {
@@ -1749,11 +1752,8 @@ void TaskManager::setpointResponse(json &json_msg) {
 
         if (!hello_decco_manager_->getElevationInit()) {
             if (hello_decco_manager_->getHomeElevation(home_elevation_)) {
+                RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
                 publishTif();
-                // Got home elevation, now attempt takeoff
-                if (!is_armed_) {
-                    needs_takeoff_ = true;
-                }
             }
             else {
                 logEvent(EventType::TASK_STATUS, Severity::HIGH, "No elevation, can only perform manual flight.");
@@ -1762,7 +1762,10 @@ void TaskManager::setpointResponse(json &json_msg) {
                 return;
             }
         }
-        RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
+        if (!is_armed_) {
+            needs_takeoff_ = true;
+        }
+        
     }
     else {
         logEvent(EventType::TASK_STATUS, Severity::HIGH, "Setpoint rejected, farther than max distance.");
