@@ -90,7 +90,7 @@ std_msgs::msg::String HelloDeccoManager::acceptFlight(json msgJson, geometry_msg
     return packageToTymbalHD("burn_unit_receive", flight_json_, timestamp);
 }
 
-bool HelloDeccoManager::elevationInitializer() {
+bool HelloDeccoManager::elevationInitializer(const double utm_x, const double utm_y) {
     // TODO get tif from HD, for now assumes stored in dem/<burn unit name>
     std::string tif_name;
     try {
@@ -98,21 +98,23 @@ bool HelloDeccoManager::elevationInitializer() {
         tif_name = ament_index_cpp::get_package_share_directory("task_manager") + "/dem/" + burn_unit_name + ".tif";
     }
     catch (...) {
-        tif_name = ament_index_cpp::get_package_share_directory("task_manager") + "/dem/bigilly2.tif";
+        tif_name = ament_index_cpp::get_package_share_directory("task_manager") + "/dem/test.tif";
     }
 
-    if (!boost::filesystem::exists(tif_name)){
+    if (!boost::filesystem::exists(tif_name)) {
+        RCLCPP_INFO(rclcpp::get_logger("hello_decco_manager"), "No elevation file found at: %s", tif_name.c_str());
         return false;
     }
-    elevation_source_.init(tif_name);
-    elevation_init_ = true;
-    return true;
+    RCLCPP_INFO(rclcpp::get_logger("hello_decco_manager"), "Elevation file found at: %s", tif_name.c_str());
+
+    elevation_init_ = elevation_source_.init(tif_name, utm_x, utm_y);
+    return elevation_init_;
 }
 
 bool HelloDeccoManager::getElevationChunk(const double utm_x, const double utm_y, const int width, const int height, sensor_msgs::msg::Image &chunk, double &max, double &min) {
     cv::Mat mat;
     if (!elevation_init_) {
-        bool has_elev = elevationInitializer();
+        bool has_elev = elevationInitializer(0, 0);
         if (!has_elev) return false;
     }
     bool worked = elevation_source_.getElevationChunk(utm_x, utm_y, width, height, mat);
@@ -128,7 +130,7 @@ bool HelloDeccoManager::getElevationChunk(const double utm_x, const double utm_y
 
 bool HelloDeccoManager::getHomeElevation(double &value) {
     if (!elevation_init_) {
-        bool has_elev = elevationInitializer();
+        bool has_elev = elevationInitializer(-1 * utm_x_offset_, -1 * utm_y_offset_);
         if (!has_elev) return false;
     }
     value = elevation_source_.getElevation(-1 * utm_x_offset_, -1 * utm_y_offset_);
@@ -137,7 +139,7 @@ bool HelloDeccoManager::getHomeElevation(double &value) {
 
 bool HelloDeccoManager::getElevationValue(const double utm_x, const double utm_y, double &value) {
     if (!elevation_init_) {
-        bool has_elev = elevationInitializer();
+        bool has_elev = elevationInitializer(0, 0);
         if (!has_elev) return false;
     }
     value = elevation_source_.getElevation(utm_x, utm_y);
@@ -225,7 +227,8 @@ geometry_msgs::msg::Polygon HelloDeccoManager::polygonToMap(const geometry_msgs:
     return map_polygon;
 }
 
-bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::msg::Polygon &polygon, std::shared_ptr<mavros_msgs::srv::WaypointPush::Request> &request) {
+bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::msg::Polygon &polygon, std::shared_ptr<mavros_msgs::srv::WaypointPush::Request> &request,
+                                          const geometry_msgs::msg::PoseStamped drone_position) {
 
     if (polygon.points.size() < 3) {
         RCLCPP_WARN(rclcpp::get_logger("hello_decco_manager"), "Invalid polygon, not creating geofence");
@@ -236,9 +239,9 @@ bool HelloDeccoManager::polygonToGeofence(const geometry_msgs::msg::Polygon &pol
 
     // Convert drone location to point32 instead of posestamped
     geometry_msgs::msg::Point32 drone_location;
-    drone_location.x = drone_location_.pose.position.x;
-    drone_location.y = drone_location_.pose.position.y;
-    drone_location.z = drone_location_.pose.position.z;
+    drone_location.x = drone_position.pose.position.x;
+    drone_location.y = drone_position.pose.position.y;
+    drone_location.z = drone_position.pose.position.z;
 
     // Convert to map first so that we can calculate distances
     geometry_msgs::msg::Polygon polygon_map;

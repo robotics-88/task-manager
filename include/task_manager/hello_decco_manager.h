@@ -13,6 +13,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "geometry_msgs/msg/polygon.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "nav_msgs/msg/occupancy_grid.hpp"
 #include "sensor_msgs/msg/nav_sat_fix.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "visualization_msgs/msg/marker.hpp"
@@ -54,15 +55,12 @@ class HelloDeccoManager
         void llToMap(const double lat, const double lon, double &px, double &py);
         void mapToLl(const double px, const double py, double &lat, double &lon);
 
-        void setDroneLocationLocal(geometry_msgs::msg::PoseStamped location) {
-            drone_location_ = location;
-        }
-
         std_msgs::msg::String flightReceipt(json msgJson, const rclcpp::Time timestamp);
 
         visualization_msgs::msg::Marker visualizePolygon(const rclcpp::Time timestamp);
 
-        bool polygonToGeofence(const geometry_msgs::msg::Polygon &polygon, std::shared_ptr<mavros_msgs::srv::WaypointPush::Request> &req);
+        bool polygonToGeofence(const geometry_msgs::msg::Polygon &polygon, std::shared_ptr<mavros_msgs::srv::WaypointPush::Request> &req,
+                               const geometry_msgs::msg::PoseStamped drone_position);
 
         geometry_msgs::msg::Polygon getMapPolygon() { 
             return map_region_;
@@ -71,10 +69,10 @@ class HelloDeccoManager
         bool getElevationChunk(const double utm_x, const double utm_y, const int width, const int height, sensor_msgs::msg::Image &chunk, double &max, double &min);
         bool getElevationValue(const double utm_x, const double utm_y, double &value);
         bool getHomeElevation(double &value);
-        bool getElevationInit() {
-            return elevation_init_;
-        }
-
+        bool getElevationInit() {return elevation_init_;}
+        nav_msgs::msg::OccupancyGrid getTifGrid() { return elevation_source_.getGrid();}
+        pcl::PointCloud<pcl::PointXYZ> getTifPcl() { return elevation_source_.getCloud();}
+        
     private:
         const std::weak_ptr<rclcpp::Node> node_;
 
@@ -95,7 +93,6 @@ class HelloDeccoManager
         double utm_x_offset_;
         double utm_y_offset_;
         int utm_zone_;
-        geometry_msgs::msg::PoseStamped drone_location_;
 
         json flight_json_;
         unsigned long start_time_;
@@ -111,7 +108,7 @@ class HelloDeccoManager
         std::vector<geometry_msgs::msg::Polygon> local_subpolygons_; // Flight units
         double flightleg_area_m2_;
 
-        bool elevationInitializer();
+        bool elevationInitializer(const double utm_x, const double utm_y);
 };
 
 }

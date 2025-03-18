@@ -222,7 +222,10 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     if (do_see3cam_fwd_) {
         camera_names_.push_back("see3cam_fwd");
     }
-    
+
+    // Clicked point sub
+    clicked_point_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>("/clicked_point", 10, std::bind(&TaskManager::clickedPointCallback, this, _1));
+
     // SLAM pose sub
     slam_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(slam_pose_topic_, 10, std::bind(&TaskManager::slamPoseCallback, this, _1));
 
@@ -328,6 +331,9 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     // Initialize hello decco manager
     hello_decco_manager_ = std::make_shared<hello_decco_manager::HelloDeccoManager>(flightleg_area_acres_, mavros_map_frame_);
 
+    // Tif pubs for visualization
+    tif_grid_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("/tif_grid", 10);
+    tif_pcl_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/tif_pcl", 10);
 }
 
 TaskManager::~TaskManager() {
@@ -407,7 +413,12 @@ void TaskManager::runTaskManager() {
             break;
         }
         case Task::READY: {
-            // this flag gets triggered when received a burn unit
+            // Return to preflight check state if not armed and drone isn't ready to arm
+            if (!flight_controller_interface_->getIsArmed() && !flight_controller_interface_->getDroneReadyToArm() && !simulate_) {
+                updateCurrentTask(Task::PREFLIGHT_CHECK);
+                break;
+            }
+            // this flag gets triggered when received a burn unit or setpoint
             if (needs_takeoff_) 
             {
                 if (takeoff_attempts_ > 5) {
@@ -430,16 +441,9 @@ void TaskManager::runTaskManager() {
             break;
         }
         case Task::MANUAL_FLIGHT: {
-            if (!hello_decco_manager_->getElevationInit()) {
-                bool got_elev = hello_decco_manager_->getHomeElevation(home_elevation_);
-                if (!got_elev) {
-                    logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "No elevation, can only perform manual flight.");
-                }
-                RCLCPP_INFO(this->get_logger(),"got home elevation in manual mode : %f", home_elevation_);
-            }
-            if (!flight_controller_interface_->getIsArmed()) {
-                logEvent(EventType::STATE_MACHINE, Severity::LOW, "Drone disarmed manually");
-                updateCurrentTask(Task::COMPLETE);
+            // Allow for moving to setpoint from manual mode
+            if (has_setpoint_) {
+                updateCurrentTask(Task::SETPOINT);
             }
             break;
         }
@@ -532,10 +536,7 @@ void TaskManager::runTaskManager() {
         }
         case Task::LANDING:
         case Task::FAILSAFE_LANDING: {
-            if (!flight_controller_interface_->getIsArmed()) {
-                logEvent(EventType::STATE_MACHINE, Severity::LOW, "Flight complete");
-                updateCurrentTask(Task::COMPLETE);
-            }
+
             break;
         }
         case Task::COMPLETE: {
@@ -900,25 +901,33 @@ bool TaskManager::convert2Geo(const std::shared_ptr<rmw_request_id_t>/*request_h
     return true;
 }
 
+bool TaskManager::getElevationAtPoint(geometry_msgs::msg::PointStamped &point, double &elevation) {
+    geometry_msgs::msg::PointStamped point_utm;
+    map2UtmPoint(point, point_utm);
+    bool worked = hello_decco_manager_->getElevationValue(point_utm.point.x, point_utm.point.y, elevation);
+    if (!worked) {
+        RCLCPP_INFO(this->get_logger(), "Failed to get elevation at map point [%f, %f]", point.point.x, point.point.y);
+        return false;
+    }
+
+    RCLCPP_INFO(this->get_logger(), "Altitude at [%f, %f]: %fm", point.point.x, point.point.y, elevation);
+
+    return true;
+}
+
 bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_header*/,
                              const std::shared_ptr<messages_88::srv::GetMapData::Request> req,
                              const std::shared_ptr<messages_88::srv::GetMapData::Response> resp){
-    geometry_msgs::msg::Point map_point = req->map_position;
-    geometry_msgs::msg::PointStamped in, out;
-    in.point = map_point;
-    map2UtmPoint(in, out);
-    sensor_msgs::msg::Image chunk;
+    geometry_msgs::msg::PointStamped point_stamped;
+    point_stamped.point = req->map_position;
     double ret_altitude;
-    bool worked = hello_decco_manager_->getElevationValue(out.point.x, out.point.y, ret_altitude);
-    resp->success = worked;
-    if (!worked) {
-        logEvent(EventType::INFO, Severity::HIGH, "Failed to get elevation data! Cannot proceed in terrain.");
+    if (!getElevationAtPoint(point_stamped, ret_altitude)) {
+        logEvent(EventType::INFO, Severity::MEDIUM, "Elevation at map point not found, not adjusting for terrain");
         return false;
     }
+    sensor_msgs::msg::Image chunk;
     resp->tif_mat = chunk;
     resp->ret_altitude = ret_altitude;
-
-    RCLCPP_INFO(this->get_logger(), "Altitude at utm: %fm", ret_altitude);
 
     if (req->adjust_params) {
         // Get alt at start
@@ -938,7 +947,6 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
         // Send service
         resp->home_offset = altitude_offset_;
         resp->target_altitude = target_altitude_;
-        RCLCPP_INFO(this->get_logger(),"setting new alt params with home elev %f, alt offset %f, and target alt: %f.", home_elevation_, altitude_offset_, target_altitude_);
 
         this->set_parameter(rclcpp::Parameter("max_alt", max_altitude_));
         this->set_parameter(rclcpp::Parameter("min_alt", min_altitude_));
@@ -948,11 +956,21 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
     return true;
 }
 
+void TaskManager::publishTif() {
+    auto tif_grid = hello_decco_manager_->getTifGrid();
+    auto cloud = hello_decco_manager_->getTifPcl();
+    tif_grid_pub_->publish(tif_grid);
+    sensor_msgs::msg::PointCloud2 cloud_msg;
+    pcl::toROSMsg(cloud, cloud_msg);
+    cloud_msg.header.frame_id = tif_grid.header.frame_id;
+    cloud_msg.header.stamp = tif_grid.header.stamp;
+    tif_pcl_pub_->publish(cloud_msg);
+}
+
 void TaskManager::heartbeatTimerCallback() {
     sensor_msgs::msg::NavSatFix hb = flight_controller_interface_->getCurrentGlobalPosition();
     geometry_msgs::msg::PoseStamped local = flight_controller_interface_->getCurrentLocalPosition();
     double altitudeAgl = flight_controller_interface_->getAltitudeAGL();
-    geometry_msgs::msg::Quaternion quat_flu = local.pose.orientation;
     double yaw = flight_controller_interface_->getCompass();
     json j = {
         {"latitude", hb.latitude},
@@ -1021,15 +1039,27 @@ void TaskManager::checkArmStatus() {
         logEvent(EventType::INFO, Severity::LOW, "Drone armed manually");
         updateCurrentTask(Task::MANUAL_FLIGHT);
         is_armed_ = true;
+
         if (!offline_ && do_record_) {
             if (!recording_)
                 startRecording();
             else
                 logEvent(EventType::INFO, Severity::LOW, "Recording flag already true, not starting new recording");
         }
+
+        if (!hello_decco_manager_->getElevationInit()) {
+            if (hello_decco_manager_->getHomeElevation(home_elevation_)) {
+                publishTif();
+                RCLCPP_INFO(this->get_logger(), "Got home elevation in manual mode : %f", home_elevation_);
+            }
+            else {
+                logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "No elevation, can only perform manual flight.");
+            }
+        }
     }
     if (is_armed_ && !armed) {
         logEvent(EventType::INFO, Severity::MEDIUM, "Disarm detected");
+        updateCurrentTask(Task::COMPLETE);
         if (recording_) {
             stopRecording();
         }
@@ -1328,6 +1358,10 @@ std::string TaskManager::getSeverityString(Severity sev) {
         default:                 return "unknown";
     }
 }
+void TaskManager::clickedPointCallback(const geometry_msgs::msg::PointStamped::SharedPtr msg) {
+    double elevation;
+    getElevationAtPoint(*msg, elevation);
+}
 
 void TaskManager::slamPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr slam_pose) {
 
@@ -1520,7 +1554,6 @@ void TaskManager::acceptFlight(json mapver_json) {
         survey_type_ = SurveyType::SUB;
     }
 
-    hello_decco_manager_->setDroneLocationLocal(flight_controller_interface_->getCurrentLocalPosition());
     geometry_msgs::msg::Polygon polygon;
 
     // Process flight via HDM
@@ -1544,6 +1577,7 @@ void TaskManager::acceptFlight(json mapver_json) {
         return;
     }
 
+    publishTif();
     RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
 
     // Now publish polygon visualization
@@ -1551,7 +1585,7 @@ void TaskManager::acceptFlight(json mapver_json) {
     map_region_pub_->publish(vis);
 
     auto req = std::make_shared<mavros_msgs::srv::WaypointPush::Request>();
-    if (hello_decco_manager_->polygonToGeofence(polygon, req)) {
+    if (hello_decco_manager_->polygonToGeofence(polygon, req, flight_controller_interface_->getCurrentLocalPosition())) {
         auto result = mavros_geofence_client_->async_send_request(req);
         // TODO see if there is a clean way to handle result - I think I had issues with this last time I tried
     }
@@ -1704,12 +1738,7 @@ void TaskManager::setpointResponse(json &json_msg) {
     if (std::abs(diff_x) < max_dist && std::abs(diff_y) < max_dist) {
         has_setpoint_ = true;
         setpoint_started_ = false;
-        if (!is_armed_) {
-            needs_takeoff_ = true;
-        }
-        else {
-            updateCurrentTask(Task::SETPOINT);
-        }
+
         goal_.pose.position.x = px;
         goal_.pose.position.y = py;
 
@@ -1723,16 +1752,21 @@ void TaskManager::setpointResponse(json &json_msg) {
         tymbal_hd_pub_->publish(conf_msg);
 
         if (!hello_decco_manager_->getElevationInit()) {
-            hello_decco_manager_->setDroneLocationLocal(flight_controller_interface_->getCurrentLocalPosition());
-            bool got_elev = hello_decco_manager_->getHomeElevation(home_elevation_);
-            if (!got_elev) {
+            if (hello_decco_manager_->getHomeElevation(home_elevation_)) {
+                RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
+                publishTif();
+            }
+            else {
                 logEvent(EventType::TASK_STATUS, Severity::HIGH, "No elevation, can only perform manual flight.");
                 auto rej_msg = hello_decco_manager_->rejectFlight(json_msg, this->get_clock()->now());
                 tymbal_hd_pub_->publish(rej_msg);
                 return;
             }
         }
-        RCLCPP_INFO(this->get_logger(), "got home elevation : %f", home_elevation_);
+        if (!is_armed_) {
+            needs_takeoff_ = true;
+        }
+        
     }
     else {
         logEvent(EventType::TASK_STATUS, Severity::HIGH, "Setpoint rejected, farther than max distance.");
