@@ -897,6 +897,7 @@ bool TaskManager::convert2Geo(const std::shared_ptr<rmw_request_id_t>/*request_h
     decco_utilities::utmToLL(out.point.x, out.point.y, home_utm_zone_, lat, lon);
     resp->latitude = lat;
     resp->longitude = lon;
+    resp->home_altitude = home_elevation_;
     return true;
 }
 
