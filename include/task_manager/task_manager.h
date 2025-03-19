@@ -131,7 +131,6 @@ class TaskManager : public rclcpp::Node
         void thermalCallback(const sensor_msgs::msg::Image::SharedPtr msg);
         void rosbagCallback(const std_msgs::msg::String::SharedPtr msg);
         void goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
-        void initOrientationCallback(const geometry_msgs::msg::Quaternion::SharedPtr msg);
 
     private:
         const std::shared_ptr<rclcpp::Node> nh_;
@@ -144,7 +143,6 @@ class TaskManager : public rclcpp::Node
 
         // Publishers
         rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                 health_pub_;
-        rclcpp::Publisher<geometry_msgs::msg::Quaternion>::SharedPtr        init_orientation_pub_;
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr         pointcloud_repub_;
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr       goal_pos_pub_;
         rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr             local_vel_pub_;
@@ -173,7 +171,6 @@ class TaskManager : public rclcpp::Node
         rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr            attollo_sub_;
         rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr            thermal_sub_;
         rclcpp::Subscription<std_msgs::msg::String>::SharedPtr              rosbag_sub_;
-        rclcpp::Subscription<geometry_msgs::msg::Quaternion>::SharedPtr     init_orientation_sub_;
         rclcpp::Subscription<std_msgs::msg::String>::SharedPtr              tymbal_sub_;
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr    slam_pose_sub_;
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr      registered_cloud_sub_;
@@ -265,8 +262,11 @@ class TaskManager : public rclcpp::Node
         std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
         std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
         bool map_tf_init_;
-        geometry_msgs::msg::Quaternion init_orientation_;
         int home_utm_zone_;
+        rclcpp::TimerBase::SharedPtr utm_tf_update_timer_;
+        double largest_distance_;
+        double avg_angle_diff_;
+        int angle_diff_count_;
 
         // Frames
         std::string mavros_map_frame_;
@@ -378,6 +378,7 @@ class TaskManager : public rclcpp::Node
         bool lawnmowerGoalComplete();
         void visualizeLawnmower();
         void publishTif();
+        void updateUTMTF();
 
         // Service server callbacks and helpers
         bool convert2Geo(const std::shared_ptr<rmw_request_id_t>/*request_header*/,

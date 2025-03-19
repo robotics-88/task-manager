@@ -47,6 +47,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , home_elevation_(0.0)
     , max_dist_to_polygon_(300.0)
     , flightleg_area_acres_(3.0)
+    , largest_distance_(0.0)
     , map_tf_init_(false)
     , home_utm_zone_(-1)
     , mavros_map_frame_("map")
@@ -290,17 +291,9 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     odid_system_pub_ = this->create_publisher<mavros_msgs::msg::System>("/mavros/open_drone_id/system", 10);
     odid_system_update_pub_ = this->create_publisher<mavros_msgs::msg::SystemUpdate>("/mavros/open_drone_id/system_update", 10);
 
-    // Recording
-    rclcpp::QoS qos(10);
-    qos.transient_local();
-    if (offline_) {
-        init_orientation_sub_ = this->create_subscription<geometry_msgs::msg::Quaternion>("~/init_orientation", qos, std::bind(&TaskManager::initOrientationCallback, this, _1));
-        if (save_pcd_) {
-            pcl_save_ .reset(new pcl::PointCloud<pcl::PointXYZI>());
-        }
-    }
-    else {
-        init_orientation_pub_ = this->create_publisher<geometry_msgs::msg::Quaternion>("~/init_orientation", qos);
+
+    if (offline_ && save_pcd_) {
+        pcl_save_ .reset(new pcl::PointCloud<pcl::PointXYZI>());
     }
 
     // Task status pub
@@ -329,6 +322,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     task_manager_timer_ = this->create_wall_timer(std::chrono::duration<float>(task_manager_loop_duration_), std::bind(&TaskManager::runTaskManager, this));
     heartbeat_timer_ = this->create_wall_timer(1s, std::bind(&TaskManager::heartbeatTimerCallback, this));
     odid_timer_ = this->create_wall_timer(1s, std::bind(&TaskManager::odidTimerCallback, this));
+    utm_tf_update_timer_ = this->create_wall_timer(1s, std::bind(&TaskManager::updateUTMTF, this)); 
 
     // Initialize hello decco manager
     hello_decco_manager_ = std::make_shared<hello_decco_manager::HelloDeccoManager>(flightleg_area_acres_, mavros_map_frame_);
@@ -777,24 +771,20 @@ bool TaskManager::initialized() {
     if (!flight_controller_interface_->getDroneInitalized())
         return false;
 
-    // Get drone orientation
-    if (!offline_) {
-        // Get roll, pitch for map stabilization
-        logEvent(EventType::INFO, Severity::LOW, "Initializing IMU");
-        if (!flight_controller_interface_->getAveragedOrientation(init_orientation_)) {
-            return false;
-        }
-        else {
-            init_orientation_pub_->publish(init_orientation_);
-        }
+
+    // Get roll, pitch for map stabilization
+    logEvent(EventType::INFO, Severity::LOW, "Initializing IMU");
+    geometry_msgs::msg::Quaternion init_orientation;
+    if (!flight_controller_interface_->getAveragedOrientation(init_orientation)) {
+        return false;
     }
 
     // Check for valid init orientation
-    if (init_orientation_.x == 0 && init_orientation_.y == 0 && init_orientation_.z == 0 && init_orientation_.w == 0) {
+    if (init_orientation.x == 0 && init_orientation.y == 0 && init_orientation.z == 0 && init_orientation.w == 0) {
         return false;
     }
     
-    tf2::Quaternion quatmav(init_orientation_.x, init_orientation_.y, init_orientation_.z, init_orientation_.w);
+    tf2::Quaternion quatmav(init_orientation.x, init_orientation.y, init_orientation.z, init_orientation.w);
     tf2::Matrix3x3 m(quatmav);
     double roll, pitch, yaw;
     m.getRPY(roll, pitch, yaw);
@@ -890,6 +880,43 @@ bool TaskManager::convert2Geo(const std::shared_ptr<rmw_request_id_t>/*request_h
     resp->longitude = lon;
     resp->home_altitude = home_elevation_;
     return true;
+}
+
+void TaskManager::updateUTMTF() {
+    if (!utm_tf_init_) {
+        return;
+    }
+
+    auto ll = flight_controller_interface_->getCurrentGlobalPosition();
+    
+    double px, py;
+    hello_decco_manager_->llToMap(ll.latitude, ll.longitude, px, py);
+
+    // Only correct map<>utm if we are far enough away from the origin, due to limited gps accuracy
+    double distance = sqrt(px * px + py * py);
+    if (distance < 10.0) 
+        return;
+
+    double utm_angle = atan2(py, px);
+
+    auto pos = flight_controller_interface_->getCurrentLocalPosition();
+    double map_angle = atan2(pos.pose.position.y, pos.pose.position.x);
+
+    double angle_diff = map_angle - utm_angle;
+
+    // Add to average angle diff
+    avg_angle_diff_ = (avg_angle_diff_ * angle_diff_count_ + angle_diff) / (angle_diff_count_ + 1);
+    
+    tf2::Quaternion quat_tf;
+    quat_tf.setRPY(0.0, 0.0, avg_angle_diff_);
+    quat_tf.normalize();
+
+    geometry_msgs::msg::Quaternion quat;
+    tf2::convert(quat_tf, quat);
+    utm2map_tf_.transform.rotation = quat;
+
+    utm2map_tf_.header.stamp = this->get_clock()->now();
+    tf_static_broadcaster_->sendTransform(utm2map_tf_);
 }
 
 bool TaskManager::getElevationAtPoint(geometry_msgs::msg::PointStamped &point, double &elevation) {
@@ -1101,8 +1128,6 @@ void TaskManager::startRecording() {
             RCLCPP_ERROR(this->get_logger(), "Failed to call service /bag_recorder/record");
         }
     }
-
-    init_orientation_pub_->publish(init_orientation_);
 
     // Also request to start recording video from video recorder nodes
     for (auto &camera_name : camera_names_) {
@@ -1396,7 +1421,7 @@ void TaskManager::registeredPclCallback(const sensor_msgs::msg::PointCloud2::Sha
     map_cloud_ros.header.frame_id = mavros_map_frame_;
     pointcloud_repub_->publish(map_cloud_ros);
 
-    if (utm_tf_init_ && offline_ & save_pcd_) {
+    if (utm_tf_init_ && offline_ && save_pcd_) {
         pcl::PointCloud<pcl::PointXYZI>::Ptr cloud = map_cloud;
         // if (save_pcd_frame_ == "utm") {
             pcl::PointCloud<pcl::PointXYZI>::Ptr utm_cloud(new pcl::PointCloud<pcl::PointXYZI>());
@@ -1441,11 +1466,6 @@ void TaskManager::rosbagCallback(const std_msgs::msg::String::SharedPtr msg) {
 
 void TaskManager::goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
     goal_ = *msg;
-}
-
-void TaskManager::initOrientationCallback(const geometry_msgs::msg::Quaternion::SharedPtr msg) {
-    init_orientation_ = *msg;
-    RCLCPP_INFO(this->get_logger(), "Got init orientation");
 }
 
 void TaskManager::explore_goal_response_callback(const ExploreGoalHandle::SharedPtr & goal_handle) {
