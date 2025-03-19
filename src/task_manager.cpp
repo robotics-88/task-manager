@@ -291,14 +291,16 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     odid_system_update_pub_ = this->create_publisher<mavros_msgs::msg::SystemUpdate>("/mavros/open_drone_id/system_update", 10);
 
     // Recording
+    rclcpp::QoS qos(10);
+    qos.transient_local();
     if (offline_) {
-        map_yaw_sub_ = this->create_subscription<std_msgs::msg::Float64>("map_yaw", 10, std::bind(&TaskManager::mapYawCallback, this, _1));
+        init_orientation_sub_ = this->create_subscription<geometry_msgs::msg::Quaternion>("~/init_orientation", qos, std::bind(&TaskManager::initOrientationCallback, this, _1));
         if (save_pcd_) {
             pcl_save_ .reset(new pcl::PointCloud<pcl::PointXYZI>());
         }
     }
     else {
-        map_yaw_pub_ = this->create_publisher<std_msgs::msg::Float64>("map_yaw", 5);
+        init_orientation_pub_ = this->create_publisher<geometry_msgs::msg::Quaternion>("~/init_orientation", qos);
     }
 
     // Task status pub
@@ -775,42 +777,32 @@ bool TaskManager::initialized() {
     if (!flight_controller_interface_->getDroneInitalized())
         return false;
 
-    // Get drone heading
+    // Get drone orientation
     if (!offline_) {
-        double yaw = 0;
-        if (!flight_controller_interface_->getMapYaw(yaw)) {
-            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "Waiting for heading from autopilot...");
+        // Get roll, pitch for map stabilization
+        logEvent(EventType::INFO, Severity::LOW, "Initializing IMU");
+        if (!flight_controller_interface_->getAveragedOrientation(init_orientation_)) {
             return false;
         }
-
-        logEvent(EventType::INFO, Severity::LOW, "Initial heading: " + std::to_string(yaw));
-
-        // Convert yaw from NED to ENU
-        yaw = -yaw + 90.0;
-        // Convert to radians
-        map_yaw_ = yaw * M_PI / 180.0;
-        std_msgs::msg::Float64 yaw_msg;
-        yaw_msg.data = map_yaw_;
-        map_yaw_pub_->publish(yaw_msg);
+        else {
+            init_orientation_pub_->publish(init_orientation_);
+        }
     }
 
-    // Get roll, pitch for map stabilization
-    geometry_msgs::msg::Quaternion init_orientation;
-    logEvent(EventType::INFO, Severity::LOW, "Initializing IMU");
-    if (!flight_controller_interface_->getAveragedOrientation(init_orientation)) {
+    // Check for valid init orientation
+    if (init_orientation_.x == 0 && init_orientation_.y == 0 && init_orientation_.z == 0 && init_orientation_.w == 0) {
         return false;
     }
-    tf2::Quaternion quatmav(init_orientation.x, init_orientation.y, init_orientation.z, init_orientation.w);
+    
+    tf2::Quaternion quatmav(init_orientation_.x, init_orientation_.y, init_orientation_.z, init_orientation_.w);
     tf2::Matrix3x3 m(quatmav);
     double roll, pitch, yaw;
     m.getRPY(roll, pitch, yaw);
-    RCLCPP_INFO(this->get_logger(), "Roll: %f, Pitch: %f, Yaw, %f", roll * 180 / M_PI, pitch * 180 / M_PI, yaw * 180 / M_PI);
-    map_yaw_ = yaw;
+    RCLCPP_INFO(this->get_logger(), "Initial Roll: %f, Pitch: %f, Yaw, %f", roll * 180 / M_PI, pitch * 180 / M_PI, yaw * 180 / M_PI);
 
     // If using tilted lidar, add the lidar pitch to the map to slam tf, since
     // the lidar is used as the basis for the slam map frame
     pitch += -lidar_pitch_;
-
 
     double offset_x = -lidar_x_;
     double offset_y = 0.0;
@@ -822,12 +814,12 @@ bool TaskManager::initialized() {
     map_to_slam_tf_.child_frame_id = slam_map_frame_;
     
     // Rotate the lidar offsets in base_link frame to map_frame
-    map_to_slam_tf_.transform.translation.x = offset_x * cos(-map_yaw_) + offset_y * sin(-map_yaw_); 
-    map_to_slam_tf_.transform.translation.y = -offset_x * sin(-map_yaw_) + offset_y * cos(-map_yaw_); 
+    map_to_slam_tf_.transform.translation.x = offset_x * cos(-yaw) + offset_y * sin(-yaw); 
+    map_to_slam_tf_.transform.translation.y = -offset_x * sin(-yaw) + offset_y * cos(-yaw); 
     map_to_slam_tf_.transform.translation.z = offset_z;
 
     tf2::Quaternion quat_tf;
-    quat_tf.setRPY(roll, pitch, map_yaw_); // TODO, get rid of map_yaw_? It's the same as IMU yaw. Also confirm IMU is ok and not being affected by param setup on launch
+    quat_tf.setRPY(roll, pitch, yaw);
     quat_tf.normalize();
 
     geometry_msgs::msg::Quaternion quat;
@@ -837,7 +829,6 @@ bool TaskManager::initialized() {
     // Send transform and stop timer
     tf_static_broadcaster_->sendTransform(map_to_slam_tf_);
 
-    map_tf_timer_.reset();
     map_tf_init_ = true;
     flight_controller_interface_->setMapSlamTf(map_to_slam_tf_);
 
@@ -851,7 +842,7 @@ bool TaskManager::initialized() {
     flight_controller_interface_->initUTM(utm_x, utm_y);
     hello_decco_manager_->setUtm(utm_x, utm_y, home_utm_zone_);
     RCLCPP_INFO(this->get_logger(), "UTM offsets: (%f, %f)", utm_x, utm_y);
-    RCLCPP_INFO(this->get_logger(), "Map yaw: %f", map_yaw_ * 180 / M_PI);
+    RCLCPP_INFO(this->get_logger(), "Map heading: %f", yaw * 180 / M_PI);
     utm2map_tf_.header.frame_id = "utm";
     utm2map_tf_.header.stamp = this->get_clock()->now();
     utm2map_tf_.child_frame_id = mavros_map_frame_;
@@ -1110,6 +1101,8 @@ void TaskManager::startRecording() {
             RCLCPP_ERROR(this->get_logger(), "Failed to call service /bag_recorder/record");
         }
     }
+
+    init_orientation_pub_->publish(init_orientation_);
 
     // Also request to start recording video from video recorder nodes
     for (auto &camera_name : camera_names_) {
@@ -1450,9 +1443,9 @@ void TaskManager::goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr 
     goal_ = *msg;
 }
 
-void TaskManager::mapYawCallback(const std_msgs::msg::Float64::SharedPtr msg) {
-    map_yaw_ = msg->data;
-    RCLCPP_INFO(this->get_logger(), "Got map yaw: %f", map_yaw_ * 180 / M_PI);
+void TaskManager::initOrientationCallback(const geometry_msgs::msg::Quaternion::SharedPtr msg) {
+    init_orientation_ = *msg;
+    RCLCPP_INFO(this->get_logger(), "Got init orientation");
 }
 
 void TaskManager::explore_goal_response_callback(const ExploreGoalHandle::SharedPtr & goal_handle) {
