@@ -99,7 +99,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , last_ui_heartbeat_stamp_(0, 0, RCL_ROS_TIME)
     , lidar_timeout_(rclcpp::Duration::from_seconds(0.5))
     , vision_pose_timeout_(rclcpp::Duration::from_seconds(0.5))
-    , path_timeout_(rclcpp::Duration::from_seconds(1.0))
+    , path_timeout_(rclcpp::Duration::from_seconds(3.0))
     , costmap_timeout_(rclcpp::Duration::from_seconds(3.0))
     , explore_timeout_(1s)
     , mapir_timeout_(rclcpp::Duration::from_seconds(1.0))
@@ -578,8 +578,10 @@ void TaskManager::startTakeoff() {
     }
 
     if (!offline_ && do_record_) {
-        if (!recording_)
+        if (!recording_) {
             startRecording();
+            rclcpp::sleep_for(1s); // Wait a second after before arming to get some extra data before takeoff
+        }
         else
             logEvent(EventType::INFO, Severity::LOW, "Recording flag already true, not starting new recording");
     }
@@ -773,14 +775,12 @@ bool TaskManager::initialized() {
 
 
     // Get roll, pitch for map stabilization
-    logEvent(EventType::INFO, Severity::LOW, "Initializing IMU");
-    geometry_msgs::msg::Quaternion init_orientation;
-    if (!flight_controller_interface_->getAveragedOrientation(init_orientation)) {
-        return false;
-    }
+    logEvent(EventType::INFO, Severity::LOW, "Getting initial IMU");
+    geometry_msgs::msg::Quaternion init_orientation = flight_controller_interface_->getInitOrientation();
 
     // Check for valid init orientation
     if (init_orientation.x == 0 && init_orientation.y == 0 && init_orientation.z == 0 && init_orientation.w == 0) {
+        logEvent(EventType::INFO, Severity::HIGH, "Failed to get initial orientation");
         return false;
     }
     
@@ -788,7 +788,12 @@ bool TaskManager::initialized() {
     tf2::Matrix3x3 m(quatmav);
     double roll, pitch, yaw;
     m.getRPY(roll, pitch, yaw);
-    RCLCPP_INFO(this->get_logger(), "Initial Roll: %f, Pitch: %f, Yaw, %f", roll * 180 / M_PI, pitch * 180 / M_PI, yaw * 180 / M_PI);
+    RCLCPP_INFO(this->get_logger(), "Initial drone RPY (ENU): [%f, %f, %f]", roll * 180 / M_PI, pitch * 180 / M_PI, yaw * 180 / M_PI);
+    double heading = 90.0 - yaw * 180 / M_PI;
+    if (heading < 0) {
+        heading += 360;
+    }
+    RCLCPP_INFO(this->get_logger(), "Initial drone heading: %f", heading);
 
     // If using tilted lidar, add the lidar pitch to the map to slam tf, since
     // the lidar is used as the basis for the slam map frame
@@ -832,7 +837,6 @@ bool TaskManager::initialized() {
     flight_controller_interface_->initUTM(utm_x, utm_y);
     hello_decco_manager_->setUtm(utm_x, utm_y, home_utm_zone_);
     RCLCPP_INFO(this->get_logger(), "UTM offsets: (%f, %f)", utm_x, utm_y);
-    RCLCPP_INFO(this->get_logger(), "Map heading: %f", yaw * 180 / M_PI);
     utm2map_tf_.header.frame_id = "utm";
     utm2map_tf_.header.stamp = this->get_clock()->now();
     utm2map_tf_.child_frame_id = mavros_map_frame_;
@@ -845,8 +849,6 @@ bool TaskManager::initialized() {
     utm2map_tf_.transform.rotation.w = 1;
     tf_static_broadcaster_->sendTransform(utm2map_tf_);
     utm_tf_init_ = true;
-
-    logEvent(EventType::INFO, Severity::LOW, "Got global position, UTM zone, and map yaw");
 
     return true;
 }
@@ -901,6 +903,10 @@ void TaskManager::updateUTMTF() {
 
     auto pos = flight_controller_interface_->getCurrentLocalPosition();
     double map_angle = atan2(pos.pose.position.y, pos.pose.position.x);
+
+    // RCLCPP_INFO(this->get_logger(), "UTM: [%f, %f]", px, py);
+    // RCLCPP_INFO(this->get_logger(), "Map: [%f, %f]", pos.pose.position.x, pos.pose.position.y);
+    // RCLCPP_INFO(this->get_logger(), "Map angle: %f, UTM angle: %f", map_angle * 180.0 / M_PI, utm_angle * 180.0 / M_PI);
 
     double angle_diff = map_angle - utm_angle;
 
