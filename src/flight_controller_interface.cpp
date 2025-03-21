@@ -209,13 +209,6 @@ void FlightControllerInterface::initializeArducopter() {
         rclcpp::sleep_for(1s);
     }
 
-    // Request streams again to be sure
-    requestMavlinkStreams();
-
-    // Sleep after re-requesting mavlink streams to let things settle.
-    auto nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<float>(msg_rate_timer_dt_));
-    rclcpp::sleep_for(nanoseconds);
-
     // Clear geofence
     auto geofence_clear_client = service_call_node->create_client<mavros_msgs::srv::WaypointClear>("/mavros/geofence/clear");
     auto geofence_clear_req = std::make_shared<mavros_msgs::srv::WaypointClear::Request>();
@@ -304,6 +297,9 @@ void FlightControllerInterface::initializeArducopter() {
         }
     }
 
+    // Check message rates, after waiting between param fetch and time for check message loop
+    auto nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<float>(msg_rate_timer_dt_));
+    rclcpp::sleep_for(nanoseconds);
     attempts = 3;
     for (unsigned i = 0; i < attempts; i++) {
         {
