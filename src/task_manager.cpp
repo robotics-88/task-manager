@@ -334,8 +334,6 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
 
 TaskManager::~TaskManager() {
 
-    RCLCPP_INFO(this->get_logger(), "Calling TM destructor");
-
     if (offline_ && save_pcd_) {
         if (pcl_save_->size() > 0) {
             std::string file_name = "utm.pcd";
@@ -354,8 +352,12 @@ TaskManager::~TaskManager() {
             }
             pcd_save_dir += file_name;
             pcl::PCDWriter pcd_writer;
-            RCLCPP_INFO(this->get_logger(), "current scan saved to %s", pcd_save_dir.c_str());
-            pcd_writer.writeBinary(pcd_save_dir, *pcl_save_);
+
+            pcl::PointCloud<pcl::PointXYZI>::Ptr utm_cloud(new pcl::PointCloud<pcl::PointXYZI>());
+            pcl_ros::transformPointCloud(*pcl_save_, *utm_cloud, utm2map_tf_);
+
+            pcd_writer.writeBinary(pcd_save_dir, *utm_cloud);
+            RCLCPP_INFO(this->get_logger(), "PCL saved to %s", pcd_save_dir.c_str());
         }
         else {
             RCLCPP_INFO(this->get_logger(), "No pointclouds to save");
@@ -919,10 +921,11 @@ void TaskManager::updateUTMTF() {
 
     geometry_msgs::msg::Quaternion quat;
     tf2::convert(quat_tf, quat);
-    utm2map_tf_.transform.rotation = quat;
 
-    utm2map_tf_.header.stamp = this->get_clock()->now();
-    tf_static_broadcaster_->sendTransform(utm2map_tf_);
+    //utm2map_tf_.transform.rotation = quat;
+
+    //utm2map_tf_.header.stamp = this->get_clock()->now();
+    //tf_static_broadcaster_->sendTransform(utm2map_tf_);
 }
 
 bool TaskManager::getElevationAtPoint(geometry_msgs::msg::PointStamped &point, double &elevation) {
@@ -1427,7 +1430,8 @@ void TaskManager::registeredPclCallback(const sensor_msgs::msg::PointCloud2::Sha
     map_cloud_ros.header.frame_id = mavros_map_frame_;
     pointcloud_repub_->publish(map_cloud_ros);
 
-    if (utm_tf_init_ && offline_ && save_pcd_) {
+    // COMMENTED FOR TESTING - PUT BACK LATER
+    /* if (utm_tf_init_ && offline_ && save_pcd_) {
         pcl::PointCloud<pcl::PointXYZI>::Ptr cloud = map_cloud;
         // if (save_pcd_frame_ == "utm") {
             pcl::PointCloud<pcl::PointXYZI>::Ptr utm_cloud(new pcl::PointCloud<pcl::PointXYZI>());
@@ -1435,6 +1439,10 @@ void TaskManager::registeredPclCallback(const sensor_msgs::msg::PointCloud2::Sha
             cloud = utm_cloud;
         // }
         *pcl_save_ += *cloud;
+    } */
+
+    if (utm_tf_init_ && offline_ && save_pcd_) {
+        *pcl_save_ += *map_cloud;
     }
 }
 
