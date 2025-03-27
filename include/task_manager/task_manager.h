@@ -261,6 +261,8 @@ class TaskManager : public rclcpp::Node
         std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
         bool map_tf_init_;
         int home_utm_zone_;
+        double home_utm_x_;
+        double home_utm_y_;
         rclcpp::TimerBase::SharedPtr utm_tf_update_timer_;
         double largest_distance_;
         double avg_angle_diff_;
@@ -317,6 +319,7 @@ class TaskManager : public rclcpp::Node
         void explore_result_callback(const ExploreGoalHandle::WrappedResult & result);
 
         // State
+        bool initialized_;
         bool is_armed_;
         bool in_autonomous_flight_;
         bool has_setpoint_;
@@ -360,7 +363,7 @@ class TaskManager : public rclcpp::Node
         bool isBatteryOk();
         void checkHealth();
         void checkFailsafes();
-        bool initialized();
+        void initialize();
         void checkArmStatus();
         bool pauseOperations();
         void startRecording();

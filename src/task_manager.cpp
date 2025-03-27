@@ -47,6 +47,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , max_dist_to_polygon_(300.0)
     , flightleg_area_acres_(3.0)
     , largest_distance_(0.0)
+    , angle_diff_count_(0)
     , map_tf_init_(false)
     , home_utm_zone_(-1)
     , mavros_map_frame_("map")
@@ -69,6 +70,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , mapir_rgb_topic_("/mapir_rgn/image_rect_color")
     , rosbag_topic_("/record/heartbeat")
     , explore_action_result_(rclcpp_action::ResultCode::UNKNOWN)
+    , initialized_(false)
     , is_armed_(false)
     , in_autonomous_flight_(false)
     , has_setpoint_(false)
@@ -332,12 +334,14 @@ void TaskManager::runTaskManager() {
 
     // Check arm status and make sure bag recording is happening properly.
     checkArmStatus();
-
     checkFailsafes();
 
     switch (current_task_) {
         case Task::INITIALIZING: {
-            if (initialized()) {
+            if (!initialized_) {
+                initialize();
+            }
+            else {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Drone initialized");
                 if (!offline_) {
                     flight_controller_interface_->setMode(flight_controller_interface_->guided_mode_);
@@ -732,11 +736,11 @@ void TaskManager::checkFailsafes() {
     }
 }
 
-bool TaskManager::initialized() {
+void TaskManager::initialize() {
 
     // Wait for FCI to finish initializing
     if (!flight_controller_interface_->getDroneInitalized())
-        return false;
+        return;
 
 
     // Get roll, pitch for map stabilization
@@ -746,7 +750,7 @@ bool TaskManager::initialized() {
     // Check for valid init orientation
     if (init_orientation.x == 0 && init_orientation.y == 0 && init_orientation.z == 0 && init_orientation.w == 0) {
         logEvent(EventType::INFO, Severity::HIGH, "Failed to get initial orientation");
-        return false;
+        return;
     }
     
     tf2::Quaternion quatmav(init_orientation.x, init_orientation.y, init_orientation.z, init_orientation.w);
@@ -795,18 +799,17 @@ bool TaskManager::initialized() {
     logEvent(EventType::INFO, Severity::LOW, "Waiting for global position");
     home_utm_zone_ = flight_controller_interface_->getUTMZone();
     if (home_utm_zone_ < 0) {
-        return false;
+        return;
     }
     RCLCPP_INFO(this->get_logger(), "Got global, UTM zone: %d. LL : (%f, %f)", home_utm_zone_, flight_controller_interface_->getCurrentGlobalPosition().latitude, flight_controller_interface_->getCurrentGlobalPosition().longitude);
-    double utm_x, utm_y;
-    flight_controller_interface_->initUTM(utm_x, utm_y);
-    hello_decco_manager_->setUtm(utm_x, utm_y, home_utm_zone_);
-    RCLCPP_INFO(this->get_logger(), "UTM offsets: (%f, %f)", utm_x, utm_y);
+    flight_controller_interface_->initUTM(home_utm_x_, home_utm_y_);
+    hello_decco_manager_->setUtm(home_utm_x_, home_utm_y_, home_utm_zone_);
+    RCLCPP_INFO(this->get_logger(), "UTM offsets: (%f, %f)", home_utm_x_, home_utm_y_);
     utm2map_tf_.header.frame_id = "utm";
     utm2map_tf_.header.stamp = this->get_clock()->now();
     utm2map_tf_.child_frame_id = mavros_map_frame_;
-    utm2map_tf_.transform.translation.x = utm_x;
-    utm2map_tf_.transform.translation.y = utm_y;
+    utm2map_tf_.transform.translation.x = home_utm_x_;
+    utm2map_tf_.transform.translation.y = home_utm_y_;
     utm2map_tf_.transform.translation.z = 0;
     utm2map_tf_.transform.rotation.x = 0;
     utm2map_tf_.transform.rotation.y = 0;
@@ -815,7 +818,8 @@ bool TaskManager::initialized() {
     tf_static_broadcaster_->sendTransform(utm2map_tf_);
     utm_tf_init_ = true;
 
-    return true;
+    initialized_ = true;
+    return;
 }
 
 void TaskManager::map2UtmPoint(geometry_msgs::msg::PointStamped &in, geometry_msgs::msg::PointStamped &out) {
@@ -857,27 +861,35 @@ void TaskManager::updateUTMTF() {
     auto ll = flight_controller_interface_->getCurrentGlobalPosition();
     
     double px, py;
-    hello_decco_manager_->llToMap(ll.latitude, ll.longitude, px, py);
+    decco_utilities::llToUtm(ll.latitude, ll.longitude, home_utm_zone_, px, py);
+
+    double dx = px - home_utm_x_;
+    double dy = py - home_utm_y_;
 
     // Only correct map<>utm if we are far enough away from the origin, due to limited gps accuracy
-    double distance = sqrt(px * px + py * py);
+    double distance = sqrt(dx * dx + dy * dy);
     if (distance < 10.0) 
         return;
 
-    double utm_angle = atan2(py, px);
+    double utm_angle = atan2(dy, dx);
 
     auto pos = flight_controller_interface_->getCurrentLocalPosition();
     double map_angle = atan2(pos.pose.position.y, pos.pose.position.x);
-
-    // RCLCPP_INFO(this->get_logger(), "UTM: [%f, %f]", px, py);
-    // RCLCPP_INFO(this->get_logger(), "Map: [%f, %f]", pos.pose.position.x, pos.pose.position.y);
-    // RCLCPP_INFO(this->get_logger(), "Map angle: %f, UTM angle: %f", map_angle * 180.0 / M_PI, utm_angle * 180.0 / M_PI);
 
     double angle_diff = map_angle - utm_angle;
 
     // Add to average angle diff
     avg_angle_diff_ = (avg_angle_diff_ * angle_diff_count_ + angle_diff) / (angle_diff_count_ + 1);
-    
+    angle_diff_count_++;
+
+    // For testing when needed
+    RCLCPP_INFO(this->get_logger(), "UTM: [%f, %f]", dx, dy);
+    RCLCPP_INFO(this->get_logger(), "Map: [%f, %f]", pos.pose.position.x, pos.pose.position.y);
+    RCLCPP_INFO(this->get_logger(), "Map angle: %f, UTM angle: %f", map_angle * 180.0 / M_PI, utm_angle * 180.0 / M_PI);
+    RCLCPP_INFO(this->get_logger(), "Angle diff: %f", angle_diff * 180.0 / M_PI);
+    RCLCPP_INFO(this->get_logger(), "Avg angle diff: %f", avg_angle_diff_ * 180.0 / M_PI);
+
+    // Convert to quaternion and send TF
     tf2::Quaternion quat_tf;
     quat_tf.setRPY(0.0, 0.0, avg_angle_diff_);
     quat_tf.normalize();
@@ -1027,7 +1039,8 @@ void TaskManager::checkArmStatus() {
     bool armed = flight_controller_interface_->getIsArmed();
     if (!is_armed_ && armed) {
         logEvent(EventType::INFO, Severity::LOW, "Drone armed manually");
-        updateCurrentTask(Task::MANUAL_FLIGHT);
+        if (!offline_)
+            updateCurrentTask(Task::MANUAL_FLIGHT);
         is_armed_ = true;
 
         if (!offline_ && do_record_) {
@@ -1574,12 +1587,7 @@ void TaskManager::acceptFlight(json mapver_json) {
         return;
     }
 
-    if (offline_) {
-        updateCurrentTask(Task::IN_TRANSIT); // TODO find a better way to make auton possible in offline mode
-    }
-    else {
-        needs_takeoff_ = true;
-    }
+    needs_takeoff_ = true;
 }
 
 // TODO where should this live?
