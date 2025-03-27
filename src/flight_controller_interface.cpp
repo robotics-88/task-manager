@@ -209,6 +209,9 @@ void FlightControllerInterface::initializeArducopter() {
         rclcpp::sleep_for(1s);
     }
 
+    // If param fetch is done, MAVLink streams should be clear, so request streams again
+    requestMavlinkStreams();
+
     // Clear geofence
     auto geofence_clear_client = service_call_node->create_client<mavros_msgs::srv::WaypointClear>("/mavros/geofence/clear");
     auto geofence_clear_req = std::make_shared<mavros_msgs::srv::WaypointClear::Request>();
@@ -808,14 +811,14 @@ bool FlightControllerInterface::arm() {
             rclcpp::FutureReturnCode::SUCCESS
             && result.get()->success){
         RCLCPP_INFO(this->get_logger(), "Vehicle armed");
-        return true;
+        armed_ = true;
     }
     else {
         RCLCPP_WARN(this->get_logger(), "Arming failed");
-        return false;
+        armed_ = false;
     }
 
-    return true;
+    return armed_;
 }
 
 bool FlightControllerInterface::takeOff(const double takeoff_altitude) {
