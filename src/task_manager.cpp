@@ -32,7 +32,6 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , task_manager_loop_duration_(1.0)
     , simulate_(false)
     , offline_(false)
-    , save_pcd_(false)
     , utm_tf_init_(false)
     , enable_autonomy_(false)
     , use_failsafes_(false)
@@ -134,7 +133,6 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     this->declare_parameter("thermal_topic", thermal_topic_);
     this->declare_parameter("rosbag_topic", rosbag_topic_);
     this->declare_parameter("offline", offline_);
-    this->declare_parameter("save_pcd", save_pcd_);
     this->declare_parameter("simulate", simulate_);
     this->declare_parameter("data_directory", data_directory_);
     this->declare_parameter("record_config_file", record_config_file_);
@@ -179,7 +177,6 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     this->get_parameter("thermal_topic", thermal_topic_);
     this->get_parameter("rosbag_topic", rosbag_topic_);
     this->get_parameter("offline", offline_);
-    this->get_parameter("save_pcd", save_pcd_);
     this->get_parameter("simulate", simulate_);
     this->get_parameter("data_directory", data_directory_);
     this->get_parameter("record_config_file", record_config_file_);
@@ -291,11 +288,6 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     odid_system_pub_ = this->create_publisher<mavros_msgs::msg::System>("/mavros/open_drone_id/system", 10);
     odid_system_update_pub_ = this->create_publisher<mavros_msgs::msg::SystemUpdate>("/mavros/open_drone_id/system_update", 10);
 
-
-    if (offline_ && save_pcd_) {
-        pcl_save_ .reset(new pcl::PointCloud<pcl::PointXYZI>());
-    }
-
     // Task status pub
     task_pub_ = this->create_publisher<messages_88::msg::TaskStatus>("task_status", 10);
     goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(goal_topic, 10, std::bind(&TaskManager::goalCallback, this, _1));
@@ -322,7 +314,9 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     task_manager_timer_ = this->create_wall_timer(std::chrono::duration<float>(task_manager_loop_duration_), std::bind(&TaskManager::runTaskManager, this));
     heartbeat_timer_ = this->create_wall_timer(1s, std::bind(&TaskManager::heartbeatTimerCallback, this));
     odid_timer_ = this->create_wall_timer(1s, std::bind(&TaskManager::odidTimerCallback, this));
-    utm_tf_update_timer_ = this->create_wall_timer(1s, std::bind(&TaskManager::updateUTMTF, this)); 
+
+    // To be tested later
+    // utm_tf_update_timer_ = this->create_wall_timer(1s, std::bind(&TaskManager::updateUTMTF, this)); 
 
     // Initialize hello decco manager
     hello_decco_manager_ = std::make_shared<hello_decco_manager::HelloDeccoManager>(flightleg_area_acres_, mavros_map_frame_);
@@ -332,38 +326,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     tif_pcl_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/tif_pcl", 10);
 }
 
-TaskManager::~TaskManager() {
-
-    if (offline_ && save_pcd_) {
-        if (pcl_save_->size() > 0) {
-            std::string file_name = "utm.pcd";
-            std::string task_manager_dir;
-            std::string package_name = "task_manager";
-            try {
-                task_manager_dir = ament_index_cpp::get_package_share_directory("task_manager");
-                RCLCPP_INFO(this->get_logger(), "Package '%s' found at: %s", package_name.c_str(), task_manager_dir.c_str());
-            } catch (const std::exception & e) {
-                RCLCPP_ERROR(this->get_logger(), "Could not find package '%s': %s", package_name.c_str(), e.what());
-            }
-            std::string pcd_save_dir = task_manager_dir + "/PCD/";
-
-            if (!boost::filesystem::exists(pcd_save_dir)) {
-                boost::filesystem::create_directory(pcd_save_dir);
-            }
-            pcd_save_dir += file_name;
-            pcl::PCDWriter pcd_writer;
-
-            pcl::PointCloud<pcl::PointXYZI>::Ptr utm_cloud(new pcl::PointCloud<pcl::PointXYZI>());
-            pcl_ros::transformPointCloud(*pcl_save_, *utm_cloud, utm2map_tf_);
-
-            pcd_writer.writeBinary(pcd_save_dir, *utm_cloud);
-            RCLCPP_INFO(this->get_logger(), "PCL saved to %s", pcd_save_dir.c_str());
-        }
-        else {
-            RCLCPP_INFO(this->get_logger(), "No pointclouds to save");
-        }
-    }
-}
+TaskManager::~TaskManager() {}
 
 void TaskManager::runTaskManager() {
 
@@ -922,10 +885,10 @@ void TaskManager::updateUTMTF() {
     geometry_msgs::msg::Quaternion quat;
     tf2::convert(quat_tf, quat);
 
-    //utm2map_tf_.transform.rotation = quat;
+    utm2map_tf_.transform.rotation = quat;
 
-    //utm2map_tf_.header.stamp = this->get_clock()->now();
-    //tf_static_broadcaster_->sendTransform(utm2map_tf_);
+    utm2map_tf_.header.stamp = this->get_clock()->now();
+    tf_static_broadcaster_->sendTransform(utm2map_tf_);
 }
 
 bool TaskManager::getElevationAtPoint(geometry_msgs::msg::PointStamped &point, double &elevation) {
@@ -1429,21 +1392,6 @@ void TaskManager::registeredPclCallback(const sensor_msgs::msg::PointCloud2::Sha
     pcl::toROSMsg(*map_cloud, map_cloud_ros);
     map_cloud_ros.header.frame_id = mavros_map_frame_;
     pointcloud_repub_->publish(map_cloud_ros);
-
-    // COMMENTED FOR TESTING - PUT BACK LATER
-    /* if (utm_tf_init_ && offline_ && save_pcd_) {
-        pcl::PointCloud<pcl::PointXYZI>::Ptr cloud = map_cloud;
-        // if (save_pcd_frame_ == "utm") {
-            pcl::PointCloud<pcl::PointXYZI>::Ptr utm_cloud(new pcl::PointCloud<pcl::PointXYZI>());
-            pcl_ros::transformPointCloud(*map_cloud, *utm_cloud, utm2map_tf_);
-            cloud = utm_cloud;
-        // }
-        *pcl_save_ += *cloud;
-    } */
-
-    if (utm_tf_init_ && offline_ && save_pcd_) {
-        *pcl_save_ += *map_cloud;
-    }
 }
 
 void TaskManager::pathPlannerCallback(const std_msgs::msg::Header::SharedPtr msg) {

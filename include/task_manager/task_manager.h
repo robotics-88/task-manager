@@ -241,8 +241,6 @@ class TaskManager : public rclcpp::Node
         bool offline_;
         
         // UTM PCD saving
-        bool save_pcd_;
-        pcl::PointCloud<pcl::PointXYZI>::Ptr pcl_save_;
         bool utm_tf_init_;    
 
         // Control defaults

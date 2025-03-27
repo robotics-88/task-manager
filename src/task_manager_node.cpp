@@ -25,6 +25,5 @@ int main(int argc, char** argv)
   }
 
   rclcpp::shutdown();
-  RCLCPP_INFO(tm_node->get_logger(), "Shutting down task manager node");
   return 0;
 }
