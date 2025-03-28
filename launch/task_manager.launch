@@ -44,7 +44,6 @@
     <arg name="user" default="$(env USER)"/>
     <arg name="data_directory" default="/home/$(var user)/logs/ros_logs/"/>
     <arg name="record_config_file" default="$(find-pkg-share vehicle_launch)/config/r88_default.config"/>
-    <arg name="save_pcd" default="false"/>
 
     <arg name="simulate" default="false"/>
     <arg name="offline" default="false"/>
@@ -83,7 +82,6 @@
         <param name="do_trail" value="$(var do_trail)"/>
         <param name="simulate" value="$(var simulate)"/>
         <param name="offline" value="$(var offline)"/>
-        <param name="save_pcd" value="$(var save_pcd)"/>
         
         <param name="estimated_drone_speed" value="2.0"/>
         <param name="battery_failsafe_safety_factor" value="2.0"/>

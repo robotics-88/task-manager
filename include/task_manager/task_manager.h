@@ -131,7 +131,6 @@ class TaskManager : public rclcpp::Node
         void thermalCallback(const sensor_msgs::msg::Image::SharedPtr msg);
         void rosbagCallback(const std_msgs::msg::String::SharedPtr msg);
         void goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
-        void mapYawCallback(const std_msgs::msg::Float64::SharedPtr msg);
 
     private:
         const std::shared_ptr<rclcpp::Node> nh_;
@@ -144,7 +143,6 @@ class TaskManager : public rclcpp::Node
 
         // Publishers
         rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                 health_pub_;
-        rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr                map_yaw_pub_;
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr         pointcloud_repub_;
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr       goal_pos_pub_;
         rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr             local_vel_pub_;
@@ -173,7 +171,6 @@ class TaskManager : public rclcpp::Node
         rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr            attollo_sub_;
         rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr            thermal_sub_;
         rclcpp::Subscription<std_msgs::msg::String>::SharedPtr              rosbag_sub_;
-        rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr             map_yaw_sub_;
         rclcpp::Subscription<std_msgs::msg::String>::SharedPtr              tymbal_sub_;
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr    slam_pose_sub_;
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr      registered_cloud_sub_;
@@ -244,8 +241,6 @@ class TaskManager : public rclcpp::Node
         bool offline_;
         
         // UTM PCD saving
-        bool save_pcd_;
-        pcl::PointCloud<pcl::PointXYZI>::Ptr pcl_save_;
         bool utm_tf_init_;    
 
         // Control defaults
@@ -265,8 +260,13 @@ class TaskManager : public rclcpp::Node
         std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
         std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
         bool map_tf_init_;
-        double map_yaw_;
         int home_utm_zone_;
+        double home_utm_x_;
+        double home_utm_y_;
+        rclcpp::TimerBase::SharedPtr utm_tf_update_timer_;
+        double largest_distance_;
+        double avg_angle_diff_;
+        int angle_diff_count_;
 
         // Frames
         std::string mavros_map_frame_;
@@ -274,7 +274,6 @@ class TaskManager : public rclcpp::Node
         std::string slam_map_frame_;
         geometry_msgs::msg::TransformStamped map_to_slam_tf_;
     
-        rclcpp::TimerBase::SharedPtr map_tf_timer_;
         std::string slam_pose_topic_;
         double lidar_pitch_;
         double lidar_x_;
@@ -320,6 +319,7 @@ class TaskManager : public rclcpp::Node
         void explore_result_callback(const ExploreGoalHandle::WrappedResult & result);
 
         // State
+        bool initialized_;
         bool is_armed_;
         bool in_autonomous_flight_;
         bool has_setpoint_;
@@ -363,7 +363,7 @@ class TaskManager : public rclcpp::Node
         bool isBatteryOk();
         void checkHealth();
         void checkFailsafes();
-        bool initialized();
+        void initialize();
         void checkArmStatus();
         bool pauseOperations();
         void startRecording();
@@ -379,6 +379,7 @@ class TaskManager : public rclcpp::Node
         bool lawnmowerGoalComplete();
         void visualizeLawnmower();
         void publishTif();
+        void updateUTMTF();
 
         // Service server callbacks and helpers
         bool convert2Geo(const std::shared_ptr<rmw_request_id_t>/*request_header*/,
