@@ -74,7 +74,7 @@ class FlightControllerInterface : public rclcpp::Node
         bool getDroneReadyToArm() {return ready_to_arm_;}
         unsigned getImuAveragingN() {return imu_averaging_n_;}
         std::string getPreflightCheckReasons() {return preflight_check_reasons_;}
-        bool getMapYaw(double &yaw);
+        geometry_msgs::msg::Quaternion getInitOrientation() {return mavros_imu_init_.orientation;}
         bool getAveragedOrientation(geometry_msgs::msg::Quaternion &orientation);
         rclcpp::Time getLastVisionPosePubStamp() {return last_vision_pose_pub_stamp_;}
 
@@ -112,9 +112,6 @@ class FlightControllerInterface : public rclcpp::Node
         // Safety for enabling control
         bool enable_autonomy_;
 
-        // Control defaults
-        bool compass_received_;
-
         // Subscribers
         rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr        mavros_global_pos_subscriber_;
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr    mavros_local_pos_subscriber_;
@@ -142,7 +139,7 @@ class FlightControllerInterface : public rclcpp::Node
         std::deque<sensor_msgs::msg::Imu> imu_averaging_vec_;
         sensor_msgs::msg::Imu mavros_imu_init_;
         unsigned imu_averaging_n_;
-        double home_compass_hdg_;
+        bool imu_init_;
         double compass_hdg_;
         double current_altitude_;
         std::string current_mode_;

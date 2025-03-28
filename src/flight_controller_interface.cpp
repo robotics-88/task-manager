@@ -32,7 +32,7 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
   , armed_(false)
   , in_air_(false)
   , in_guided_mode_(false)
-  , compass_received_(false)
+  , imu_init_(false)
   , current_altitude_(-1.0)
   , detected_utm_zone_(-1)
   , map_tf_init_(false)
@@ -92,7 +92,7 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
         param_map_[ "EK3_SRC1_VELXY" ] = 6;
         param_map_[ "EK3_SRC1_POSZ" ] = 6;
         param_map_[ "EK3_SRC1_VELZ" ] = 6;
-        param_map_[ "EK3_SRC1_YAW" ] = 6;
+        param_map_[ "EK3_SRC1_YAW" ] = 1;
         param_map_[ "VISO_TYPE" ] = 1;
     }
 
@@ -263,30 +263,6 @@ void FlightControllerInterface::initializeArducopter() {
     // } else {
     //     RCLCPP_ERROR(this->get_logger(), "Failed to call service /mavros/mission/clear");
     // }
-
-    // Get compass heading before switching yaw source back
-    attempts = 3;
-    for (unsigned i = 0; i < attempts; i++) {
-        {
-            std::lock_guard<std::mutex> lock(init_mutex_);
-            if (compass_received_) {
-                compass_init_ok_ = true;
-                home_compass_hdg_ = compass_hdg_;
-                RCLCPP_INFO(this->get_logger(), "Compass heading received");   
-                break;
-            }
-            else {
-                RCLCPP_INFO(this->get_logger(), "Compass heading not received, trying again");
-            }
-        }
-
-        if (i == attempts - 1) {
-            RCLCPP_ERROR(this->get_logger(), "Compass heading not received after 3 attempts, not initializing drone");
-            return;
-        }
-
-        rclcpp::sleep_for(1s);
-    }
 
     // Set params from param map
     auto param_set_req = std::make_shared<rcl_interfaces::srv::SetParameters::Request>();
@@ -489,14 +465,6 @@ void FlightControllerInterface::checkMsgRates() {
     battery_count_ = 0;
 }
 
-bool FlightControllerInterface::getMapYaw(double &yaw) {
-    std::lock_guard<std::mutex> lock(init_mutex_);
-    if (compass_init_ok_) {
-        yaw = home_compass_hdg_;
-    }
-    return compass_init_ok_;
-}
-
 bool FlightControllerInterface::getAveragedOrientation(geometry_msgs::msg::Quaternion &orientation) {
 
     if (imu_averaging_vec_.size() < imu_averaging_n_) {
@@ -562,16 +530,19 @@ void FlightControllerInterface::imuCallback(const sensor_msgs::msg::Imu::SharedP
     imu_count_++;
 
     // Add to IMU array for averaging
-    if (imu_averaging_vec_.size() == imu_averaging_n_) {
-        imu_averaging_vec_.pop_front();
+    if (imu_averaging_vec_.size() < imu_averaging_n_) {
+        imu_averaging_vec_.push_back(current_imu_);
     }
-    imu_averaging_vec_.push_back(current_imu_);
+    else if (!imu_init_) {
+        // Determine initial orientation when code starts for slam map correction
+        imu_init_ = getAveragedOrientation(mavros_imu_init_.orientation);
+    }
+
 }
 
 void FlightControllerInterface::compassCallback(const std_msgs::msg::Float64::SharedPtr msg) {
     std::lock_guard<std::mutex> lock(init_mutex_);
     compass_hdg_ = msg->data;
-    compass_received_ = true;
 }
 
 void FlightControllerInterface::batteryCallback(const sensor_msgs::msg::BatteryState::SharedPtr msg) {

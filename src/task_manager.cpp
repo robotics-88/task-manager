@@ -32,7 +32,6 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , task_manager_loop_duration_(1.0)
     , simulate_(false)
     , offline_(false)
-    , save_pcd_(false)
     , utm_tf_init_(false)
     , enable_autonomy_(false)
     , use_failsafes_(false)
@@ -47,6 +46,8 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , home_elevation_(0.0)
     , max_dist_to_polygon_(300.0)
     , flightleg_area_acres_(3.0)
+    , largest_distance_(0.0)
+    , angle_diff_count_(0)
     , map_tf_init_(false)
     , home_utm_zone_(-1)
     , mavros_map_frame_("map")
@@ -69,6 +70,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , mapir_rgb_topic_("/mapir_rgn/image_rect_color")
     , rosbag_topic_("/record/heartbeat")
     , explore_action_result_(rclcpp_action::ResultCode::UNKNOWN)
+    , initialized_(false)
     , is_armed_(false)
     , in_autonomous_flight_(false)
     , has_setpoint_(false)
@@ -98,7 +100,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     , last_ui_heartbeat_stamp_(0, 0, RCL_ROS_TIME)
     , lidar_timeout_(rclcpp::Duration::from_seconds(0.5))
     , vision_pose_timeout_(rclcpp::Duration::from_seconds(0.5))
-    , path_timeout_(rclcpp::Duration::from_seconds(1.0))
+    , path_timeout_(rclcpp::Duration::from_seconds(3.0))
     , costmap_timeout_(rclcpp::Duration::from_seconds(3.0))
     , explore_timeout_(1s)
     , mapir_timeout_(rclcpp::Duration::from_seconds(1.0))
@@ -133,7 +135,6 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     this->declare_parameter("thermal_topic", thermal_topic_);
     this->declare_parameter("rosbag_topic", rosbag_topic_);
     this->declare_parameter("offline", offline_);
-    this->declare_parameter("save_pcd", save_pcd_);
     this->declare_parameter("simulate", simulate_);
     this->declare_parameter("data_directory", data_directory_);
     this->declare_parameter("record_config_file", record_config_file_);
@@ -178,7 +179,6 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     this->get_parameter("thermal_topic", thermal_topic_);
     this->get_parameter("rosbag_topic", rosbag_topic_);
     this->get_parameter("offline", offline_);
-    this->get_parameter("save_pcd", save_pcd_);
     this->get_parameter("simulate", simulate_);
     this->get_parameter("data_directory", data_directory_);
     this->get_parameter("record_config_file", record_config_file_);
@@ -290,17 +290,6 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     odid_system_pub_ = this->create_publisher<mavros_msgs::msg::System>("/mavros/open_drone_id/system", 10);
     odid_system_update_pub_ = this->create_publisher<mavros_msgs::msg::SystemUpdate>("/mavros/open_drone_id/system_update", 10);
 
-    // Recording
-    if (offline_) {
-        map_yaw_sub_ = this->create_subscription<std_msgs::msg::Float64>("map_yaw", 10, std::bind(&TaskManager::mapYawCallback, this, _1));
-        if (save_pcd_) {
-            pcl_save_ .reset(new pcl::PointCloud<pcl::PointXYZI>());
-        }
-    }
-    else {
-        map_yaw_pub_ = this->create_publisher<std_msgs::msg::Float64>("map_yaw", 5);
-    }
-
     // Task status pub
     task_pub_ = this->create_publisher<messages_88::msg::TaskStatus>("task_status", 10);
     goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(goal_topic, 10, std::bind(&TaskManager::goalCallback, this, _1));
@@ -328,6 +317,9 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     heartbeat_timer_ = this->create_wall_timer(1s, std::bind(&TaskManager::heartbeatTimerCallback, this));
     odid_timer_ = this->create_wall_timer(1s, std::bind(&TaskManager::odidTimerCallback, this));
 
+    // To be tested later
+    // utm_tf_update_timer_ = this->create_wall_timer(1s, std::bind(&TaskManager::updateUTMTF, this)); 
+
     // Initialize hello decco manager
     hello_decco_manager_ = std::make_shared<hello_decco_manager::HelloDeccoManager>(flightleg_area_acres_, mavros_map_frame_);
 
@@ -336,47 +328,20 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     tif_pcl_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/tif_pcl", 10);
 }
 
-TaskManager::~TaskManager() {
-
-    RCLCPP_INFO(this->get_logger(), "Calling TM destructor");
-
-    if (offline_ && save_pcd_) {
-        if (pcl_save_->size() > 0) {
-            std::string file_name = "utm.pcd";
-            std::string task_manager_dir;
-            std::string package_name = "task_manager";
-            try {
-                task_manager_dir = ament_index_cpp::get_package_share_directory("task_manager");
-                RCLCPP_INFO(this->get_logger(), "Package '%s' found at: %s", package_name.c_str(), task_manager_dir.c_str());
-            } catch (const std::exception & e) {
-                RCLCPP_ERROR(this->get_logger(), "Could not find package '%s': %s", package_name.c_str(), e.what());
-            }
-            std::string pcd_save_dir = task_manager_dir + "/PCD/";
-
-            if (!boost::filesystem::exists(pcd_save_dir)) {
-                boost::filesystem::create_directory(pcd_save_dir);
-            }
-            pcd_save_dir += file_name;
-            pcl::PCDWriter pcd_writer;
-            RCLCPP_INFO(this->get_logger(), "current scan saved to %s", pcd_save_dir.c_str());
-            pcd_writer.writeBinary(pcd_save_dir, *pcl_save_);
-        }
-        else {
-            RCLCPP_INFO(this->get_logger(), "No pointclouds to save");
-        }
-    }
-}
+TaskManager::~TaskManager() {}
 
 void TaskManager::runTaskManager() {
 
     // Check arm status and make sure bag recording is happening properly.
     checkArmStatus();
-
     checkFailsafes();
 
     switch (current_task_) {
         case Task::INITIALIZING: {
-            if (initialized()) {
+            if (!initialized_) {
+                initialize();
+            }
+            else {
                 logEvent(EventType::STATE_MACHINE, Severity::LOW, "Drone initialized");
                 if (!offline_) {
                     flight_controller_interface_->setMode(flight_controller_interface_->guided_mode_);
@@ -582,8 +547,10 @@ void TaskManager::startTakeoff() {
     }
 
     if (!offline_ && do_record_) {
-        if (!recording_)
+        if (!recording_) {
             startRecording();
+            rclcpp::sleep_for(1s); // Wait a second after before arming to get some extra data before takeoff
+        }
         else
             logEvent(EventType::INFO, Severity::LOW, "Recording flag already true, not starting new recording");
     }
@@ -769,48 +736,37 @@ void TaskManager::checkFailsafes() {
     }
 }
 
-bool TaskManager::initialized() {
+void TaskManager::initialize() {
 
     // Wait for FCI to finish initializing
     if (!flight_controller_interface_->getDroneInitalized())
-        return false;
+        return;
 
-    // Get drone heading
-    if (!offline_) {
-        double yaw = 0;
-        if (!flight_controller_interface_->getMapYaw(yaw)) {
-            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "Waiting for heading from autopilot...");
-            return false;
-        }
-
-        logEvent(EventType::INFO, Severity::LOW, "Initial heading: " + std::to_string(yaw));
-
-        // Convert yaw from NED to ENU
-        yaw = -yaw + 90.0;
-        // Convert to radians
-        map_yaw_ = yaw * M_PI / 180.0;
-        std_msgs::msg::Float64 yaw_msg;
-        yaw_msg.data = map_yaw_;
-        map_yaw_pub_->publish(yaw_msg);
-    }
 
     // Get roll, pitch for map stabilization
-    geometry_msgs::msg::Quaternion init_orientation;
-    logEvent(EventType::INFO, Severity::LOW, "Initializing IMU");
-    if (!flight_controller_interface_->getAveragedOrientation(init_orientation)) {
-        return false;
+    logEvent(EventType::INFO, Severity::LOW, "Getting initial IMU");
+    geometry_msgs::msg::Quaternion init_orientation = flight_controller_interface_->getInitOrientation();
+
+    // Check for valid init orientation
+    if (init_orientation.x == 0 && init_orientation.y == 0 && init_orientation.z == 0 && init_orientation.w == 0) {
+        logEvent(EventType::INFO, Severity::HIGH, "Failed to get initial orientation");
+        return;
     }
+    
     tf2::Quaternion quatmav(init_orientation.x, init_orientation.y, init_orientation.z, init_orientation.w);
     tf2::Matrix3x3 m(quatmav);
     double roll, pitch, yaw;
     m.getRPY(roll, pitch, yaw);
-    RCLCPP_INFO(this->get_logger(), "Roll: %f, Pitch: %f, Yaw, %f", roll * 180 / M_PI, pitch * 180 / M_PI, yaw * 180 / M_PI);
-    map_yaw_ = yaw;
+    RCLCPP_INFO(this->get_logger(), "Initial drone RPY (ENU): [%f, %f, %f]", roll * 180 / M_PI, pitch * 180 / M_PI, yaw * 180 / M_PI);
+    double heading = 90.0 - yaw * 180 / M_PI;
+    if (heading < 0) {
+        heading += 360;
+    }
+    RCLCPP_INFO(this->get_logger(), "Initial drone heading: %f", heading);
 
     // If using tilted lidar, add the lidar pitch to the map to slam tf, since
     // the lidar is used as the basis for the slam map frame
     pitch += -lidar_pitch_;
-
 
     double offset_x = -lidar_x_;
     double offset_y = 0.0;
@@ -822,12 +778,12 @@ bool TaskManager::initialized() {
     map_to_slam_tf_.child_frame_id = slam_map_frame_;
     
     // Rotate the lidar offsets in base_link frame to map_frame
-    map_to_slam_tf_.transform.translation.x = offset_x * cos(-map_yaw_) + offset_y * sin(-map_yaw_); 
-    map_to_slam_tf_.transform.translation.y = -offset_x * sin(-map_yaw_) + offset_y * cos(-map_yaw_); 
+    map_to_slam_tf_.transform.translation.x = offset_x * cos(-yaw) + offset_y * sin(-yaw); 
+    map_to_slam_tf_.transform.translation.y = -offset_x * sin(-yaw) + offset_y * cos(-yaw); 
     map_to_slam_tf_.transform.translation.z = offset_z;
 
     tf2::Quaternion quat_tf;
-    quat_tf.setRPY(roll, pitch, map_yaw_); // TODO, get rid of map_yaw_? It's the same as IMU yaw. Also confirm IMU is ok and not being affected by param setup on launch
+    quat_tf.setRPY(roll, pitch, yaw);
     quat_tf.normalize();
 
     geometry_msgs::msg::Quaternion quat;
@@ -837,26 +793,23 @@ bool TaskManager::initialized() {
     // Send transform and stop timer
     tf_static_broadcaster_->sendTransform(map_to_slam_tf_);
 
-    map_tf_timer_.reset();
     map_tf_init_ = true;
     flight_controller_interface_->setMapSlamTf(map_to_slam_tf_);
 
     logEvent(EventType::INFO, Severity::LOW, "Waiting for global position");
     home_utm_zone_ = flight_controller_interface_->getUTMZone();
     if (home_utm_zone_ < 0) {
-        return false;
+        return;
     }
     RCLCPP_INFO(this->get_logger(), "Got global, UTM zone: %d. LL : (%f, %f)", home_utm_zone_, flight_controller_interface_->getCurrentGlobalPosition().latitude, flight_controller_interface_->getCurrentGlobalPosition().longitude);
-    double utm_x, utm_y;
-    flight_controller_interface_->initUTM(utm_x, utm_y);
-    hello_decco_manager_->setUtm(utm_x, utm_y, home_utm_zone_);
-    RCLCPP_INFO(this->get_logger(), "UTM offsets: (%f, %f)", utm_x, utm_y);
-    RCLCPP_INFO(this->get_logger(), "Map yaw: %f", map_yaw_ * 180 / M_PI);
+    flight_controller_interface_->initUTM(home_utm_x_, home_utm_y_);
+    hello_decco_manager_->setUtm(home_utm_x_, home_utm_y_, home_utm_zone_);
+    RCLCPP_INFO(this->get_logger(), "UTM offsets: (%f, %f)", home_utm_x_, home_utm_y_);
     utm2map_tf_.header.frame_id = "utm";
     utm2map_tf_.header.stamp = this->get_clock()->now();
     utm2map_tf_.child_frame_id = mavros_map_frame_;
-    utm2map_tf_.transform.translation.x = utm_x;
-    utm2map_tf_.transform.translation.y = utm_y;
+    utm2map_tf_.transform.translation.x = home_utm_x_;
+    utm2map_tf_.transform.translation.y = home_utm_y_;
     utm2map_tf_.transform.translation.z = 0;
     utm2map_tf_.transform.rotation.x = 0;
     utm2map_tf_.transform.rotation.y = 0;
@@ -865,9 +818,8 @@ bool TaskManager::initialized() {
     tf_static_broadcaster_->sendTransform(utm2map_tf_);
     utm_tf_init_ = true;
 
-    logEvent(EventType::INFO, Severity::LOW, "Got global position, UTM zone, and map yaw");
-
-    return true;
+    initialized_ = true;
+    return;
 }
 
 void TaskManager::map2UtmPoint(geometry_msgs::msg::PointStamped &in, geometry_msgs::msg::PointStamped &out) {
@@ -899,6 +851,56 @@ bool TaskManager::convert2Geo(const std::shared_ptr<rmw_request_id_t>/*request_h
     resp->longitude = lon;
     resp->home_altitude = home_elevation_;
     return true;
+}
+
+void TaskManager::updateUTMTF() {
+    if (!utm_tf_init_) {
+        return;
+    }
+
+    auto ll = flight_controller_interface_->getCurrentGlobalPosition();
+    
+    double px, py;
+    decco_utilities::llToUtm(ll.latitude, ll.longitude, home_utm_zone_, px, py);
+
+    double dx = px - home_utm_x_;
+    double dy = py - home_utm_y_;
+
+    // Only correct map<>utm if we are far enough away from the origin, due to limited gps accuracy
+    double distance = sqrt(dx * dx + dy * dy);
+    if (distance < 10.0) 
+        return;
+
+    double utm_angle = atan2(dy, dx);
+
+    auto pos = flight_controller_interface_->getCurrentLocalPosition();
+    double map_angle = atan2(pos.pose.position.y, pos.pose.position.x);
+
+    double angle_diff = map_angle - utm_angle;
+
+    // Add to average angle diff
+    avg_angle_diff_ = (avg_angle_diff_ * angle_diff_count_ + angle_diff) / (angle_diff_count_ + 1);
+    angle_diff_count_++;
+
+    // For testing when needed
+    RCLCPP_INFO(this->get_logger(), "UTM: [%f, %f]", dx, dy);
+    RCLCPP_INFO(this->get_logger(), "Map: [%f, %f]", pos.pose.position.x, pos.pose.position.y);
+    RCLCPP_INFO(this->get_logger(), "Map angle: %f, UTM angle: %f", map_angle * 180.0 / M_PI, utm_angle * 180.0 / M_PI);
+    RCLCPP_INFO(this->get_logger(), "Angle diff: %f", angle_diff * 180.0 / M_PI);
+    RCLCPP_INFO(this->get_logger(), "Avg angle diff: %f", avg_angle_diff_ * 180.0 / M_PI);
+
+    // Convert to quaternion and send TF
+    tf2::Quaternion quat_tf;
+    quat_tf.setRPY(0.0, 0.0, avg_angle_diff_);
+    quat_tf.normalize();
+
+    geometry_msgs::msg::Quaternion quat;
+    tf2::convert(quat_tf, quat);
+
+    utm2map_tf_.transform.rotation = quat;
+
+    utm2map_tf_.header.stamp = this->get_clock()->now();
+    tf_static_broadcaster_->sendTransform(utm2map_tf_);
 }
 
 bool TaskManager::getElevationAtPoint(geometry_msgs::msg::PointStamped &point, double &elevation) {
@@ -1039,7 +1041,8 @@ void TaskManager::checkArmStatus() {
     bool armed = flight_controller_interface_->getIsArmed();
     if (!is_armed_ && armed) {
         logEvent(EventType::INFO, Severity::LOW, "Drone armed manually");
-        updateCurrentTask(Task::MANUAL_FLIGHT);
+        if (!offline_)
+            updateCurrentTask(Task::MANUAL_FLIGHT);
         is_armed_ = true;
 
         if (!offline_ && do_record_) {
@@ -1063,6 +1066,7 @@ void TaskManager::checkArmStatus() {
         logEvent(EventType::INFO, Severity::MEDIUM, "Disarm detected");
         updateCurrentTask(Task::COMPLETE);
         if (recording_) {
+            rclcpp::sleep_for(2s); // Wait a bit to make sure we have all messages in bag through full end of flight
             stopRecording();
         }
         pauseOperations();
@@ -1404,16 +1408,6 @@ void TaskManager::registeredPclCallback(const sensor_msgs::msg::PointCloud2::Sha
     pcl::toROSMsg(*map_cloud, map_cloud_ros);
     map_cloud_ros.header.frame_id = mavros_map_frame_;
     pointcloud_repub_->publish(map_cloud_ros);
-
-    if (utm_tf_init_ && offline_ & save_pcd_) {
-        pcl::PointCloud<pcl::PointXYZI>::Ptr cloud = map_cloud;
-        // if (save_pcd_frame_ == "utm") {
-            pcl::PointCloud<pcl::PointXYZI>::Ptr utm_cloud(new pcl::PointCloud<pcl::PointXYZI>());
-            pcl_ros::transformPointCloud(*map_cloud, *utm_cloud, utm2map_tf_);
-            cloud = utm_cloud;
-        // }
-        *pcl_save_ += *cloud;
-    }
 }
 
 void TaskManager::pathPlannerCallback(const std_msgs::msg::Header::SharedPtr msg) {
@@ -1450,11 +1444,6 @@ void TaskManager::rosbagCallback(const std_msgs::msg::String::SharedPtr msg) {
 
 void TaskManager::goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
     goal_ = *msg;
-}
-
-void TaskManager::mapYawCallback(const std_msgs::msg::Float64::SharedPtr msg) {
-    map_yaw_ = msg->data;
-    RCLCPP_INFO(this->get_logger(), "Got map yaw: %f", map_yaw_ * 180 / M_PI);
 }
 
 void TaskManager::explore_goal_response_callback(const ExploreGoalHandle::SharedPtr & goal_handle) {
@@ -1601,12 +1590,7 @@ void TaskManager::acceptFlight(json mapver_json) {
         return;
     }
 
-    if (offline_) {
-        updateCurrentTask(Task::IN_TRANSIT); // TODO find a better way to make auton possible in offline mode
-    }
-    else {
-        needs_takeoff_ = true;
-    }
+    needs_takeoff_ = true;
 }
 
 // TODO where should this live?
