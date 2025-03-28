@@ -924,7 +924,8 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
     point_stamped.point = req->map_position;
     double ret_altitude;
     if (!getElevationAtPoint(point_stamped, ret_altitude)) {
-        logEvent(EventType::INFO, Severity::MEDIUM, "Elevation at map point not found, not adjusting for terrain");
+        logEvent(EventType::INFO, Severity::MEDIUM, "Elevation at requested point not found, not adjusting for terrain");
+        resp->success = false;
         return false;
     }
     sensor_msgs::msg::Image chunk;
@@ -939,7 +940,11 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
         in.point.y = local.pose.position.y;
         map2UtmPoint(in, out);
         double my_altitude;
-        hello_decco_manager_->getElevationValue(out.point.x, out.point.y, my_altitude);
+        if (!hello_decco_manager_->getElevationValue(out.point.x, out.point.y, my_altitude)) {
+            logEvent(EventType::INFO, Severity::MEDIUM, "Elevation at current position not found, not adjusting for terrain");
+            resp->success = false;
+            return false;
+        }
         double my_offset = my_altitude - home_elevation_;
         // Update internal
         altitude_offset_ = ret_altitude - home_elevation_;

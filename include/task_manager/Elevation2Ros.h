@@ -113,10 +113,8 @@ public:
         }
     }
 
-    double getElevation(const double utm_x, const double utm_y) {
-        double value;
-        getMapValue(utm_x, utm_y, dem_cv, value);
-        return value;
+    bool getElevation(const double utm_x, const double utm_y, double &value) {
+        return getMapValue(utm_x, utm_y, dem_cv, value);
     }
 
     double getSlope(const double utm_x, const double utm_y) {
