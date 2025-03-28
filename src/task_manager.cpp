@@ -1064,6 +1064,7 @@ void TaskManager::checkArmStatus() {
         logEvent(EventType::INFO, Severity::MEDIUM, "Disarm detected");
         updateCurrentTask(Task::COMPLETE);
         if (recording_) {
+            rclcpp::sleep_for(2s); // Wait a bit to make sure we have all messages in bag through full end of flight
             stopRecording();
         }
         pauseOperations();
