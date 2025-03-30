@@ -819,6 +819,15 @@ void TaskManager::initialize() {
     utm_tf_init_ = true;
 
     initialized_ = true;
+
+    if (!hello_decco_manager_->getElevationInit()) {
+        if (hello_decco_manager_->getHomeElevation(home_elevation_)) {
+            RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
+        }
+        else {
+            logEvent(EventType::TASK_STATUS, Severity::HIGH, "No elevation, can only perform manual flight.");
+        }
+    }
     return;
 }
 
@@ -929,7 +938,7 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
     }
     sensor_msgs::msg::Image chunk;
     resp->tif_mat = chunk;
-    resp->ret_altitude = ret_altitude;
+    resp->ret_altitude = ret_altitude - home_elevation_;
 
     if (req->adjust_params) {
         // Get alt at start
@@ -1037,7 +1046,7 @@ bool TaskManager::pauseOperations() {
 
 void TaskManager::checkArmStatus() {
     bool armed = flight_controller_interface_->getIsArmed();
-    if (!is_armed_ && armed) {
+    if (!is_armed_ && armed && !offline_) {
         logEvent(EventType::INFO, Severity::LOW, "Drone armed manually");
         if (!offline_)
             updateCurrentTask(Task::MANUAL_FLIGHT);
