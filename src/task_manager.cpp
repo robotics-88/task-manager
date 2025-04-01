@@ -1046,7 +1046,7 @@ bool TaskManager::pauseOperations() {
 
 void TaskManager::checkArmStatus() {
     bool armed = flight_controller_interface_->getIsArmed();
-    if (!is_armed_ && armed && !offline_) {
+    if (!is_armed_ && armed) {
         logEvent(EventType::INFO, Severity::LOW, "Drone armed manually");
         if (!offline_)
             updateCurrentTask(Task::MANUAL_FLIGHT);
@@ -1057,16 +1057,6 @@ void TaskManager::checkArmStatus() {
                 startRecording();
             else
                 logEvent(EventType::INFO, Severity::LOW, "Recording flag already true, not starting new recording");
-        }
-
-        if (!hello_decco_manager_->getElevationInit()) {
-            if (hello_decco_manager_->getHomeElevation(home_elevation_)) {
-                publishTif();
-                RCLCPP_INFO(this->get_logger(), "Got home elevation in manual mode : %f", home_elevation_);
-            }
-            else {
-                logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "No elevation, can only perform manual flight.");
-            }
         }
     }
     if (is_armed_ && !armed) {
