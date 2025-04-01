@@ -819,6 +819,15 @@ void TaskManager::initialize() {
     utm_tf_init_ = true;
 
     initialized_ = true;
+
+    if (!hello_decco_manager_->getElevationInit()) {
+        if (hello_decco_manager_->getHomeElevation(home_elevation_)) {
+            RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
+        }
+        else {
+            logEvent(EventType::TASK_STATUS, Severity::HIGH, "No elevation, can only perform manual flight.");
+        }
+    }
     return;
 }
 
@@ -930,7 +939,7 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
     }
     sensor_msgs::msg::Image chunk;
     resp->tif_mat = chunk;
-    resp->ret_altitude = ret_altitude;
+    resp->ret_altitude = ret_altitude - home_elevation_;
 
     if (req->adjust_params) {
         // Get alt at start
@@ -1055,16 +1064,6 @@ void TaskManager::checkArmStatus() {
                 startRecording();
             else
                 logEvent(EventType::INFO, Severity::LOW, "Recording flag already true, not starting new recording");
-        }
-
-        if (!hello_decco_manager_->getElevationInit()) {
-            if (hello_decco_manager_->getHomeElevation(home_elevation_)) {
-                publishTif();
-                RCLCPP_INFO(this->get_logger(), "Got home elevation in manual mode : %f", home_elevation_);
-            }
-            else {
-                logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "No elevation, can only perform manual flight.");
-            }
         }
     }
     if (is_armed_ && !armed) {
