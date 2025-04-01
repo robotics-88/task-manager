@@ -960,6 +960,8 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
         this->set_parameter(rclcpp::Parameter("default_alt", target_altitude_));
     } 
 
+    resp->success = true;
+
     return true;
 }
 
