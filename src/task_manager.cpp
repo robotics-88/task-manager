@@ -325,7 +325,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
 
     // Tif pubs for visualization
     tif_grid_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("/tif_grid", 10);
-    tif_pcl_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/tif_pcl", 10);
+    tif_pcl_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/tif_pcl", rclcpp::QoS(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data)).transient_local());
 }
 
 TaskManager::~TaskManager() {}
@@ -820,14 +820,16 @@ void TaskManager::initialize() {
 
     initialized_ = true;
 
-    if (!hello_decco_manager_->getElevationInit()) {
+    if (offline_) {
         if (hello_decco_manager_->getHomeElevation(home_elevation_)) {
             RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
+            publishTif();
         }
         else {
             logEvent(EventType::TASK_STATUS, Severity::HIGH, "No elevation, can only perform manual flight.");
         }
     }
+    
     return;
 }
 
@@ -933,7 +935,8 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
     point_stamped.point = req->map_position;
     double ret_altitude;
     if (!getElevationAtPoint(point_stamped, ret_altitude)) {
-        logEvent(EventType::INFO, Severity::MEDIUM, "Elevation at map point not found, not adjusting for terrain");
+        logEvent(EventType::INFO, Severity::MEDIUM, "Elevation at requested point not found, not adjusting for terrain");
+        resp->success = false;
         return false;
     }
     sensor_msgs::msg::Image chunk;
@@ -948,7 +951,11 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
         in.point.y = local.pose.position.y;
         map2UtmPoint(in, out);
         double my_altitude;
-        hello_decco_manager_->getElevationValue(out.point.x, out.point.y, my_altitude);
+        if (!hello_decco_manager_->getElevationValue(out.point.x, out.point.y, my_altitude)) {
+            logEvent(EventType::INFO, Severity::MEDIUM, "Elevation at current position not found, not adjusting for terrain");
+            resp->success = false;
+            return false;
+        }
         double my_offset = my_altitude - home_elevation_;
         // Update internal
         altitude_offset_ = ret_altitude - home_elevation_;
@@ -963,6 +970,8 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
         this->set_parameter(rclcpp::Parameter("min_alt", min_altitude_));
         this->set_parameter(rclcpp::Parameter("default_alt", target_altitude_));
     } 
+
+    resp->success = true;
 
     return true;
 }
@@ -1048,11 +1057,22 @@ void TaskManager::checkArmStatus() {
     bool armed = flight_controller_interface_->getIsArmed();
     if (!is_armed_ && armed) {
         logEvent(EventType::INFO, Severity::LOW, "Drone armed manually");
-        if (!offline_)
-            updateCurrentTask(Task::MANUAL_FLIGHT);
         is_armed_ = true;
 
-        if (!offline_ && do_record_) {
+        // Only get arm status in offline mode, rest is not needed
+        if (offline_)
+            return;
+
+        updateCurrentTask(Task::MANUAL_FLIGHT);
+        if (hello_decco_manager_->getHomeElevation(home_elevation_)) {
+            RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
+            publishTif();
+        }
+        else {
+            logEvent(EventType::TASK_STATUS, Severity::HIGH, "No elevation, can only perform manual flight.");
+        }
+
+        if (do_record_) {
             if (!recording_)
                 startRecording();
             else
@@ -1734,20 +1754,17 @@ void TaskManager::setpointResponse(json &json_msg) {
         auto conf_msg = hello_decco_manager_->packageToTymbalHD("confirmation", json_msg, this->get_clock()->now());
         tymbal_hd_pub_->publish(conf_msg);
 
-        if (!hello_decco_manager_->getElevationInit()) {
-            if (hello_decco_manager_->getHomeElevation(home_elevation_)) {
-                RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
-                publishTif();
-            }
-            else {
-                logEvent(EventType::TASK_STATUS, Severity::HIGH, "No elevation, can only perform manual flight.");
-                auto rej_msg = hello_decco_manager_->rejectFlight(json_msg, this->get_clock()->now());
-                tymbal_hd_pub_->publish(rej_msg);
-                return;
+        if (hello_decco_manager_->getHomeElevation(home_elevation_)) {
+            RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
+            publishTif();
+            if (!is_armed_) {
+                needs_takeoff_ = true;
             }
         }
-        if (!is_armed_) {
-            needs_takeoff_ = true;
+        else {
+            logEvent(EventType::TASK_STATUS, Severity::HIGH, "No elevation, can only perform manual flight.");
+            auto rej_msg = hello_decco_manager_->rejectFlight(json_msg, this->get_clock()->now());
+            tymbal_hd_pub_->publish(rej_msg);
         }
         
     }

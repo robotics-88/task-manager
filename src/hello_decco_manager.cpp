@@ -133,8 +133,7 @@ bool HelloDeccoManager::getHomeElevation(double &value) {
         bool has_elev = elevationInitializer(-1 * utm_x_offset_, -1 * utm_y_offset_);
         if (!has_elev) return false;
     }
-    value = elevation_source_.getElevation(-1 * utm_x_offset_, -1 * utm_y_offset_);
-    return true;
+    return elevation_source_.getElevation(-1 * utm_x_offset_, -1 * utm_y_offset_, value);
 }
 
 bool HelloDeccoManager::getElevationValue(const double utm_x, const double utm_y, double &value) {
@@ -142,8 +141,7 @@ bool HelloDeccoManager::getElevationValue(const double utm_x, const double utm_y
         bool has_elev = elevationInitializer(0, 0);
         if (!has_elev) return false;
     }
-    value = elevation_source_.getElevation(utm_x, utm_y);
-    return true;
+    return elevation_source_.getElevation(utm_x, utm_y, value);
 }
 
 std_msgs::msg::String HelloDeccoManager::updateFlightStatus(std::string flight_status, const rclcpp::Time timestamp) {
