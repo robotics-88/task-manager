@@ -325,7 +325,7 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
 
     // Tif pubs for visualization
     tif_grid_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("/tif_grid", 10);
-    tif_pcl_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/tif_pcl", 10);
+    tif_pcl_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/tif_pcl", rclcpp::QoS(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data)).transient_local());
 }
 
 TaskManager::~TaskManager() {}
