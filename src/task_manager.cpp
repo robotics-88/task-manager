@@ -820,14 +820,16 @@ void TaskManager::initialize() {
 
     initialized_ = true;
 
-    if (!hello_decco_manager_->getElevationInit()) {
+    if (offline_) {
         if (hello_decco_manager_->getHomeElevation(home_elevation_)) {
             RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
+            publishTif();
         }
         else {
             logEvent(EventType::TASK_STATUS, Severity::HIGH, "No elevation, can only perform manual flight.");
         }
     }
+    
     return;
 }
 
@@ -1055,11 +1057,22 @@ void TaskManager::checkArmStatus() {
     bool armed = flight_controller_interface_->getIsArmed();
     if (!is_armed_ && armed) {
         logEvent(EventType::INFO, Severity::LOW, "Drone armed manually");
-        if (!offline_)
-            updateCurrentTask(Task::MANUAL_FLIGHT);
         is_armed_ = true;
 
-        if (!offline_ && do_record_) {
+        // Only get arm status in offline mode, rest is not needed
+        if (offline_)
+            return;
+
+        updateCurrentTask(Task::MANUAL_FLIGHT);
+        if (hello_decco_manager_->getHomeElevation(home_elevation_)) {
+            RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
+            publishTif();
+        }
+        else {
+            logEvent(EventType::TASK_STATUS, Severity::HIGH, "No elevation, can only perform manual flight.");
+        }
+
+        if (do_record_) {
             if (!recording_)
                 startRecording();
             else
@@ -1741,20 +1754,17 @@ void TaskManager::setpointResponse(json &json_msg) {
         auto conf_msg = hello_decco_manager_->packageToTymbalHD("confirmation", json_msg, this->get_clock()->now());
         tymbal_hd_pub_->publish(conf_msg);
 
-        if (!hello_decco_manager_->getElevationInit()) {
-            if (hello_decco_manager_->getHomeElevation(home_elevation_)) {
-                RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
-                publishTif();
-            }
-            else {
-                logEvent(EventType::TASK_STATUS, Severity::HIGH, "No elevation, can only perform manual flight.");
-                auto rej_msg = hello_decco_manager_->rejectFlight(json_msg, this->get_clock()->now());
-                tymbal_hd_pub_->publish(rej_msg);
-                return;
+        if (hello_decco_manager_->getHomeElevation(home_elevation_)) {
+            RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
+            publishTif();
+            if (!is_armed_) {
+                needs_takeoff_ = true;
             }
         }
-        if (!is_armed_) {
-            needs_takeoff_ = true;
+        else {
+            logEvent(EventType::TASK_STATUS, Severity::HIGH, "No elevation, can only perform manual flight.");
+            auto rej_msg = hello_decco_manager_->rejectFlight(json_msg, this->get_clock()->now());
+            tymbal_hd_pub_->publish(rej_msg);
         }
         
     }
