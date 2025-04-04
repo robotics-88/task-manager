@@ -499,7 +499,15 @@ void FlightControllerInterface::slamPoseCallback(const geometry_msgs::msg::PoseS
     // Apply the transform to the drone pose
     geometry_msgs::msg::PoseStamped vision_pose;
 
-    tf2::doTransform(current_slam_pose_, vision_pose, map_to_slam_tf_);
+    // Only transform based on rotation, not translation. 
+    // This effectively removes the initial offset between the lidar frame and base_link. So if initial /decco/pose is 0,0,0,
+    // then initial vision_pose will be 0,0,0.
+    geometry_msgs::msg::TransformStamped map_to_slam_tf_no_trans = map_to_slam_tf_;
+    map_to_slam_tf_no_trans.transform.translation.x = 0;
+    map_to_slam_tf_no_trans.transform.translation.y = 0;
+    map_to_slam_tf_no_trans.transform.translation.z = 0;
+
+    tf2::doTransform(current_slam_pose_, vision_pose, map_to_slam_tf_no_trans);
     vision_pose.header.frame_id = mavros_map_frame_;
     vision_pose.header.stamp = current_slam_pose_.header.stamp;
 
