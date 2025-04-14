@@ -966,6 +966,8 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t>/*request_he
         // Send service
         resp->home_offset = altitude_offset_;
         resp->target_altitude = target_altitude_;
+        resp->min_altitude = min_altitude_;
+        resp->max_altitude = max_altitude_;
 
         this->set_parameter(rclcpp::Parameter("max_alt", max_altitude_));
         this->set_parameter(rclcpp::Parameter("min_alt", min_altitude_));
