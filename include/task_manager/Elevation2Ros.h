@@ -64,7 +64,7 @@ public:
         double origin_x = ul_x_utm - utm_x;
         double origin_y = ul_y_utm - height - utm_y;
         // Initialize occupancy grid message
-        grid.header.frame_id = "map";
+        grid.header.frame_id = "world";
         grid.info.resolution = resolution;
         grid.info.width = width;
         grid.info.height = height;
