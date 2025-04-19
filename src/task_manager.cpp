@@ -148,6 +148,8 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     this->declare_parameter("do_seek_thermal", do_seek_thermal_);
     this->declare_parameter("do_see3cam_down", do_see3cam_down_);
     this->declare_parameter("do_see3cam_fwd", do_see3cam_fwd_);
+    this->declare_parameter("do_immervision_down", do_immervision_down_);
+    this->declare_parameter("do_immervision_front", do_immervision_front_);
     int lidar_type = 4;
     this->declare_parameter("lidar_type", lidar_type);
     this->declare_parameter("lidar_pitch", lidar_pitch_);
@@ -192,6 +194,8 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     this->get_parameter("do_seek_thermal", do_seek_thermal_);
     this->get_parameter("do_see3cam_down", do_see3cam_down_);
     this->get_parameter("do_see3cam_fwd", do_see3cam_fwd_);
+    this->get_parameter("do_immervision_down", do_immervision_down_);
+    this->get_parameter("do_immervision_front", do_immervision_front_);
     this->get_parameter("lidar_type", lidar_type);
     this->get_parameter("lidar_pitch", lidar_pitch_);
     this->get_parameter("lidar_x", lidar_x_);
@@ -221,6 +225,12 @@ TaskManager::TaskManager(std::shared_ptr<flight_controller_interface::FlightCont
     }
     if (do_see3cam_fwd_) {
         camera_names_.push_back("see3cam_fwd");
+    }
+    if (do_immervision_down_) {
+        camera_names_.push_back("immervision_down");
+    }
+    if (do_immervision_front_) {
+        camera_names_.push_back("immervision_front");
     }
 
     // Clicked point sub

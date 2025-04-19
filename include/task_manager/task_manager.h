@@ -236,6 +236,8 @@ class TaskManager : public rclcpp::Node
         bool do_seek_thermal_;
         bool do_see3cam_down_;
         bool do_see3cam_fwd_;
+        bool do_immervision_down_;
+        bool do_immervision_front_;
 
         // Offline handling
         bool offline_;

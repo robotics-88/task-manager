@@ -12,6 +12,8 @@
     <arg name="do_seek_thermal" default="false"/>
     <arg name="do_see3cam_down" default="false"/>
     <arg name="do_see3cam_fwd" default="false"/>
+    <arg name="do_immervision_down" default="false"/>
+    <arg name="do_immervision_front" default="false"/>
     <arg name="lidar_type" default="4"/> <!-- 2 = Velodyne, 4 = Mid360-->
     <arg name="lidar_pitch" default="0.0"/>
     <arg name="lidar_x" default="0.0"/>
@@ -91,6 +93,8 @@
         <param name="do_seek_thermal" value="$(var do_seek_thermal)"/>
         <param name="do_see3cam_down" value="$(var do_see3cam_down)"/>
         <param name="do_see3cam_fwd" value="$(var do_see3cam_fwd)"/>
+        <param name="do_immervision_down" value="$(var do_immervision_down)"/>
+        <param name="do_immervision_front" value="$(var do_immervision_front)"/>
         <param name="lidar_type" value="$(var lidar_type)"/>
         <param name="lidar_pitch" value="$(var lidar_pitch)"/>
         <param name="lidar_x" value="$(var lidar_x)"/>
