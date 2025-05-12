@@ -1,6 +1,6 @@
-/* 
+/*
 © 2022 Robotics 88
-Author: Erin Linebarger <erin@robotics88.com> 
+Author: Erin Linebarger <erin@robotics88.com>
 */
 
 #include "task_manager/flight_controller_interface.h"
@@ -19,46 +19,45 @@ Author: Erin Linebarger <erin@robotics88.com>
 using std::placeholders::_1;
 using namespace std::chrono_literals;
 
-namespace flight_controller_interface
-{
-FlightControllerInterface::FlightControllerInterface() : Node("flight_controller_interface")
-  , offline_(false)
-  , simulate_(false)
-  , do_slam_(false)
-  , mavros_map_frame_("map")
-  , slam_map_frame_("slam_map")
-  , enable_autonomy_(false)
-  , connected_(false)
-  , armed_(false)
-  , in_air_(false)
-  , in_guided_mode_(false)
-  , imu_init_(false)
-  , current_altitude_(-1.0)
-  , detected_utm_zone_(-1)
-  , map_tf_init_(false)
-  , battery_percentage_(0.0)
-  , battery_voltage_(0.0)
-  , battery_size_(5.2)
-  , estimated_current_(20.0)
-  , estimated_flight_time_remaining_(0.0)
-  , imu_averaging_n_(50)
-  , imu_count_(0)
-  , local_pos_count_(0)
-  , battery_count_(0)
-  , imu_rate_ok_(false)
-  , battery_rate_ok_(false)
-  , msg_rate_timer_dt_(2.0)
-  , imu_rate_(120.0)
-  , local_pos_rate_(60.0)
-  , battery_rate_(10.0)
-  , all_stream_rate_(5.0)
-  , drone_initialized_(false)
-  , last_prearm_text_(0, 0, RCL_ROS_TIME)
-  , last_resting_percent_time_(0, 0, RCL_ROS_TIME)
-  , last_battery_measurement_(0, 0, RCL_ROS_TIME)
-  , last_vision_pose_pub_stamp_(0, 0, RCL_ROS_TIME)
-  , px4_(false)
-{
+namespace flight_controller_interface {
+FlightControllerInterface::FlightControllerInterface()
+    : Node("flight_controller_interface"),
+      offline_(false),
+      simulate_(false),
+      do_slam_(false),
+      mavros_map_frame_("map"),
+      slam_map_frame_("slam_map"),
+      enable_autonomy_(false),
+      connected_(false),
+      armed_(false),
+      in_air_(false),
+      in_guided_mode_(false),
+      imu_init_(false),
+      current_altitude_(-1.0),
+      detected_utm_zone_(-1),
+      map_tf_init_(false),
+      battery_percentage_(0.0),
+      battery_voltage_(0.0),
+      battery_size_(5.2),
+      estimated_current_(20.0),
+      estimated_flight_time_remaining_(0.0),
+      imu_averaging_n_(50),
+      imu_count_(0),
+      local_pos_count_(0),
+      battery_count_(0),
+      imu_rate_ok_(false),
+      battery_rate_ok_(false),
+      msg_rate_timer_dt_(2.0),
+      imu_rate_(120.0),
+      local_pos_rate_(60.0),
+      battery_rate_(10.0),
+      all_stream_rate_(5.0),
+      drone_initialized_(false),
+      last_prearm_text_(0, 0, RCL_ROS_TIME),
+      last_resting_percent_time_(0, 0, RCL_ROS_TIME),
+      last_battery_measurement_(0, 0, RCL_ROS_TIME),
+      last_vision_pose_pub_stamp_(0, 0, RCL_ROS_TIME),
+      px4_(false) {
     // FCI specific params
     this->declare_parameter("battery_size", battery_size_);
     this->declare_parameter("estimated_current", estimated_current_);
@@ -66,7 +65,7 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
     this->declare_parameter("local_pos_rate", local_pos_rate_);
     this->declare_parameter("all_stream_rate", all_stream_rate_);
     this->declare_parameter("px4", px4_);
-    
+
     this->get_parameter("battery_size", battery_size_);
     this->get_parameter("estimated_current", estimated_current_);
     this->get_parameter("imu_rate", imu_rate_);
@@ -88,60 +87,80 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
     this->get_parameter("slam_map_frame", slam_map_frame_);
 
     if (do_slam_) {
-        param_map_[ "EK3_SRC1_POSXY" ] = 6;
-        param_map_[ "EK3_SRC1_VELXY" ] = 6;
-        param_map_[ "EK3_SRC1_POSZ" ] = 6;
-        param_map_[ "EK3_SRC1_VELZ" ] = 6;
-        param_map_[ "EK3_SRC1_YAW" ] = 1;
-        param_map_[ "VISO_TYPE" ] = 1;
+        param_map_["EK3_SRC1_POSXY"] = 6;
+        param_map_["EK3_SRC1_VELXY"] = 6;
+        param_map_["EK3_SRC1_POSZ"] = 6;
+        param_map_["EK3_SRC1_VELZ"] = 6;
+        param_map_["EK3_SRC1_YAW"] = 1;
+        param_map_["VISO_TYPE"] = 1;
     }
 
     // Set subscribers for Mavros
     auto sensor_qos = rclcpp::SensorDataQoS();
     auto state_qos = rclcpp::QoS(10).transient_local();
 
-    mavros_global_pos_subscriber_ = this->create_subscription<sensor_msgs::msg::NavSatFix>("/mavros/global_position/global", sensor_qos, std::bind(&FlightControllerInterface::globalPositionCallback, this, _1));
-    mavros_local_pos_subscriber_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/mavros/local_position/pose", sensor_qos, std::bind(&FlightControllerInterface::localPositionCallback, this, _1));
-    mavros_alt_subscriber_ = this->create_subscription<std_msgs::msg::Float64>("/mavros/global_position/rel_alt", sensor_qos, std::bind(&FlightControllerInterface::altitudeCallback, this, _1));
-    mavros_imu_subscriber_ = this->create_subscription<sensor_msgs::msg::Imu>("/mavros/imu/data", sensor_qos, std::bind(&FlightControllerInterface::imuCallback, this, _1));
-    mavros_compass_subscriber_ = this->create_subscription<std_msgs::msg::Float64>("/mavros/global_position/compass_hdg", sensor_qos, std::bind(&FlightControllerInterface::compassCallback, this, _1));
-    mavros_battery_subscriber_ = this->create_subscription<sensor_msgs::msg::BatteryState>("/mavros/battery", sensor_qos, std::bind(&FlightControllerInterface::batteryCallback, this, _1));
-    mavros_status_text_subscriber_ = this->create_subscription<mavros_msgs::msg::StatusText>("/mavros/statustext/recv", sensor_qos, std::bind(&FlightControllerInterface::statusTextCallback, this, _1));
-    mavros_state_subscriber_ = this->create_subscription<mavros_msgs::msg::State>("/mavros/state", state_qos, std::bind(&FlightControllerInterface::statusCallback, this, _1));
-    mavros_sys_status_subscriber_ = this->create_subscription<mavros_msgs::msg::SysStatus>("/mavros/sys_status", state_qos, std::bind(&FlightControllerInterface::sysStatusCallback, this, _1));
+    mavros_global_pos_subscriber_ = this->create_subscription<sensor_msgs::msg::NavSatFix>(
+        "/mavros/global_position/global", sensor_qos,
+        std::bind(&FlightControllerInterface::globalPositionCallback, this, _1));
+    mavros_local_pos_subscriber_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+        "/mavros/local_position/pose", sensor_qos,
+        std::bind(&FlightControllerInterface::localPositionCallback, this, _1));
+    mavros_alt_subscriber_ = this->create_subscription<std_msgs::msg::Float64>(
+        "/mavros/global_position/rel_alt", sensor_qos,
+        std::bind(&FlightControllerInterface::altitudeCallback, this, _1));
+    mavros_imu_subscriber_ = this->create_subscription<sensor_msgs::msg::Imu>(
+        "/mavros/imu/data", sensor_qos,
+        std::bind(&FlightControllerInterface::imuCallback, this, _1));
+    mavros_compass_subscriber_ = this->create_subscription<std_msgs::msg::Float64>(
+        "/mavros/global_position/compass_hdg", sensor_qos,
+        std::bind(&FlightControllerInterface::compassCallback, this, _1));
+    mavros_battery_subscriber_ = this->create_subscription<sensor_msgs::msg::BatteryState>(
+        "/mavros/battery", sensor_qos,
+        std::bind(&FlightControllerInterface::batteryCallback, this, _1));
+    mavros_status_text_subscriber_ = this->create_subscription<mavros_msgs::msg::StatusText>(
+        "/mavros/statustext/recv", sensor_qos,
+        std::bind(&FlightControllerInterface::statusTextCallback, this, _1));
+    mavros_state_subscriber_ = this->create_subscription<mavros_msgs::msg::State>(
+        "/mavros/state", state_qos,
+        std::bind(&FlightControllerInterface::statusCallback, this, _1));
+    mavros_sys_status_subscriber_ = this->create_subscription<mavros_msgs::msg::SysStatus>(
+        "/mavros/sys_status", state_qos,
+        std::bind(&FlightControllerInterface::sysStatusCallback, this, _1));
 
-    vision_pose_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/vision_pose/pose", 10);
+    vision_pose_publisher_ =
+        this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/vision_pose/pose", 10);
 
     // Decco pub/subs
-    slam_pose_subscriber_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/decco/pose", 10, std::bind(&FlightControllerInterface::slamPoseCallback, this, _1));
+    slam_pose_subscriber_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+        "/decco/pose", 10, std::bind(&FlightControllerInterface::slamPoseCallback, this, _1));
     battery_pub_ = this->create_publisher<messages_88::msg::Battery>("/decco/battery", 10);
 
     if (!offline_) {
 
-        msg_rate_timer_ = this->create_wall_timer(std::chrono::duration<float>(msg_rate_timer_dt_), std::bind(&FlightControllerInterface::checkMsgRates, this));
+        msg_rate_timer_ =
+            this->create_wall_timer(std::chrono::duration<float>(msg_rate_timer_dt_),
+                                    std::bind(&FlightControllerInterface::checkMsgRates, this));
 
         // Todo: allow some time for stream rates to settle
         // If stream rates not okay, request them and sleep, param fetch probably needs to complete
         if (!battery_rate_ok_ || !imu_rate_ok_) {
-            std::thread([this]() {
-                requestMavlinkStreams();
-            }).detach();
+            std::thread([this]() { requestMavlinkStreams(); }).detach();
         }
-        
+
         // Now we can initialize
         if (px4_) {
             initializePX4();
-        }
-        else {
-            // Run this in a different thread so it doesn't block other important subscription callbacks.
+        } else {
+            // Run this in a different thread so it doesn't block other important subscription
+            // callbacks.
             std::thread([this]() {
-                RCLCPP_INFO(this->get_logger(), "Waiting 15s for Arducopter param fetch to complete");
+                RCLCPP_INFO(this->get_logger(),
+                            "Waiting 15s for Arducopter param fetch to complete");
                 rclcpp::sleep_for(15s);
                 initializeArducopter();
             }).detach();
         }
-    }
-    else {
+    } else {
         // Declare that drone is initalized for offline mode
         drone_initialized_ = true;
     }
@@ -158,8 +177,7 @@ FlightControllerInterface::FlightControllerInterface() : Node("flight_controller
     mavros_imu_init_.orientation.w = 0;
 }
 
-FlightControllerInterface::~FlightControllerInterface() {
-}
+FlightControllerInterface::~FlightControllerInterface() {}
 
 void FlightControllerInterface::initializePX4() {
     RCLCPP_INFO(this->get_logger(), "PX4 initialization successful");
@@ -171,8 +189,10 @@ void FlightControllerInterface::initializeArducopter() {
     RCLCPP_INFO(this->get_logger(), "Initializing Arducopter");
 
     // Set heading source (also checks) that param fetch is complete
-    std::shared_ptr<rclcpp::Node> service_call_node = rclcpp::Node::make_shared("service_call_node");
-    auto param_set_client = service_call_node->create_client<rcl_interfaces::srv::SetParameters>("/mavros/param/set_parameters");
+    std::shared_ptr<rclcpp::Node> service_call_node =
+        rclcpp::Node::make_shared("service_call_node");
+    auto param_set_client = service_call_node->create_client<rcl_interfaces::srv::SetParameters>(
+        "/mavros/param/set_parameters");
 
     auto heading_src_req = std::make_shared<rcl_interfaces::srv::SetParameters::Request>();
     rclcpp::Parameter param("EK3_SRC1_YAW", 1);
@@ -182,13 +202,14 @@ void FlightControllerInterface::initializeArducopter() {
     for (unsigned i = 0; i < attempts; i++) {
         auto result = param_set_client->async_send_request(heading_src_req);
         if (rclcpp::spin_until_future_complete(service_call_node, result, 1s) ==
-            rclcpp::FutureReturnCode::SUCCESS)
-        {
+            rclcpp::FutureReturnCode::SUCCESS) {
             bool success = true;
             auto res = result.get();
             for (unsigned i = 0; i < res->results.size(); i++) {
                 if (!res->results.at(i).successful) {
-                    RCLCPP_INFO(this->get_logger(), "Heading src param set unsuccessful, param fetch likely incomplete");
+                    RCLCPP_INFO(
+                        this->get_logger(),
+                        "Heading src param set unsuccessful, param fetch likely incomplete");
                     success = false;
                 }
             }
@@ -200,9 +221,11 @@ void FlightControllerInterface::initializeArducopter() {
         } else {
             RCLCPP_ERROR(this->get_logger(), "Failed to call service /mavros/param/set_parameters");
         }
-        
+
         if (i == attempts - 1) {
-            RCLCPP_ERROR(this->get_logger(), "Heading src param set unsuccessful after 5 attempts, not initializing drone");
+            RCLCPP_ERROR(
+                this->get_logger(),
+                "Heading src param set unsuccessful after 5 attempts, not initializing drone");
             return;
         }
 
@@ -213,32 +236,34 @@ void FlightControllerInterface::initializeArducopter() {
     requestMavlinkStreams();
 
     // Clear geofence
-    auto geofence_clear_client = service_call_node->create_client<mavros_msgs::srv::WaypointClear>("/mavros/geofence/clear");
+    auto geofence_clear_client =
+        service_call_node->create_client<mavros_msgs::srv::WaypointClear>("/mavros/geofence/clear");
     auto geofence_clear_req = std::make_shared<mavros_msgs::srv::WaypointClear::Request>();
 
     attempts = 3;
     for (unsigned i = 0; i < attempts; i++) {
-        
+
         auto result = geofence_clear_client->async_send_request(geofence_clear_req);
         if (rclcpp::spin_until_future_complete(service_call_node, result, 1s) ==
-            rclcpp::FutureReturnCode::SUCCESS)
-        {
+            rclcpp::FutureReturnCode::SUCCESS) {
             if (result.get()->success) {
                 RCLCPP_INFO(this->get_logger(), "Geofence clear complete");
                 break;
-            }            
+            }
         } else {
             RCLCPP_ERROR(this->get_logger(), "Failed to call service /mavros/geofence/clear");
         }
 
         if (i == attempts - 1) {
-            RCLCPP_ERROR(this->get_logger(), "Geofence clear unsuccessful after 3 attempts, not initializing drone");
+            RCLCPP_ERROR(this->get_logger(),
+                         "Geofence clear unsuccessful after 3 attempts, not initializing drone");
             return;
         }
     }
 
     // Clear mission
-    auto mission_clear_client = service_call_node->create_client<mavros_msgs::srv::WaypointClear>("/mavros/mission/clear");
+    auto mission_clear_client =
+        service_call_node->create_client<mavros_msgs::srv::WaypointClear>("/mavros/mission/clear");
     auto mission_clear_req = std::make_shared<mavros_msgs::srv::WaypointClear::Request>();
 
     auto result = mission_clear_client->async_send_request(mission_clear_req);
@@ -254,19 +279,20 @@ void FlightControllerInterface::initializeArducopter() {
     //     }
     //     else {
     //         if (attempts_ > 3) {
-    //             RCLCPP_ERROR(this->get_logger(), "Mission clear unsuccessful after 3 attempts, not initializing drone");
-    //             return;
+    //             RCLCPP_ERROR(this->get_logger(), "Mission clear unsuccessful after 3 attempts,
+    //             not initializing drone"); return;
     //         }
     //         return;
     //     }
-        
+
     // } else {
     //     RCLCPP_ERROR(this->get_logger(), "Failed to call service /mavros/mission/clear");
     // }
 
     // Set params from param map
     auto param_set_req = std::make_shared<rcl_interfaces::srv::SetParameters::Request>();
-    for (std::map<std::string, int>::iterator it = param_map_.begin(); it != param_map_.end(); it++) {
+    for (std::map<std::string, int>::iterator it = param_map_.begin(); it != param_map_.end();
+         it++) {
         rclcpp::Parameter param(it->first, it->second);
         param_set_req->parameters.push_back(param.to_parameter_msg());
     }
@@ -275,13 +301,13 @@ void FlightControllerInterface::initializeArducopter() {
     for (unsigned i = 0; i < attempts; i++) {
         auto result = param_set_client->async_send_request(param_set_req);
         if (rclcpp::spin_until_future_complete(service_call_node, result, 1s) ==
-            rclcpp::FutureReturnCode::SUCCESS)
-        {
+            rclcpp::FutureReturnCode::SUCCESS) {
             bool success = true;
             auto res = result.get();
             for (unsigned i = 0; i < res->results.size(); i++) {
                 if (!res->results.at(i).successful) {
-                    RCLCPP_INFO(this->get_logger(), "Param set unsuccessful, param fetch likely incomplete");
+                    RCLCPP_INFO(this->get_logger(),
+                                "Param set unsuccessful, param fetch likely incomplete");
                     success = false;
                 }
             }
@@ -289,19 +315,21 @@ void FlightControllerInterface::initializeArducopter() {
                 RCLCPP_INFO(this->get_logger(), "Param set complete");
                 break;
             }
-            
+
         } else {
             RCLCPP_ERROR(this->get_logger(), "Failed to call service /mavros/param/set_parameters");
         }
 
         if (i == attempts - 1) {
-            RCLCPP_ERROR(this->get_logger(), "Param set unsuccessful after 3 attempts, not initializing drone");
+            RCLCPP_ERROR(this->get_logger(),
+                         "Param set unsuccessful after 3 attempts, not initializing drone");
             return;
         }
     }
 
     // Check message rates, after waiting between param fetch and time for check message loop
-    auto nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<float>(msg_rate_timer_dt_));
+    auto nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::duration<float>(msg_rate_timer_dt_));
     rclcpp::sleep_for(nanoseconds);
     attempts = 3;
     for (unsigned i = 0; i < attempts; i++) {
@@ -310,8 +338,7 @@ void FlightControllerInterface::initializeArducopter() {
             if (battery_rate_ok_ && imu_rate_ok_) {
                 RCLCPP_INFO(this->get_logger(), "Mavlink streaming rates OK");
                 break;
-            }
-            else {
+            } else {
                 RCLCPP_INFO(this->get_logger(), "Mavlink streaming rates not OK, trying again");
                 if (i == 0)
                     requestMavlinkStreams();
@@ -319,7 +346,8 @@ void FlightControllerInterface::initializeArducopter() {
         }
 
         if (i == attempts - 1) {
-            RCLCPP_ERROR(this->get_logger(), "Mavlink stream rates not OK after 5 attempts, not initializing drone");
+            RCLCPP_ERROR(this->get_logger(),
+                         "Mavlink stream rates not OK after 5 attempts, not initializing drone");
             return;
         }
 
@@ -334,7 +362,7 @@ void FlightControllerInterface::initializeArducopter() {
 void FlightControllerInterface::requestMavlinkStreams() {
 
     RCLCPP_INFO(this->get_logger(), "Requesting MAVLink streams from autopilot");
-    
+
     std::shared_ptr<rclcpp::Node> streamrate_node = rclcpp::Node::make_shared("streamrate_node");
     rclcpp::Client<mavros_msgs::srv::StreamRate>::SharedPtr streamrate_client =
         streamrate_node->create_client<mavros_msgs::srv::StreamRate>("/mavros/set_stream_rate");
@@ -342,30 +370,32 @@ void FlightControllerInterface::requestMavlinkStreams() {
     // Request all streams
     while (!streamrate_client->wait_for_service(5s)) {
         if (!rclcpp::ok()) {
-        RCLCPP_ERROR(this->get_logger(), "Interrupted while waiting for mavros streamrate service. Not requesting mavlink streams.");
-        return;
+            RCLCPP_ERROR(this->get_logger(), "Interrupted while waiting for mavros streamrate "
+                                             "service. Not requesting mavlink streams.");
+            return;
         }
-        RCLCPP_INFO(this->get_logger(), "Mavros streamrate service not available, waiting again...");
+        RCLCPP_INFO(this->get_logger(),
+                    "Mavros streamrate service not available, waiting again...");
     }
 
-    auto streamrate_req = std::make_shared<mavros_msgs::srv::StreamRate::Request>(); 
+    auto streamrate_req = std::make_shared<mavros_msgs::srv::StreamRate::Request>();
     streamrate_req->stream_id = 0;
     streamrate_req->message_rate = all_stream_rate_;
     streamrate_req->on_off = true;
     auto streamrate_res = streamrate_client->async_send_request(streamrate_req);
     if (rclcpp::spin_until_future_complete(streamrate_node, streamrate_res, 1s) ==
-        rclcpp::FutureReturnCode::SUCCESS)
-    {
+        rclcpp::FutureReturnCode::SUCCESS) {
         RCLCPP_INFO(this->get_logger(), "General stream rate set");
-    }
-    else {
+    } else {
         RCLCPP_ERROR(this->get_logger(), "Failed to call service /mavros/set_stream_rate");
     }
 
     // Request specific streams at particular rates
-    std::shared_ptr<rclcpp::Node> msg_interval_node = rclcpp::Node::make_shared("msg_interval_node");
+    std::shared_ptr<rclcpp::Node> msg_interval_node =
+        rclcpp::Node::make_shared("msg_interval_node");
     rclcpp::Client<mavros_msgs::srv::MessageInterval>::SharedPtr msg_interval_client =
-        msg_interval_node->create_client<mavros_msgs::srv::MessageInterval>("/mavros/set_message_interval");
+        msg_interval_node->create_client<mavros_msgs::srv::MessageInterval>(
+            "/mavros/set_message_interval");
 
     // ATTITUDE
     auto msg_interval_req = std::make_shared<mavros_msgs::srv::MessageInterval::Request>();
@@ -373,16 +403,13 @@ void FlightControllerInterface::requestMavlinkStreams() {
     msg_interval_req->message_rate = imu_rate_;
     auto attitude_res = msg_interval_client->async_send_request(msg_interval_req);
     if (rclcpp::spin_until_future_complete(msg_interval_node, attitude_res, 1s) ==
-        rclcpp::FutureReturnCode::SUCCESS) 
-    { 
+        rclcpp::FutureReturnCode::SUCCESS) {
         if (attitude_res.get()->success) {
             RCLCPP_INFO(this->get_logger(), "ATTITUDE message interval set");
-        }
-        else {
+        } else {
             RCLCPP_ERROR(this->get_logger(), "Failed to set message interval for ATTITUDE message");
         }
-    }
-    else {
+    } else {
         RCLCPP_ERROR(this->get_logger(), "Failed to call service /mavros/set_message_interval");
     }
 
@@ -391,16 +418,14 @@ void FlightControllerInterface::requestMavlinkStreams() {
     msg_interval_req->message_rate = local_pos_rate_;
     auto local_pos_res = msg_interval_client->async_send_request(msg_interval_req);
     if (rclcpp::spin_until_future_complete(msg_interval_node, local_pos_res, 1s) ==
-        rclcpp::FutureReturnCode::SUCCESS) 
-    { 
+        rclcpp::FutureReturnCode::SUCCESS) {
         if (local_pos_res.get()->success) {
             RCLCPP_INFO(this->get_logger(), "LOCAL_POSITION_NED message interval set");
+        } else {
+            RCLCPP_ERROR(this->get_logger(),
+                         "Failed to set message interval for LOCAL_POSITION_NED message");
         }
-        else {
-            RCLCPP_ERROR(this->get_logger(), "Failed to set message interval for LOCAL_POSITION_NED message");
-        }
-    }
-    else {
+    } else {
         RCLCPP_ERROR(this->get_logger(), "Failed to call service /mavros/set_message_interval");
     }
 
@@ -409,16 +434,14 @@ void FlightControllerInterface::requestMavlinkStreams() {
     msg_interval_req->message_rate = battery_rate_;
     auto battery_res = msg_interval_client->async_send_request(msg_interval_req);
     if (rclcpp::spin_until_future_complete(msg_interval_node, battery_res, 1s) ==
-        rclcpp::FutureReturnCode::SUCCESS) 
-    { 
+        rclcpp::FutureReturnCode::SUCCESS) {
         if (battery_res.get()->success) {
             RCLCPP_INFO(this->get_logger(), "BATTERY_STATUS message interval set");
+        } else {
+            RCLCPP_ERROR(this->get_logger(),
+                         "Failed to set message interval for BATTERY_STATUS message");
         }
-        else {
-            RCLCPP_ERROR(this->get_logger(), "Failed to set message interval for BATTERY_STATUS message");
-        }
-    }
-    else {
+    } else {
         RCLCPP_ERROR(this->get_logger(), "Failed to call service /mavros/set_message_interval");
     }
 }
@@ -435,28 +458,29 @@ void FlightControllerInterface::checkMsgRates() {
 
     if (imu_count_ / msg_rate_timer_dt_ < imu_rate_ * 0.8) {
         if (drone_initialized_)
-            RCLCPP_WARN(this->get_logger(), "Warning, IMU only sending at %f / %f hz", (imu_count_ / msg_rate_timer_dt_), imu_rate_);
+            RCLCPP_WARN(this->get_logger(), "Warning, IMU only sending at %f / %f hz",
+                        (imu_count_ / msg_rate_timer_dt_), imu_rate_);
         imu_rate_ok_ = false;
-    }
-    else {
+    } else {
         imu_rate_ok_ = true;
     }
 
     // Use battery message as proxy for all generic message streams
     if (battery_count_ / msg_rate_timer_dt_ < battery_rate_ * 0.8) {
         if (drone_initialized_)
-            RCLCPP_WARN(this->get_logger(), "Warning, battery only sending at %f / %f hz", (battery_count_ / msg_rate_timer_dt_), battery_rate_);
+            RCLCPP_WARN(this->get_logger(), "Warning, battery only sending at %f / %f hz",
+                        (battery_count_ / msg_rate_timer_dt_), battery_rate_);
         battery_rate_ok_ = false;
-    }
-    else {
+    } else {
         battery_rate_ok_ = true;
     }
 
-    // Also check local pos rate, but don't use this for initialization check b/c drone needs to initialize before
-    // vision pose starts publishing (which ultimately, local position comes from)
-    if (local_pos_count_ / msg_rate_timer_dt_ <  8) {
+    // Also check local pos rate, but don't use this for initialization check b/c drone needs to
+    // initialize before vision pose starts publishing (which ultimately, local position comes from)
+    if (local_pos_count_ / msg_rate_timer_dt_ < 8) {
         if (drone_initialized_)
-            RCLCPP_WARN(this->get_logger(), "Warning, local position only sending at %f / 10 hz", (local_pos_count_ / msg_rate_timer_dt_));
+            RCLCPP_WARN(this->get_logger(), "Warning, local position only sending at %f / 10 hz",
+                        (local_pos_count_ / msg_rate_timer_dt_));
     }
 
     // Reset counters
@@ -465,7 +489,8 @@ void FlightControllerInterface::checkMsgRates() {
     battery_count_ = 0;
 }
 
-bool FlightControllerInterface::getAveragedOrientation(geometry_msgs::msg::Quaternion &orientation) {
+bool FlightControllerInterface::getAveragedOrientation(
+    geometry_msgs::msg::Quaternion &orientation) {
 
     if (imu_averaging_vec_.size() < imu_averaging_n_) {
         RCLCPP_WARN(this->get_logger(), "IMU does not have enough samples for proper averaging");
@@ -488,10 +513,12 @@ bool FlightControllerInterface::getAveragedOrientation(geometry_msgs::msg::Quate
     return true;
 }
 
-void FlightControllerInterface::slamPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
+void FlightControllerInterface::slamPoseCallback(
+    const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
     current_slam_pose_ = *msg;
 
-    // Transform decco pose (in slam_map frame) and publish it in mavros_map frame as /mavros/vision_pose/pose
+    // Transform decco pose (in slam_map frame) and publish it in mavros_map frame as
+    // /mavros/vision_pose/pose
     if (!map_tf_init_) {
         return;
     }
@@ -499,9 +526,9 @@ void FlightControllerInterface::slamPoseCallback(const geometry_msgs::msg::PoseS
     // Apply the transform to the drone pose
     geometry_msgs::msg::PoseStamped vision_pose;
 
-    // Only transform based on rotation, not translation. 
-    // This effectively removes the initial offset between the lidar frame and base_link. So if initial /decco/pose is 0,0,0,
-    // then initial vision_pose will be 0,0,0.
+    // Only transform based on rotation, not translation.
+    // This effectively removes the initial offset between the lidar frame and base_link. So if
+    // initial /decco/pose is 0,0,0, then initial vision_pose will be 0,0,0.
     geometry_msgs::msg::TransformStamped map_to_slam_tf_no_trans = map_to_slam_tf_;
     map_to_slam_tf_no_trans.transform.translation.x = 0;
     map_to_slam_tf_no_trans.transform.translation.y = 0;
@@ -515,20 +542,23 @@ void FlightControllerInterface::slamPoseCallback(const geometry_msgs::msg::PoseS
 
     double time_since_last_pub = (this->get_clock()->now() - last_vision_pose_pub_stamp_).seconds();
     if (time_since_last_pub > 0.25 && last_vision_pose_pub_stamp_.nanoseconds() > 0) {
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Vision pose delay, time since last pub: %f", time_since_last_pub);
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                             "Vision pose delay, time since last pub: %f", time_since_last_pub);
     }
 
     last_vision_pose_pub_stamp_ = this->get_clock()->now();
 }
 
-void FlightControllerInterface::globalPositionCallback(const sensor_msgs::msg::NavSatFix::SharedPtr msg) {
+void FlightControllerInterface::globalPositionCallback(
+    const sensor_msgs::msg::NavSatFix::SharedPtr msg) {
     current_ll_ = *msg;
     // Check UTM zone
     double lat = msg->latitude, lon = msg->longitude;
     detected_utm_zone_ = GeographicLib::UTMUPS::StandardZone(lat, lon);
 }
 
-void FlightControllerInterface::localPositionCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
+void FlightControllerInterface::localPositionCallback(
+    const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
     current_pose_ = *msg;
     local_pos_count_++;
 }
@@ -540,12 +570,10 @@ void FlightControllerInterface::imuCallback(const sensor_msgs::msg::Imu::SharedP
     // Add to IMU array for averaging
     if (imu_averaging_vec_.size() < imu_averaging_n_) {
         imu_averaging_vec_.push_back(current_imu_);
-    }
-    else if (!imu_init_) {
+    } else if (!imu_init_) {
         // Determine initial orientation when code starts for slam map correction
         imu_init_ = getAveragedOrientation(mavros_imu_init_.orientation);
     }
-
 }
 
 void FlightControllerInterface::compassCallback(const std_msgs::msg::Float64::SharedPtr msg) {
@@ -553,32 +581,35 @@ void FlightControllerInterface::compassCallback(const std_msgs::msg::Float64::Sh
     compass_hdg_ = msg->data;
 }
 
-void FlightControllerInterface::batteryCallback(const sensor_msgs::msg::BatteryState::SharedPtr msg) {
+void FlightControllerInterface::batteryCallback(
+    const sensor_msgs::msg::BatteryState::SharedPtr msg) {
     current_battery_ = *msg;
     battery_count_++;
 
     float current = -msg->current; // Mavros current is negative
     battery_voltage_ = msg->voltage;
 
-    // If current is low, we can estimate battery percentage from voltage. 
-    // We use this 'last resting percent' as the starting point for calculations for 
-    // remaining battery life. 
+    // If current is low, we can estimate battery percentage from voltage.
+    // We use this 'last resting percent' as the starting point for calculations for
+    // remaining battery life.
     if (current < 1.f) {
         last_resting_percent_ = calculateBatteryPercentage(battery_voltage_);
         last_resting_percent_time_ = this->get_clock()->now();
         current_drawn_since_resting_percent_ = 0.f;
     }
 
-    current_drawn_since_resting_percent_ += current * (this->get_clock()->now() - last_battery_measurement_).seconds() / 3600;
+    current_drawn_since_resting_percent_ +=
+        current * (this->get_clock()->now() - last_battery_measurement_).seconds() / 3600;
     last_battery_measurement_ = this->get_clock()->now();
 
-    float battery_percent_drawn_since_resting_ = current_drawn_since_resting_percent_ / battery_size_ * 100.f;
+    float battery_percent_drawn_since_resting_ =
+        current_drawn_since_resting_percent_ / battery_size_ * 100.f;
     battery_percentage_ = last_resting_percent_ - battery_percent_drawn_since_resting_;
     float amp_hours_left = battery_size_ * battery_percentage_ / 100.f;
 
-
-    // Use current estimate and remaining amp hours to determine how many seconds of flight time we have left
-    // If current is below 5A, it is likely not accurate in reflecting hover current, so don't update current calculation
+    // Use current estimate and remaining amp hours to determine how many seconds of flight time we
+    // have left If current is below 5A, it is likely not accurate in reflecting hover current, so
+    // don't update current calculation
     if (current > 5.0) {
         recent_currents_.push_back(current);
         recent_currents_.erase(recent_currents_.begin());
@@ -620,7 +651,8 @@ void FlightControllerInterface::altitudeCallback(const std_msgs::msg::Float64::S
     current_altitude_ = msg->data;
 }
 
-void FlightControllerInterface::sysStatusCallback(const mavros_msgs::msg::SysStatus::SharedPtr msg) {
+void FlightControllerInterface::sysStatusCallback(
+    const mavros_msgs::msg::SysStatus::SharedPtr msg) {
     // Bitwise check of healthy sensors vs enabled sensors
     ready_to_arm_ = (msg->sensors_health & msg->sensors_enabled) == msg->sensors_enabled;
 
@@ -652,8 +684,7 @@ void FlightControllerInterface::sysStatusCallback(const mavros_msgs::msg::SysSta
         !(msg->sensors_health & (uint32_t)STS::DIFFERENTIAL_PRESSURE))
         reasons += "differential pressure, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::GPS &&
-        !(msg->sensors_health & (uint32_t)STS::GPS))
+    if (msg->sensors_enabled & (uint32_t)STS::GPS && !(msg->sensors_health & (uint32_t)STS::GPS))
         reasons += "GPS, ";
 
     if (msg->sensors_enabled & (uint32_t)STS::OPTICAL_FLOW &&
@@ -684,7 +715,7 @@ void FlightControllerInterface::sysStatusCallback(const mavros_msgs::msg::SysSta
         !(msg->sensors_health & (uint32_t)STS::YAW_POSITION))
         reasons += "yaw position, ";
 
-	if (msg->sensors_enabled & (uint32_t)STS::Z_ALTITUDE_CONTROL &&
+    if (msg->sensors_enabled & (uint32_t)STS::Z_ALTITUDE_CONTROL &&
         !(msg->sensors_health & (uint32_t)STS::Z_ALTITUDE_CONTROL))
         reasons += "z altitude control, ";
 
@@ -712,12 +743,11 @@ void FlightControllerInterface::sysStatusCallback(const mavros_msgs::msg::SysSta
         !(msg->sensors_health & (uint32_t)STS::SENSOR_3D_MAG2))
         reasons += "magnetometer 2, ";
 
-	if (msg->sensors_enabled & (uint32_t)STS::GEOFENCE &&
+    if (msg->sensors_enabled & (uint32_t)STS::GEOFENCE &&
         !(msg->sensors_health & (uint32_t)STS::GEOFENCE))
         reasons += "geofence, ";
 
-    if (msg->sensors_enabled & (uint32_t)STS::AHRS &&
-        !(msg->sensors_health & (uint32_t)STS::AHRS))
+    if (msg->sensors_enabled & (uint32_t)STS::AHRS && !(msg->sensors_health & (uint32_t)STS::AHRS))
         reasons += "AHRS, ";
 
     if (msg->sensors_enabled & (uint32_t)STS::TERRAIN &&
@@ -762,7 +792,8 @@ void FlightControllerInterface::sysStatusCallback(const mavros_msgs::msg::SysSta
     preflight_check_reasons_ = reasons;
 }
 
-void FlightControllerInterface::statusTextCallback(const mavros_msgs::msg::StatusText::SharedPtr  msg) {
+void FlightControllerInterface::statusTextCallback(
+    const mavros_msgs::msg::StatusText::SharedPtr msg) {
     std::string text = msg->text;
     std::string prefix = "PreArm: ";
 
@@ -781,18 +812,18 @@ void FlightControllerInterface::statusTextCallback(const mavros_msgs::msg::Statu
 
 bool FlightControllerInterface::setMode(std::string mode) {
     std::shared_ptr<rclcpp::Node> set_mode_node = rclcpp::Node::make_shared("set_mode_client");
-    auto set_mode_client = set_mode_node->create_client<mavros_msgs::srv::SetMode>("/mavros/set_mode");
+    auto set_mode_client =
+        set_mode_node->create_client<mavros_msgs::srv::SetMode>("/mavros/set_mode");
 
     auto set_mode_req = std::make_shared<mavros_msgs::srv::SetMode::Request>();
     set_mode_req->custom_mode = mode;
     auto result = set_mode_client->async_send_request(set_mode_req);
     if (rclcpp::spin_until_future_complete(set_mode_node, result, 1s) ==
-            rclcpp::FutureReturnCode::SUCCESS
-            && result.get()->mode_sent) {
+            rclcpp::FutureReturnCode::SUCCESS &&
+        result.get()->mode_sent) {
         RCLCPP_INFO(this->get_logger(), "Mode set to: %s", mode.c_str());
         return true;
-    }
-    else {
+    } else {
         RCLCPP_WARN(this->get_logger(), "Mode set failed: %s", mode.c_str());
         return false;
     }
@@ -815,13 +846,11 @@ bool FlightControllerInterface::arm() {
     arm_cmd_req->value = true;
     auto result = arm_client->async_send_request(arm_cmd_req);
 
-    if (rclcpp::spin_until_future_complete(arm_node, result) ==
-            rclcpp::FutureReturnCode::SUCCESS
-            && result.get()->success){
+    if (rclcpp::spin_until_future_complete(arm_node, result) == rclcpp::FutureReturnCode::SUCCESS &&
+        result.get()->success) {
         RCLCPP_INFO(this->get_logger(), "Vehicle armed");
         armed_ = true;
-    }
-    else {
+    } else {
         RCLCPP_WARN(this->get_logger(), "Arming failed");
         armed_ = false;
     }
@@ -854,18 +883,18 @@ bool FlightControllerInterface::takeOff(const double takeoff_altitude) {
     RCLCPP_INFO(this->get_logger(), "Requesting takeoff to %fm", takeoff_altitude);
 
     std::shared_ptr<rclcpp::Node> takeoff_node = rclcpp::Node::make_shared("takeoff_client");
-    auto takeoff_client = takeoff_node->create_client<mavros_msgs::srv::CommandTOL>("/mavros/cmd/takeoff");
+    auto takeoff_client =
+        takeoff_node->create_client<mavros_msgs::srv::CommandTOL>("/mavros/cmd/takeoff");
     auto takeoff_req = std::make_shared<mavros_msgs::srv::CommandTOL::Request>();
 
     takeoff_req->altitude = takeoff_altitude;
     auto result = takeoff_client->async_send_request(takeoff_req);
     if (rclcpp::spin_until_future_complete(takeoff_node, result) ==
-            rclcpp::FutureReturnCode::SUCCESS
-            && result.get()->success) {
+            rclcpp::FutureReturnCode::SUCCESS &&
+        result.get()->success) {
         RCLCPP_INFO(this->get_logger(), "Vehicle takeoff succeeded");
         return true;
-    }
-    else {
+    } else {
         RCLCPP_WARN(this->get_logger(), "Vehicle takeoff failed");
         return false;
     }
@@ -880,39 +909,35 @@ float FlightControllerInterface::calculateBatteryPercentage(float voltage) {
     // Use voltage per cell as that is more flexible. Currently we can just hardcode 6 cell
     voltage = voltage / 6.f;
 
-    // Battery voltage to battery percentage conversion is not linear. 
+    // Battery voltage to battery percentage conversion is not linear.
     // Use this piecewise function based on gathered data to estimate battery percentage.
     if (voltage >= 4.2) {
         battery_percentage = 100.0;
-    }
-    else if (voltage >= 3.85) {
+    } else if (voltage >= 3.85) {
         // For this voltage range:
         // voltage ~= 0.7*(percentage) + 3.5, so
         battery_percentage = (voltage - 3.5) / 0.7 * 100;
-    }
-    else if (voltage >= 3.7) {
+    } else if (voltage >= 3.7) {
         // For this voltage range:
         // voltage ~= 0.333*(percentage) + 3.683
         battery_percentage = (voltage - 3.683) / 0.333 * 100;
-    }
-    else if (voltage >= 3.5) {
+    } else if (voltage >= 3.5) {
         // For this voltage range:
         // voltage ~= 4*(percentage) + 3.5
         battery_percentage = (voltage - 3.5) / 4 * 100;
-    }
-    else {
+    } else {
         battery_percentage = 0.0;
     }
 
     return battery_percentage;
 }
 
-
-// These are old methods of getting battery percentage. They aren't currently used but I don't want to delete them just yet.
+// These are old methods of getting battery percentage. They aren't currently used but I don't want
+// to delete them just yet.
 
 // void FlightControllerInterface::calculateBatteryPercentage(float voltage_adj) {
 
-//     // Battery voltage to battery percentage conversion is not linear. 
+//     // Battery voltage to battery percentage conversion is not linear.
 //     // Use this piecewise function based on gathered data to estimate battery percentage.
 //     if (voltage_adj >= 25.2) {
 //         battery_percentage_ = 100.0;
@@ -920,7 +945,7 @@ float FlightControllerInterface::calculateBatteryPercentage(float voltage) {
 //     else if (voltage_adj >= 22.95) {
 //         // For this voltage range:
 //         // voltage ~= 2.9*(1-percentage)^2 - 5.95*(1-percentage) + 25.2
-//         // To get percentage, use quadratic formula. 
+//         // To get percentage, use quadratic formula.
 //         // 0 = 2.9*(1-percentage)^2 - 5.95*(1-percentage) + 25.2 - voltage
 //         float a = 2.9;
 //         float b = -5.95;
@@ -949,7 +974,7 @@ float FlightControllerInterface::calculateBatteryPercentage(float voltage) {
 // float FlightControllerInterface::findValidRoot(float a, float b, float c) {
 //     float discriminant = b*b - 4*a*c;
 //     float x1, x2;
-    
+
 //     if (discriminant < 0) {
 //         RCLCPP_WARN(this->get_logger(), "Invalid battery calculation");
 //         return 0.0;
@@ -964,4 +989,4 @@ float FlightControllerInterface::calculateBatteryPercentage(float voltage) {
 //     }
 // }
 
-}
+} // namespace flight_controller_interface
