@@ -26,6 +26,7 @@
   <depend>pcl_conversions</depend>
   <depend>pcl_ros</depend>
   <depend>std_msgs</depend>
+  <depend>seek_thermal_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>tf2</depend>
   <depend>tf2_ros</depend>

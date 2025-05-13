@@ -25,6 +25,7 @@ find_package(mavros_msgs REQUIRED)
 find_package(messages_88 REQUIRED)
 find_package(opencv_cam_msgs REQUIRED)
 find_package(pcl_ros REQUIRED)
+find_package(seek_thermal_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(tf2 REQUIRED)
@@ -69,6 +70,7 @@ ament_target_dependencies(task_manager
   std_msgs
   visualization_msgs
   opencv_cam_msgs
+  seek_thermal_msgs
 )
 
 target_link_libraries(task_manager 
