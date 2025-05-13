@@ -212,32 +212,6 @@ TaskManager::TaskManager(
     min_agl_ = min_altitude_;
     target_agl_ = target_altitude_;
 
-    // Add to camera names based on which devices are present
-    if (do_mapir_rgn_) {
-        camera_names_.push_back("mapir_rgn");
-    }
-    if (do_mapir_rgb_) {
-        camera_names_.push_back("mapir_rgb");
-    }
-    if (do_attollo_) {
-        camera_names_.push_back("attollo");
-    }
-    if (do_seek_thermal_) {
-        camera_names_.push_back("seek_thermal");
-    }
-    if (do_see3cam_down_) {
-        camera_names_.push_back("see3cam_down");
-    }
-    if (do_see3cam_fwd_) {
-        camera_names_.push_back("see3cam_fwd");
-    }
-    if (do_immervision_down_) {
-        camera_names_.push_back("immervision_down");
-    }
-    if (do_immervision_front_) {
-        camera_names_.push_back("immervision_front");
-    }
-
     // Clicked point sub
     clicked_point_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(
         "/clicked_point", 10, std::bind(&TaskManager::clickedPointCallback, this, _1));
@@ -373,6 +347,9 @@ TaskManager::TaskManager(
     tif_pcl_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
         "/tif_pcl", rclcpp::QoS(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data))
                         .transient_local());
+
+    trigger_recording_pub_ =
+        this->create_publisher<opencv_cam_msgs::msg::TriggerRecording>("/trigger_recording", 10);
 }
 
 TaskManager::~TaskManager() {}
@@ -1208,80 +1185,19 @@ void TaskManager::startRecording() {
         }
     }
 
-    // Also request to start recording video from video recorder nodes
-    for (auto &camera_name : camera_names_) {
-        std::shared_ptr<rclcpp::Node> video_record_node =
-            rclcpp::Node::make_shared("video_record_client");
-        std::string service_name;
-        if (camera_name == "seek_thermal") {
-            service_name = "/seek_thermal/record";
-        } else {
-            service_name = "/" + camera_name + "/opencv_cam/record";
-        }
-
-        auto video_recorder_client =
-            video_record_node->create_client<messages_88::srv::RecordVideo>(service_name);
-
-        if (!video_recorder_client->wait_for_service(1s)) {
-            std::string error_msg = service_name + " service not available";
-            RCLCPP_INFO(this->get_logger(), "%s", error_msg.c_str());
-        } else {
-            auto req = std::make_shared<messages_88::srv::RecordVideo::Request>();
-            req->start = true;
-            req->filename = flight_directory + "/" + camera_name + "_" + start_time + ".mp4";
-
-            auto result = video_recorder_client->async_send_request(req);
-            if (rclcpp::spin_until_future_complete(video_record_node, result, 1s) ==
-                rclcpp::FutureReturnCode::SUCCESS) {
-                if (!result.get()->success) {
-                    std::string error_msg = "Failed to start video recording on " + service_name;
-                    RCLCPP_WARN(this->get_logger(), "%s", error_msg.c_str());
-                }
-            } else {
-                std::string error_msg = "Failed to call service " + service_name;
-                RCLCPP_ERROR(this->get_logger(), "%s", error_msg.c_str());
-            }
-        }
-    }
+    auto msg = opencv_cam_msgs::msg::TriggerRecording();
+    msg.start = true;
+    msg.data_directory = flight_directory;
+    trigger_recording_pub_->publish(msg);
 
     recording_ = true;
 }
 
 void TaskManager::stopRecording() {
 
-    // Stop all video
-    for (auto &camera_name : camera_names_) {
-        std::shared_ptr<rclcpp::Node> video_record_node =
-            rclcpp::Node::make_shared("video_record_client");
-        std::string service_name;
-        if (camera_name == "seek_thermal") {
-            service_name = "/seek_thermal/record";
-        } else {
-            service_name = "/" + camera_name + "/opencv_cam/record";
-        }
-        auto video_recorder_client =
-            video_record_node->create_client<messages_88::srv::RecordVideo>(service_name);
-
-        if (!video_recorder_client->wait_for_service(1s)) {
-            std::string error_msg = "Video recorder service not available on " + service_name;
-            RCLCPP_INFO(this->get_logger(), "%s", error_msg.c_str());
-        } else {
-            auto req = std::make_shared<messages_88::srv::RecordVideo::Request>();
-            req->start = false;
-
-            auto result = video_recorder_client->async_send_request(req);
-            if (rclcpp::spin_until_future_complete(video_record_node, result, 1s) ==
-                rclcpp::FutureReturnCode::SUCCESS) {
-                if (!result.get()->success) {
-                    std::string error_msg = "Failed to stop video recording on " + service_name;
-                    RCLCPP_WARN(this->get_logger(), "%s", error_msg.c_str());
-                }
-            } else {
-                std::string error_msg = "Failed to call service " + service_name;
-                RCLCPP_ERROR(this->get_logger(), "%s", error_msg.c_str());
-            }
-        }
-    }
+    auto msg = opencv_cam_msgs::msg::TriggerRecording();
+    msg.start = false;
+    trigger_recording_pub_->publish(msg);
 
     // Deal with rosbag
     std::shared_ptr<rclcpp::Node> bag_record_node = rclcpp::Node::make_shared("bag_record_client");

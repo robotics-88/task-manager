@@ -17,7 +17,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "geometry_msgs/msg/polygon.h"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
-
+#include "std_msgs/msg/bool.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
 
 #include "livox_ros_driver2/msg/custom_msg.hpp"
@@ -37,8 +37,9 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "messages_88/srv/emergency.hpp"
 #include "messages_88/srv/geopoint.hpp"
 #include "messages_88/srv/get_map_data.hpp"
-#include "messages_88/srv/record_video.hpp"
 #include "messages_88/srv/save.hpp"
+
+#include "opencv_cam_msgs/msg/trigger_recording.hpp"
 
 #include "pcl/point_cloud.h"
 #include "pcl/point_types.h"
@@ -144,6 +145,7 @@ class TaskManager : public rclcpp::Node {
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr map_region_pub_;
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr tif_grid_pub_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr tif_pcl_pub_;
+    rclcpp::Publisher<opencv_cam_msgs::msg::TriggerRecording>::SharedPtr trigger_recording_pub_;
 
     // Subscriptions
     rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr clicked_point_sub_;
@@ -272,7 +274,6 @@ class TaskManager : public rclcpp::Node {
     bool do_record_;
     bool recording_;
     std::string record_config_file_;
-    std::vector<std::string> camera_names_;
 
     // Drone state params
     geometry_msgs::msg::PoseStamped slam_pose_;
