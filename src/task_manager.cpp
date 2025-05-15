@@ -349,10 +349,7 @@ TaskManager::TaskManager(
                         .transient_local());
 
     trigger_recording_pub_ =
-        this->create_publisher<opencv_cam_msgs::msg::TriggerRecording>("/trigger_recording", 10);
-
-    trigger_seek_recording_pub_ = this->create_publisher<seek_thermal_msgs::msg::TriggerRecording>(
-        "/trigger_seek_recording", 10);
+        this->create_publisher<std_msgs::msg::String>("/trigger_recording", 10);
 }
 
 TaskManager::~TaskManager() {}
@@ -1188,28 +1185,18 @@ void TaskManager::startRecording() {
         }
     }
 
-    auto msg = opencv_cam_msgs::msg::TriggerRecording();
-    msg.start = true;
-    msg.data_directory = flight_directory;
+    auto msg = std_msgs::msg::String();
+    msg.data = flight_directory;
     trigger_recording_pub_->publish(msg);
-
-    auto seek_msg = seek_thermal_msgs::msg::TriggerRecording();
-    seek_msg.start = true;
-    seek_msg.data_directory = flight_directory;
-    trigger_seek_recording_pub_->publish(seek_msg);
 
     recording_ = true;
 }
 
 void TaskManager::stopRecording() {
 
-    auto msg = opencv_cam_msgs::msg::TriggerRecording();
-    msg.start = false;
+    auto msg = std_msgs::msg::String();
+    msg.data = "";
     trigger_recording_pub_->publish(msg);
-
-    auto seek_msg = seek_thermal_msgs::msg::TriggerRecording();
-    seek_msg.start = false;
-    trigger_seek_recording_pub_->publish(seek_msg);
 
     // Deal with rosbag
     std::shared_ptr<rclcpp::Node> bag_record_node = rclcpp::Node::make_shared("bag_record_client");

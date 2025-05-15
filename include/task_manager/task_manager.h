@@ -39,13 +39,10 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "messages_88/srv/get_map_data.hpp"
 #include "messages_88/srv/save.hpp"
 
-#include "opencv_cam_msgs/msg/trigger_recording.hpp"
-
 #include "pcl/point_cloud.h"
 #include "pcl/point_types.h"
 #include "pcl_conversions/pcl_conversions.h"
 #include "pcl_ros/transforms.hpp"
-#include "seek_thermal_msgs/msg/trigger_recording.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
@@ -146,9 +143,7 @@ class TaskManager : public rclcpp::Node {
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr map_region_pub_;
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr tif_grid_pub_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr tif_pcl_pub_;
-    rclcpp::Publisher<opencv_cam_msgs::msg::TriggerRecording>::SharedPtr trigger_recording_pub_;
-    rclcpp::Publisher<seek_thermal_msgs::msg::TriggerRecording>::SharedPtr
-        trigger_seek_recording_pub_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr trigger_recording_pub_;
 
     // Subscriptions
     rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr clicked_point_sub_;
