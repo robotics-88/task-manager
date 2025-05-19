@@ -64,10 +64,6 @@ TaskManager::TaskManager(
       path_planner_topic_("/path_planner/heartbeat"),
       costmap_topic_("/occ_density_grid"),
       lidar_topic_("/cloud_registered"),
-      thermal_topic_("/thermal_cam/image_rect_color"),
-      attollo_topic_("/mapir_rgn/image_rect"),
-      mapir_topic_("/mapir_rgn/image_rect_color"),
-      mapir_rgb_topic_("/mapir_rgn/image_rect_color"),
       rosbag_topic_("/record/heartbeat"),
       initialized_(false),
       is_armed_(false),
@@ -90,9 +86,6 @@ TaskManager::TaskManager(
       last_lidar_stamp_(0, 0, RCL_ROS_TIME),
       last_path_planner_stamp_(0, 0, RCL_ROS_TIME),
       last_costmap_stamp_(0, 0, RCL_ROS_TIME),
-      last_mapir_stamp_(0, 0, RCL_ROS_TIME),
-      last_thermal_stamp_(0, 0, RCL_ROS_TIME),
-      last_attollo_stamp_(0, 0, RCL_ROS_TIME),
       last_rosbag_stamp_(0, 0, RCL_ROS_TIME),
       last_health_pub_stamp_(0, 0, RCL_ROS_TIME),
       last_preflight_check_log_stamp_(0, 0, RCL_ROS_TIME),
@@ -101,9 +94,6 @@ TaskManager::TaskManager(
       vision_pose_timeout_(rclcpp::Duration::from_seconds(0.5)),
       path_timeout_(rclcpp::Duration::from_seconds(3.0)),
       costmap_timeout_(rclcpp::Duration::from_seconds(3.0)),
-      mapir_timeout_(rclcpp::Duration::from_seconds(1.0)),
-      attollo_timeout_(rclcpp::Duration::from_seconds(1.0)),
-      thermal_timeout_(rclcpp::Duration::from_seconds(1.0)),
       rosbag_timeout_(rclcpp::Duration::from_seconds(1.0)) {
     RCLCPP_INFO(this->get_logger(), "TM entered init");
 
@@ -126,10 +116,6 @@ TaskManager::TaskManager(
     this->declare_parameter("slam_pose_topic", slam_pose_topic_);
     this->declare_parameter("costmap_topic", costmap_topic_);
     this->declare_parameter("lidar_topic", lidar_topic_);
-    this->declare_parameter("attollo_topic", attollo_topic_);
-    this->declare_parameter("mapir_topic", mapir_topic_);
-    this->declare_parameter("mapir_rgb_topic", mapir_rgb_topic_);
-    this->declare_parameter("thermal_topic", thermal_topic_);
     this->declare_parameter("rosbag_topic", rosbag_topic_);
     this->declare_parameter("offline", offline_);
     this->declare_parameter("simulate", simulate_);
@@ -142,14 +128,6 @@ TaskManager::TaskManager(
             ? 1.0
             : estimated_drone_speed_; // this protects against a later potential div by 0
     this->declare_parameter("battery_failsafe_safety_factor", battery_failsafe_safety_factor_);
-    this->declare_parameter("do_mapir_rgn", do_mapir_rgn_);
-    this->declare_parameter("do_mapir_rgb", do_mapir_rgb_);
-    this->declare_parameter("do_attollo", do_attollo_);
-    this->declare_parameter("do_seek_thermal", do_seek_thermal_);
-    this->declare_parameter("do_see3cam_down", do_see3cam_down_);
-    this->declare_parameter("do_see3cam_fwd", do_see3cam_fwd_);
-    this->declare_parameter("do_immervision_down", do_immervision_down_);
-    this->declare_parameter("do_immervision_front", do_immervision_front_);
     int lidar_type = 4;
     this->declare_parameter("lidar_type", lidar_type);
     this->declare_parameter("lidar_pitch", lidar_pitch_);
@@ -175,10 +153,6 @@ TaskManager::TaskManager(
     this->get_parameter("slam_pose_topic", slam_pose_topic_);
     this->get_parameter("costmap_topic", costmap_topic_);
     this->get_parameter("lidar_topic", lidar_topic_);
-    this->get_parameter("attollo_topic", attollo_topic_);
-    this->get_parameter("mapir_topic", mapir_topic_);
-    this->get_parameter("mapir_rgb_topic", mapir_rgb_topic_);
-    this->get_parameter("thermal_topic", thermal_topic_);
     this->get_parameter("rosbag_topic", rosbag_topic_);
     this->get_parameter("offline", offline_);
     this->get_parameter("simulate", simulate_);
@@ -191,14 +165,6 @@ TaskManager::TaskManager(
             ? 1.0
             : estimated_drone_speed_; // this protects against a later potential div by 0
     this->get_parameter("battery_failsafe_safety_factor", battery_failsafe_safety_factor_);
-    this->get_parameter("do_mapir_rgn", do_mapir_rgn_);
-    this->get_parameter("do_mapir_rgb", do_mapir_rgb_);
-    this->get_parameter("do_attollo", do_attollo_);
-    this->get_parameter("do_seek_thermal", do_seek_thermal_);
-    this->get_parameter("do_see3cam_down", do_see3cam_down_);
-    this->get_parameter("do_see3cam_fwd", do_see3cam_fwd_);
-    this->get_parameter("do_immervision_down", do_immervision_down_);
-    this->get_parameter("do_immervision_front", do_immervision_front_);
     this->get_parameter("lidar_type", lidar_type);
     this->get_parameter("lidar_pitch", lidar_pitch_);
     this->get_parameter("lidar_x", lidar_x_);
@@ -239,21 +205,6 @@ TaskManager::TaskManager(
     } else if (lidar_type == 4) {
         livox_lidar_sub_ = this->create_subscription<livox_ros_driver2::msg::CustomMsg>(
             lidar_topic_, 10, std::bind(&TaskManager::livoxCallback, this, _1));
-    }
-    if (do_mapir_rgn_) {
-        mapir_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
-            mapir_topic_, 10, std::bind(&TaskManager::mapirCallback, this, _1));
-    } else if (do_mapir_rgb_) {
-        mapir_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
-            mapir_rgb_topic_, 10, std::bind(&TaskManager::mapirCallback, this, _1));
-    }
-    if (do_attollo_) {
-        attollo_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
-            attollo_topic_, 10, std::bind(&TaskManager::attolloCallback, this, _1));
-    }
-    if (do_seek_thermal_) {
-        thermal_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
-            thermal_topic_, 10, std::bind(&TaskManager::thermalCallback, this, _1));
     }
 
     rosbag_sub_ = this->create_subscription<std_msgs::msg::String>(
@@ -586,9 +537,6 @@ void TaskManager::checkHealth() {
         now - flight_controller_interface_->getLastVisionPosePubStamp() < vision_pose_timeout_;
     health_checks_.path_ok = now - last_path_planner_stamp_ < path_timeout_;
     health_checks_.costmap_ok = now - last_costmap_stamp_ < costmap_timeout_;
-    health_checks_.mapir_ok = now - last_mapir_stamp_ < mapir_timeout_;
-    health_checks_.attollo_ok = now - last_attollo_stamp_ < attollo_timeout_;
-    health_checks_.thermal_ok = now - last_thermal_stamp_ < thermal_timeout_;
     health_checks_.rosbag_ok = now - last_rosbag_stamp_ < rosbag_timeout_;
 
     if (now - last_health_pub_stamp_ > health_check_pub_duration_) {
@@ -1302,18 +1250,6 @@ void TaskManager::livoxCallback(const livox_ros_driver2::msg::CustomMsg::SharedP
     last_lidar_stamp_ = this->get_clock()->now();
 }
 
-void TaskManager::mapirCallback(const sensor_msgs::msg::Image::SharedPtr msg) {
-    last_mapir_stamp_ = this->get_clock()->now();
-}
-
-void TaskManager::attolloCallback(const sensor_msgs::msg::Image::SharedPtr msg) {
-    last_attollo_stamp_ = this->get_clock()->now();
-}
-
-void TaskManager::thermalCallback(const sensor_msgs::msg::Image::SharedPtr msg) {
-    last_thermal_stamp_ = this->get_clock()->now();
-}
-
 void TaskManager::rosbagCallback(const std_msgs::msg::String::SharedPtr msg) {
     last_rosbag_stamp_ = this->get_clock()->now();
 }
@@ -1676,25 +1612,6 @@ void TaskManager::publishHealth() {
         j = {{"name", "costmap"}, {"label", "Costmap"}, {"isHealthy", health_checks_.costmap_ok}};
         healthObjects.push_back(j);
 
-        healthObjects.push_back(j);
-    }
-    // MAPIR
-    if (do_mapir_rgn_ || do_mapir_rgb_) {
-        j = {{"name", "mapir"}, {"label", "MAPIR Camera"}, {"isHealthy", health_checks_.mapir_ok}};
-        healthObjects.push_back(j);
-    }
-    // Attollo
-    if (do_attollo_) {
-        j = {{"name", "attollo"},
-             {"label", "Attollo Camera"},
-             {"isHealthy", health_checks_.attollo_ok}};
-        healthObjects.push_back(j);
-    }
-    // Thermal
-    if (do_seek_thermal_) {
-        j = {{"name", "thermal"},
-             {"label", "Thermal Camera"},
-             {"isHealthy", health_checks_.thermal_ok}};
         healthObjects.push_back(j);
     }
     // ROS bag

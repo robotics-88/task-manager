@@ -98,9 +98,6 @@ class TaskManager : public rclcpp::Node {
     void costmapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
     void pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
     void livoxCallback(const livox_ros_driver2::msg::CustomMsg::SharedPtr msg);
-    void mapirCallback(const sensor_msgs::msg::Image::SharedPtr msg);
-    void attolloCallback(const sensor_msgs::msg::Image::SharedPtr msg);
-    void thermalCallback(const sensor_msgs::msg::Image::SharedPtr msg);
     void rosbagCallback(const std_msgs::msg::String::SharedPtr msg);
     void goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
 
@@ -136,9 +133,6 @@ class TaskManager : public rclcpp::Node {
     rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr costmap_sub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr lidar_sub_;
     rclcpp::Subscription<livox_ros_driver2::msg::CustomMsg>::SharedPtr livox_lidar_sub_;
-    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr mapir_sub_;
-    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr attollo_sub_;
-    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr thermal_sub_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr rosbag_sub_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr tymbal_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr slam_pose_sub_;
@@ -152,35 +146,22 @@ class TaskManager : public rclcpp::Node {
         bool slam_ok;
         bool path_ok;
         bool costmap_ok;
-        bool mapir_ok;
-        bool attollo_ok;
-        bool thermal_ok;
         bool rosbag_ok;
     } health_checks_;
 
     std::string path_planner_topic_;
     std::string costmap_topic_;
     std::string lidar_topic_;
-    std::string attollo_topic_;
-    std::string mapir_rgb_topic_;
-    std::string mapir_topic_;
-    std::string thermal_topic_;
     std::string rosbag_topic_;
 
     rclcpp::Duration lidar_timeout_;
     rclcpp::Duration vision_pose_timeout_;
     rclcpp::Duration path_timeout_;
     rclcpp::Duration costmap_timeout_;
-    rclcpp::Duration mapir_timeout_;
-    rclcpp::Duration attollo_timeout_;
-    rclcpp::Duration thermal_timeout_;
     rclcpp::Duration rosbag_timeout_;
     rclcpp::Time last_lidar_stamp_;
     rclcpp::Time last_path_planner_stamp_;
     rclcpp::Time last_costmap_stamp_;
-    rclcpp::Time last_mapir_stamp_;
-    rclcpp::Time last_thermal_stamp_;
-    rclcpp::Time last_attollo_stamp_;
     rclcpp::Time last_rosbag_stamp_;
 
     float task_manager_loop_duration_;
@@ -195,15 +176,6 @@ class TaskManager : public rclcpp::Node {
     bool enable_autonomy_;
     bool use_failsafes_;
     bool do_trail_;
-
-    bool do_attollo_;
-    bool do_mapir_rgn_;
-    bool do_mapir_rgb_;
-    bool do_seek_thermal_;
-    bool do_see3cam_down_;
-    bool do_see3cam_fwd_;
-    bool do_immervision_down_;
-    bool do_immervision_front_;
 
     // Offline handling
     bool offline_;
