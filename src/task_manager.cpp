@@ -290,18 +290,6 @@ TaskManager::TaskManager(
 
     marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/lawnmower", 10);
 
-    // Remote ID
-    odid_basic_id_pub_ =
-        this->create_publisher<mavros_msgs::msg::BasicID>("/mavros/open_drone_id/basic_id", 10);
-    odid_operator_id_pub_ = this->create_publisher<mavros_msgs::msg::OperatorID>(
-        "/mavros/open_drone_id/operator_id", 10);
-    odid_self_id_pub_ =
-        this->create_publisher<mavros_msgs::msg::SelfID>("/mavros/open_drone_id/self_id", 10);
-    odid_system_pub_ =
-        this->create_publisher<mavros_msgs::msg::System>("/mavros/open_drone_id/system", 10);
-    odid_system_update_pub_ = this->create_publisher<mavros_msgs::msg::SystemUpdate>(
-        "/mavros/open_drone_id/system_update", 10);
-
     // Task status pub
     task_pub_ = this->create_publisher<messages_88::msg::TaskStatus>("task_status", 10);
     goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
@@ -332,7 +320,6 @@ TaskManager::TaskManager(
                                 std::bind(&TaskManager::runTaskManager, this));
     heartbeat_timer_ =
         this->create_wall_timer(1s, std::bind(&TaskManager::heartbeatTimerCallback, this));
-    odid_timer_ = this->create_wall_timer(1s, std::bind(&TaskManager::odidTimerCallback, this));
 
     // To be tested later
     // utm_tf_update_timer_ = this->create_wall_timer(1s, std::bind(&TaskManager::updateUTMTF,
@@ -1069,22 +1056,6 @@ void TaskManager::heartbeatTimerCallback() {
     // }
 }
 
-// Publish the ODID messages that require updates
-void TaskManager::odidTimerCallback() {
-
-    // Self ID
-    mavros_msgs::msg::SelfID self_id;
-    self_id.header.stamp = this->get_clock()->now();
-    if (current_task_ == Task::FAILSAFE_LANDING) {
-        self_id.description_type = mavros_msgs::msg::SelfID::MAV_ODID_DESC_TYPE_EMERGENCY;
-        self_id.description = "FAILSAFE. CAUTION";
-    } else {
-        self_id.description_type = mavros_msgs::msg::SelfID::MAV_ODID_DESC_TYPE_TEXT;
-        self_id.description = getTaskString(current_task_);
-    }
-    odid_self_id_pub_->publish(self_id);
-}
-
 void TaskManager::uiHeartbeatCallback(const json &msg) {
     last_ui_heartbeat_stamp_ = this->get_clock()->now();
 }
@@ -1525,8 +1496,6 @@ void TaskManager::packageFromTymbal(const std_msgs::msg::String::SharedPtr msg) 
         emergencyResponse(severity);
     } else if (topic == "altitudes") {
         altitudesResponse(gossip_json);
-    } else if (topic == "heartbeat") {
-        remoteIDResponse(gossip_json);
     } else {
         RCLCPP_ERROR(this->get_logger(), "Got a tymbal topic I don't understand.");
     }
@@ -1833,70 +1802,6 @@ void TaskManager::altitudesResponse(json &json_msg) {
     this->set_parameter(rclcpp::Parameter("max_alt", max_altitude_));
     this->set_parameter(rclcpp::Parameter("min_alt", min_altitude_));
     this->set_parameter(rclcpp::Parameter("default_alt", target_altitude_));
-}
-
-void TaskManager::remoteIDResponse(json &json) {
-
-    // Unpack JSON here for convenience
-    int uas_id_str = json["uas_id"].is_number_integer() ? (int)json["uas_id"] : 0;
-    int operator_id_str = json["operator_id"].is_number_integer() ? (int)json["operator_id"] : 0;
-    float operator_latitude =
-        json["operator_latitude"].is_number_float() ? (float)json["operator_latitude"] : 0.f;
-    float operator_longitude =
-        json["operator_longitude"].is_number_float() ? (float)json["operator_longitude"] : 0.f;
-    float operator_altitude_geo = json["operator_altitude_geo"].is_number_float()
-                                      ? (float)json["operator_altitude_geo"]
-                                      : 0.f;
-    int timestamp = json["timestamp"].is_number_integer() ? (int)json["timestamp"] : 0;
-
-    if (!init_remote_id_message_sent_) {
-        // Basic ID
-        mavros_msgs::msg::BasicID basic_id;
-        basic_id.header.stamp = this->get_clock()->now();
-        basic_id.id_type = mavros_msgs::msg::BasicID::MAV_ODID_ID_TYPE_CAA_REGISTRATION_ID;
-        basic_id.ua_type = mavros_msgs::msg::BasicID::MAV_ODID_UA_TYPE_HELICOPTER_OR_MULTIROTOR;
-        basic_id.uas_id = std::to_string(uas_id_str);
-        odid_basic_id_pub_->publish(basic_id);
-
-        // Operator ID
-        mavros_msgs::msg::OperatorID operator_id;
-        operator_id.header.stamp = this->get_clock()->now();
-        operator_id.operator_id_type = mavros_msgs::msg::OperatorID::MAV_ODID_OPERATOR_ID_TYPE_CAA;
-        operator_id.operator_id = std::to_string(operator_id_str);
-        odid_operator_id_pub_->publish(operator_id);
-        operator_id_ = std::to_string(operator_id_str);
-
-        // System
-        // this should probably just be published at startup, and System Update published here
-        mavros_msgs::msg::System system;
-        system.header.stamp = this->get_clock()->now();
-        system.operator_location_type =
-            mavros_msgs::msg::System::MAV_ODID_OPERATOR_LOCATION_TYPE_TAKEOFF; // TODO dynamic
-                                                                               // operator location
-        system.classification_type =
-            mavros_msgs::msg::System::MAV_ODID_CLASSIFICATION_TYPE_UNDECLARED;
-        system.operator_latitude = operator_latitude * 1E7;
-        system.operator_longitude = operator_longitude * 1E7;
-        system.operator_altitude_geo = operator_altitude_geo;
-        system.timestamp = timestamp;
-        odid_system_pub_->publish(system);
-
-        init_remote_id_message_sent_ = true;
-    }
-
-    // SystemUpdate
-    mavros_msgs::msg::SystemUpdate system_update;
-    system_update.header.stamp = this->get_clock()->now();
-    system_update.operator_latitude = operator_latitude * 1E7;
-    system_update.operator_longitude = operator_longitude * 1E7;
-    system_update.operator_altitude_geo = operator_altitude_geo;
-    if (timestamp > last_rid_updated_timestamp_) {
-        system_update.timestamp = timestamp;
-        last_rid_updated_timestamp_ = timestamp;
-    } else {
-        system_update.timestamp = this->get_clock()->now().seconds();
-    }
-    odid_system_update_pub_->publish(system_update);
 }
 
 void TaskManager::publishHealth() {

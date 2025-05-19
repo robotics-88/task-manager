@@ -4,7 +4,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 */
 
 #include "task_manager/flight_controller_interface.h"
-#include "messages_88/action/explore.hpp"
 #include "messages_88/msg/battery.hpp"
 
 #include "geometry_msgs/msg/polygon_stamped.hpp"
