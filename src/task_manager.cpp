@@ -62,7 +62,6 @@ TaskManager::TaskManager(
       setpoint_started_(false),
       health_check_pub_duration_(rclcpp::Duration(5.0, 0)),
       path_planner_topic_("/path_planner/heartbeat"),
-      costmap_topic_("/occ_density_grid"),
       lidar_topic_("/cloud_registered"),
       rosbag_topic_("/record/heartbeat"),
       initialized_(false),
@@ -85,7 +84,6 @@ TaskManager::TaskManager(
       start_time_(0),
       last_lidar_stamp_(0, 0, RCL_ROS_TIME),
       last_path_planner_stamp_(0, 0, RCL_ROS_TIME),
-      last_costmap_stamp_(0, 0, RCL_ROS_TIME),
       last_rosbag_stamp_(0, 0, RCL_ROS_TIME),
       last_health_pub_stamp_(0, 0, RCL_ROS_TIME),
       last_preflight_check_log_stamp_(0, 0, RCL_ROS_TIME),
@@ -93,7 +91,6 @@ TaskManager::TaskManager(
       lidar_timeout_(rclcpp::Duration::from_seconds(0.5)),
       vision_pose_timeout_(rclcpp::Duration::from_seconds(0.5)),
       path_timeout_(rclcpp::Duration::from_seconds(3.0)),
-      costmap_timeout_(rclcpp::Duration::from_seconds(3.0)),
       rosbag_timeout_(rclcpp::Duration::from_seconds(1.0)) {
     RCLCPP_INFO(this->get_logger(), "TM entered init");
 
@@ -114,7 +111,6 @@ TaskManager::TaskManager(
     this->declare_parameter("slam_map_frame", slam_map_frame_);
     this->declare_parameter("path_planner_topic", path_planner_topic_);
     this->declare_parameter("slam_pose_topic", slam_pose_topic_);
-    this->declare_parameter("costmap_topic", costmap_topic_);
     this->declare_parameter("lidar_topic", lidar_topic_);
     this->declare_parameter("rosbag_topic", rosbag_topic_);
     this->declare_parameter("offline", offline_);
@@ -151,7 +147,6 @@ TaskManager::TaskManager(
     this->get_parameter("slam_map_frame", slam_map_frame_);
     this->get_parameter("path_planner_topic", path_planner_topic_);
     this->get_parameter("slam_pose_topic", slam_pose_topic_);
-    this->get_parameter("costmap_topic", costmap_topic_);
     this->get_parameter("lidar_topic", lidar_topic_);
     this->get_parameter("rosbag_topic", rosbag_topic_);
     this->get_parameter("offline", offline_);
@@ -197,8 +192,7 @@ TaskManager::TaskManager(
         registered_cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
             "/cloud_registered", 10, std::bind(&TaskManager::registeredPclCallback, this, _1));
     }
-    costmap_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
-        costmap_topic_, 10, std::bind(&TaskManager::costmapCallback, this, _1));
+
     if (lidar_type == 2) {
         lidar_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
             lidar_topic_, 10, std::bind(&TaskManager::pointcloudCallback, this, _1));
@@ -536,7 +530,6 @@ void TaskManager::checkHealth() {
     health_checks_.slam_ok =
         now - flight_controller_interface_->getLastVisionPosePubStamp() < vision_pose_timeout_;
     health_checks_.path_ok = now - last_path_planner_stamp_ < path_timeout_;
-    health_checks_.costmap_ok = now - last_costmap_stamp_ < costmap_timeout_;
     health_checks_.rosbag_ok = now - last_rosbag_stamp_ < rosbag_timeout_;
 
     if (now - last_health_pub_stamp_ > health_check_pub_duration_) {
@@ -1238,10 +1231,6 @@ void TaskManager::pathPlannerCallback(const std_msgs::msg::Header::SharedPtr msg
     last_path_planner_stamp_ = this->get_clock()->now();
 }
 
-void TaskManager::costmapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
-    last_costmap_stamp_ = this->get_clock()->now();
-}
-
 void TaskManager::pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
     last_lidar_stamp_ = this->get_clock()->now();
 }
@@ -1607,11 +1596,6 @@ void TaskManager::publishHealth() {
         j = {{"name", "pathPlanner"},
              {"label", "Path planner"},
              {"isHealthy", health_checks_.path_ok}};
-        healthObjects.push_back(j);
-        // costmap
-        j = {{"name", "costmap"}, {"label", "Costmap"}, {"isHealthy", health_checks_.costmap_ok}};
-        healthObjects.push_back(j);
-
         healthObjects.push_back(j);
     }
     // ROS bag

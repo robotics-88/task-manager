@@ -95,7 +95,6 @@ class TaskManager : public rclcpp::Node {
     void slamPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr slam_pose);
     void registeredPclCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
     void pathPlannerCallback(const std_msgs::msg::Header::SharedPtr msg);
-    void costmapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
     void pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
     void livoxCallback(const livox_ros_driver2::msg::CustomMsg::SharedPtr msg);
     void rosbagCallback(const std_msgs::msg::String::SharedPtr msg);
@@ -130,7 +129,6 @@ class TaskManager : public rclcpp::Node {
     // Subscriptions
     rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr clicked_point_sub_;
     rclcpp::Subscription<std_msgs::msg::Header>::SharedPtr path_planner_sub_;
-    rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr costmap_sub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr lidar_sub_;
     rclcpp::Subscription<livox_ros_driver2::msg::CustomMsg>::SharedPtr livox_lidar_sub_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr rosbag_sub_;
@@ -145,23 +143,19 @@ class TaskManager : public rclcpp::Node {
         bool lidar_ok;
         bool slam_ok;
         bool path_ok;
-        bool costmap_ok;
         bool rosbag_ok;
     } health_checks_;
 
     std::string path_planner_topic_;
-    std::string costmap_topic_;
     std::string lidar_topic_;
     std::string rosbag_topic_;
 
     rclcpp::Duration lidar_timeout_;
     rclcpp::Duration vision_pose_timeout_;
     rclcpp::Duration path_timeout_;
-    rclcpp::Duration costmap_timeout_;
     rclcpp::Duration rosbag_timeout_;
     rclcpp::Time last_lidar_stamp_;
     rclcpp::Time last_path_planner_stamp_;
-    rclcpp::Time last_costmap_stamp_;
     rclcpp::Time last_rosbag_stamp_;
 
     float task_manager_loop_duration_;
