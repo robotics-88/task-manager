@@ -20,10 +20,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "std_msgs/msg/bool.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
 
-#include "livox_ros_driver2/msg/custom_msg.hpp"
-
-#include "nav_msgs/msg/occupancy_grid.hpp"
-
 #include "messages_88/action/nav_to_point.hpp"
 #include "messages_88/msg/frontier.hpp"
 #include "messages_88/msg/task_status.hpp"
@@ -95,8 +91,6 @@ class TaskManager : public rclcpp::Node {
     void slamPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr slam_pose);
     void registeredPclCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
     void pathPlannerCallback(const std_msgs::msg::Header::SharedPtr msg);
-    void pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
-    void livoxCallback(const livox_ros_driver2::msg::CustomMsg::SharedPtr msg);
     void rosbagCallback(const std_msgs::msg::String::SharedPtr msg);
     void goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
 
@@ -130,7 +124,6 @@ class TaskManager : public rclcpp::Node {
     rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr clicked_point_sub_;
     rclcpp::Subscription<std_msgs::msg::Header>::SharedPtr path_planner_sub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr lidar_sub_;
-    rclcpp::Subscription<livox_ros_driver2::msg::CustomMsg>::SharedPtr livox_lidar_sub_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr rosbag_sub_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr tymbal_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr slam_pose_sub_;
@@ -140,7 +133,6 @@ class TaskManager : public rclcpp::Node {
 
     struct HealthChecks {
         bool battery_ok;
-        bool lidar_ok;
         bool slam_ok;
         bool path_ok;
         bool rosbag_ok;
@@ -154,7 +146,6 @@ class TaskManager : public rclcpp::Node {
     rclcpp::Duration vision_pose_timeout_;
     rclcpp::Duration path_timeout_;
     rclcpp::Duration rosbag_timeout_;
-    rclcpp::Time last_lidar_stamp_;
     rclcpp::Time last_path_planner_stamp_;
     rclcpp::Time last_rosbag_stamp_;
 

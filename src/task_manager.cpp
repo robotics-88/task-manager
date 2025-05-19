@@ -82,7 +82,6 @@ TaskManager::TaskManager(
       operator_id_(""),
       hd_drone_id_(0),
       start_time_(0),
-      last_lidar_stamp_(0, 0, RCL_ROS_TIME),
       last_path_planner_stamp_(0, 0, RCL_ROS_TIME),
       last_rosbag_stamp_(0, 0, RCL_ROS_TIME),
       last_health_pub_stamp_(0, 0, RCL_ROS_TIME),
@@ -124,8 +123,6 @@ TaskManager::TaskManager(
             ? 1.0
             : estimated_drone_speed_; // this protects against a later potential div by 0
     this->declare_parameter("battery_failsafe_safety_factor", battery_failsafe_safety_factor_);
-    int lidar_type = 4;
-    this->declare_parameter("lidar_type", lidar_type);
     this->declare_parameter("lidar_pitch", lidar_pitch_);
     this->declare_parameter("lidar_x", lidar_x_);
     this->declare_parameter("lidar_z", lidar_z_);
@@ -160,7 +157,6 @@ TaskManager::TaskManager(
             ? 1.0
             : estimated_drone_speed_; // this protects against a later potential div by 0
     this->get_parameter("battery_failsafe_safety_factor", battery_failsafe_safety_factor_);
-    this->get_parameter("lidar_type", lidar_type);
     this->get_parameter("lidar_pitch", lidar_pitch_);
     this->get_parameter("lidar_x", lidar_x_);
     this->get_parameter("lidar_z", lidar_z_);
@@ -191,14 +187,6 @@ TaskManager::TaskManager(
             this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered_map", 10);
         registered_cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
             "/cloud_registered", 10, std::bind(&TaskManager::registeredPclCallback, this, _1));
-    }
-
-    if (lidar_type == 2) {
-        lidar_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-            lidar_topic_, 10, std::bind(&TaskManager::pointcloudCallback, this, _1));
-    } else if (lidar_type == 4) {
-        livox_lidar_sub_ = this->create_subscription<livox_ros_driver2::msg::CustomMsg>(
-            lidar_topic_, 10, std::bind(&TaskManager::livoxCallback, this, _1));
     }
 
     rosbag_sub_ = this->create_subscription<std_msgs::msg::String>(
@@ -526,7 +514,6 @@ void TaskManager::checkHealth() {
     rclcpp::Time now = this->get_clock()->now();
 
     health_checks_.battery_ok = isBatteryOk();
-    health_checks_.lidar_ok = now - last_lidar_stamp_ < lidar_timeout_;
     health_checks_.slam_ok =
         now - flight_controller_interface_->getLastVisionPosePubStamp() < vision_pose_timeout_;
     health_checks_.path_ok = now - last_path_planner_stamp_ < path_timeout_;
@@ -1231,14 +1218,6 @@ void TaskManager::pathPlannerCallback(const std_msgs::msg::Header::SharedPtr msg
     last_path_planner_stamp_ = this->get_clock()->now();
 }
 
-void TaskManager::pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
-    last_lidar_stamp_ = this->get_clock()->now();
-}
-
-void TaskManager::livoxCallback(const livox_ros_driver2::msg::CustomMsg::SharedPtr msg) {
-    last_lidar_stamp_ = this->get_clock()->now();
-}
-
 void TaskManager::rosbagCallback(const std_msgs::msg::String::SharedPtr msg) {
     last_rosbag_stamp_ = this->get_clock()->now();
 }
@@ -1585,8 +1564,6 @@ void TaskManager::publishHealth() {
     auto healthObjects = json::array();
 
     json j = {{"name", "battery"}, {"label", "Battery"}, {"isHealthy", health_checks_.battery_ok}};
-    healthObjects.push_back(j);
-    j = {{"name", "lidar"}, {"label", "LiDAR"}, {"isHealthy", health_checks_.lidar_ok}};
     healthObjects.push_back(j);
     if (do_slam_) {
         j = {{"name", "slamPosition"},
