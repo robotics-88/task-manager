@@ -24,7 +24,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 #include "nav_msgs/msg/occupancy_grid.hpp"
 
-#include "messages_88/action/explore.hpp"
 #include "messages_88/action/nav_to_point.hpp"
 #include "messages_88/msg/frontier.hpp"
 #include "messages_88/msg/task_status.hpp"
@@ -52,7 +51,7 @@ using json = nlohmann::json;
 namespace task_manager {
 /**
  * @class TaskManager
- * @brief The TaskManager manages the task queue (e.g., navigate to polygon, explore, handle
+ * @brief The TaskManager manages the task queue (e.g., navigate to polygon, handle
  * emergency). Handles comms to/from UI, including task assignment, starting capabilities, and
  * safety features based on drone status.
  */
@@ -67,10 +66,8 @@ class TaskManager : public rclcpp::Node {
         READY,
         MANUAL_FLIGHT,
         PAUSE,
-        EXPLORING,
         LAWNMOWER,
         TRAIL_FOLLOW,
-        IN_TRANSIT,
         SETPOINT,
         RTL_88,
         TAKING_OFF,
@@ -155,7 +152,6 @@ class TaskManager : public rclcpp::Node {
         bool slam_ok;
         bool path_ok;
         bool costmap_ok;
-        bool explore_ok;
         bool mapir_ok;
         bool attollo_ok;
         bool thermal_ok;
@@ -179,7 +175,6 @@ class TaskManager : public rclcpp::Node {
     rclcpp::Duration attollo_timeout_;
     rclcpp::Duration thermal_timeout_;
     rclcpp::Duration rosbag_timeout_;
-    std::chrono::seconds explore_timeout_;
     rclcpp::Time last_lidar_stamp_;
     rclcpp::Time last_path_planner_stamp_;
     rclcpp::Time last_costmap_stamp_;
@@ -279,18 +274,6 @@ class TaskManager : public rclcpp::Node {
     bool needs_takeoff_;
     int takeoff_attempts_;
 
-    // Explore action
-    using Explore = messages_88::action::Explore;
-    using ExploreGoalHandle = rclcpp_action::ClientGoalHandle<Explore>;
-    messages_88::action::Explore_Goal current_explore_goal_;
-    rclcpp_action::Client<Explore>::SharedPtr explore_action_client_;
-    rclcpp_action::ClientGoalHandle<Explore>::SharedPtr explore_action_goal_handle_;
-    rclcpp_action::ResultCode explore_action_result_;
-    void explore_goal_response_callback(const ExploreGoalHandle::SharedPtr &goal_handle);
-    void explore_feedback_callback(ExploreGoalHandle::SharedPtr,
-                                   const std::shared_ptr<const Explore::Feedback> feedback);
-    void explore_result_callback(const ExploreGoalHandle::WrappedResult &result);
-
     // State
     bool initialized_;
     bool is_armed_;
@@ -324,8 +307,6 @@ class TaskManager : public rclcpp::Node {
     // Task methods
     void updateCurrentTask(Task task);
     void startTakeoff();
-    void startTransit();
-    void startExploration();
     void startRtl88();
     void startLanding();
     void startFailsafeLanding();

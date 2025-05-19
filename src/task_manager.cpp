@@ -69,7 +69,6 @@ TaskManager::TaskManager(
       mapir_topic_("/mapir_rgn/image_rect_color"),
       mapir_rgb_topic_("/mapir_rgn/image_rect_color"),
       rosbag_topic_("/record/heartbeat"),
-      explore_action_result_(rclcpp_action::ResultCode::UNKNOWN),
       initialized_(false),
       is_armed_(false),
       in_autonomous_flight_(false),
@@ -102,7 +101,6 @@ TaskManager::TaskManager(
       vision_pose_timeout_(rclcpp::Duration::from_seconds(0.5)),
       path_timeout_(rclcpp::Duration::from_seconds(3.0)),
       costmap_timeout_(rclcpp::Duration::from_seconds(3.0)),
-      explore_timeout_(1s),
       mapir_timeout_(rclcpp::Duration::from_seconds(1.0)),
       attollo_timeout_(rclcpp::Duration::from_seconds(1.0)),
       thermal_timeout_(rclcpp::Duration::from_seconds(1.0)),
@@ -261,17 +259,6 @@ TaskManager::TaskManager(
     rosbag_sub_ = this->create_subscription<std_msgs::msg::String>(
         rosbag_topic_, 10, std::bind(&TaskManager::rosbagCallback, this, _1));
 
-    // Explore action setup
-    explore_action_client_ = rclcpp_action::create_client<Explore>(this, "/explore");
-    auto send_explore_goal_options = rclcpp_action::Client<Explore>::SendGoalOptions();
-    send_explore_goal_options.goal_response_callback =
-        std::bind(&TaskManager::explore_goal_response_callback, this, std::placeholders::_1);
-    send_explore_goal_options.feedback_callback =
-        std::bind(&TaskManager::explore_feedback_callback, this, std::placeholders::_1,
-                  std::placeholders::_2);
-    send_explore_goal_options.result_callback =
-        std::bind(&TaskManager::explore_result_callback, this, std::placeholders::_1);
-
     // Geo/map state services
     geopoint_service_ = this->create_service<messages_88::srv::Geopoint>(
         "slam2geo", std::bind(&TaskManager::convert2Geo, this, _1, std::placeholders::_2,
@@ -295,7 +282,6 @@ TaskManager::TaskManager(
     goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
         goal_topic, 10, std::bind(&TaskManager::goalCallback, this, _1));
     task_msg_.enable_autonomy = enable_autonomy_;
-    task_msg_.enable_exploration = true;
 
     // tymbal pub/subs
     tymbal_hd_pub_ = this->create_publisher<std_msgs::msg::String>("/tymbal/to_hello_decco", 10);
@@ -369,7 +355,6 @@ void TaskManager::runTaskManager() {
                 updateCurrentTask(Task::READY);
             }
         }
-        explore_action_result_ = rclcpp_action::ResultCode::UNKNOWN;
         break;
     }
     case Task::PREFLIGHT_CHECK: {
@@ -434,15 +419,6 @@ void TaskManager::runTaskManager() {
             // If not in polygon, start navigation task
             if (has_setpoint_) {
                 updateCurrentTask(Task::SETPOINT);
-            } else if (!decco_utilities::isInside(
-                           map_polygon_,
-                           flight_controller_interface_->getCurrentLocalPosition().pose.position)) {
-                logEvent(EventType::STATE_MACHINE, Severity::LOW,
-                         "Transiting to designated survey unit");
-                startTransit();
-            } else {
-                logEvent(EventType::STATE_MACHINE, Severity::LOW, "Starting exploration");
-                startExploration();
             }
         }
         break;
@@ -461,32 +437,6 @@ void TaskManager::runTaskManager() {
                 updateCurrentTask(Task::READY);
             }
         }
-        break;
-    }
-    case Task::IN_TRANSIT: {
-        if (decco_utilities::isInside(
-                map_polygon_,
-                flight_controller_interface_->getCurrentLocalPosition().pose.position)) {
-            logEvent(EventType::STATE_MACHINE, Severity::LOW, "Starting exploration");
-            startExploration();
-        }
-        break;
-    }
-    case Task::EXPLORING: {
-        // Check action client status to see if complete
-        if (explore_action_result_ == rclcpp_action::ResultCode::ABORTED ||
-            explore_action_result_ == rclcpp_action::ResultCode::CANCELED ||
-            explore_action_result_ == rclcpp_action::ResultCode::SUCCEEDED) {
-
-            logEvent(EventType::STATE_MACHINE, Severity::LOW,
-                     "Initiating RTL_88 due to exploration action stopped. "); // TODO add result
-                                                                               // parsing to string
-            auto fs_msg =
-                hello_decco_manager_->updateFlightStatus("COMPLETED", this->get_clock()->now());
-            tymbal_hd_pub_->publish(fs_msg);
-            startRtl88();
-        }
-
         break;
     }
     case Task::LAWNMOWER: {
@@ -589,54 +539,6 @@ void TaskManager::startTakeoff() {
     }
 }
 
-void TaskManager::startTransit() {
-    padNavTarget(goal_);
-
-    goal_.header.frame_id = mavros_map_frame_;
-    goal_.header.stamp = this->get_clock()->now();
-    goal_pos_pub_->publish(goal_);
-
-    updateCurrentTask(Task::IN_TRANSIT);
-}
-
-void TaskManager::startExploration() {
-    if (survey_type_ == SurveyType::SUPER) {
-        getLawnmowerPattern(map_polygon_, lawnmower_points_);
-        visualizeLawnmower();
-        updateCurrentTask(Task::LAWNMOWER);
-        return;
-    } else if (survey_type_ == SurveyType::TRAIL) {
-        startTrailFollowing(true); // TODO trail has no stop condition yet
-        updateCurrentTask(Task::TRAIL_FOLLOW);
-        return;
-    }
-
-    current_explore_goal_.polygon = map_polygon_;
-    current_explore_goal_.altitude = target_altitude_;
-    current_explore_goal_.min_altitude = min_altitude_;
-    current_explore_goal_.max_altitude = max_altitude_;
-
-    // Start with a rotation command in case no frontiers immediately processed, will be overridden
-    // with first exploration goal
-    geometry_msgs::msg::Twist vel;
-    vel.angular.x = 0;
-    vel.angular.y = 0;
-    vel.angular.z = M_PI_2; // PI/2 rad/s
-    local_vel_pub_->publish(vel);
-
-    if (!explore_action_client_->wait_for_action_server(2s)) {
-        RCLCPP_WARN(this->get_logger(), "Explore action client not available after waiting");
-    }
-
-    explore_action_client_->async_send_goal(current_explore_goal_);
-
-    logEvent(EventType::STATE_MACHINE, Severity::LOW, "Sending explore goal");
-    auto fs_msg = hello_decco_manager_->updateFlightStatus("ACTIVE", this->get_clock()->now());
-    tymbal_hd_pub_->publish(fs_msg);
-
-    updateCurrentTask(Task::EXPLORING);
-}
-
 void TaskManager::startRtl88() {
     pauseOperations();
 
@@ -684,7 +586,6 @@ void TaskManager::checkHealth() {
         now - flight_controller_interface_->getLastVisionPosePubStamp() < vision_pose_timeout_;
     health_checks_.path_ok = now - last_path_planner_stamp_ < path_timeout_;
     health_checks_.costmap_ok = now - last_costmap_stamp_ < costmap_timeout_;
-    health_checks_.explore_ok = explore_action_client_.get()->action_server_is_ready();
     health_checks_.mapir_ok = now - last_mapir_stamp_ < mapir_timeout_;
     health_checks_.attollo_ok = now - last_attollo_stamp_ < attollo_timeout_;
     health_checks_.thermal_ok = now - last_thermal_stamp_ < thermal_timeout_;
@@ -1063,13 +964,6 @@ void TaskManager::uiHeartbeatCallback(const json &msg) {
 bool TaskManager::pauseOperations() {
 
     // TODO figure out how to pause and restart
-    if (explore_action_goal_handle_) {
-        auto status = explore_action_goal_handle_->get_status();
-        if (status == rclcpp_action::GoalStatus::STATUS_EXECUTING) {
-            explore_action_client_->async_cancel_all_goals();
-        }
-    }
-
     return true;
 }
 
@@ -1285,20 +1179,6 @@ bool TaskManager::polygonDistanceOk(geometry_msgs::msg::PoseStamped &target,
     return true;
 }
 
-void TaskManager::padNavTarget(geometry_msgs::msg::PoseStamped &target) {
-    // Add 2m to ensure fully inside polygon, otherwise exploration won't start
-    float padding = 2.0;
-    geometry_msgs::msg::Point my_position =
-        flight_controller_interface_->getCurrentLocalPosition().pose.position;
-    double dif_x = target.pose.position.x - my_position.x;
-    double dif_y = target.pose.position.y - my_position.y;
-    double norm = sqrt(std::pow(dif_x, 2) + std::pow(dif_y, 2));
-    double normed_dif_x = dif_x / norm;
-    double normed_dif_y = dif_y / norm;
-    target.pose.position.x += normed_dif_x * padding;
-    target.pose.position.y += normed_dif_y * padding;
-}
-
 std::string TaskManager::getTaskString(Task task) {
     switch (task) {
     case Task::INITIALIZING:
@@ -1311,14 +1191,10 @@ std::string TaskManager::getTaskString(Task task) {
         return "MANUAL_FLIGHT";
     case Task::PAUSE:
         return "PAUSE";
-    case Task::EXPLORING:
-        return "EXPLORING";
     case Task::LAWNMOWER:
         return "LAWNMOWER";
     case Task::TRAIL_FOLLOW:
         return "TRAIL_FOLLOW";
-    case Task::IN_TRANSIT:
-        return "IN_TRANSIT";
     case Task::SETPOINT:
         return "SETPOINT";
     case Task::RTL_88:
@@ -1444,38 +1320,6 @@ void TaskManager::rosbagCallback(const std_msgs::msg::String::SharedPtr msg) {
 
 void TaskManager::goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
     goal_ = *msg;
-}
-
-void TaskManager::explore_goal_response_callback(const ExploreGoalHandle::SharedPtr &goal_handle) {
-    if (!goal_handle) {
-        logEvent(INFO, MEDIUM, "Explore goal rejected by server");
-    } else {
-        RCLCPP_INFO(this->get_logger(), "Goal accepted by server, waiting for result");
-        explore_action_goal_handle_ = goal_handle;
-    }
-}
-
-void TaskManager::explore_feedback_callback(
-    ExploreGoalHandle::SharedPtr, const std::shared_ptr<const Explore::Feedback> feedback) {
-    // TODO?
-}
-
-void TaskManager::explore_result_callback(const ExploreGoalHandle::WrappedResult &result) {
-    explore_action_result_ = (rclcpp_action::ResultCode)result.code;
-    switch (explore_action_result_) {
-    case rclcpp_action::ResultCode::SUCCEEDED:
-        logEvent(INFO, LOW, "Goal succeeded");
-        return;
-    case rclcpp_action::ResultCode::ABORTED:
-        logEvent(INFO, MEDIUM, "Goal was aborted");
-        return;
-    case rclcpp_action::ResultCode::CANCELED:
-        logEvent(INFO, MEDIUM, "Goal was canceled");
-        return;
-    default:
-        logEvent(INFO, MEDIUM, "Unknown goal result code");
-        return;
-    }
 }
 
 void TaskManager::packageFromTymbal(const std_msgs::msg::String::SharedPtr msg) {
@@ -1831,10 +1675,7 @@ void TaskManager::publishHealth() {
         // costmap
         j = {{"name", "costmap"}, {"label", "Costmap"}, {"isHealthy", health_checks_.costmap_ok}};
         healthObjects.push_back(j);
-        // 6) Explore
-        j = {{"name", "explore"},
-             {"label", "Explore Service"},
-             {"isHealthy", health_checks_.explore_ok}};
+
         healthObjects.push_back(j);
     }
     // MAPIR
