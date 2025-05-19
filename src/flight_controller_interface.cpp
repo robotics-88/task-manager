@@ -132,7 +132,6 @@ FlightControllerInterface::FlightControllerInterface()
     // Decco pub/subs
     slam_pose_subscriber_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
         "/decco/pose", 10, std::bind(&FlightControllerInterface::slamPoseCallback, this, _1));
-    battery_pub_ = this->create_publisher<messages_88::msg::Battery>("/decco/battery", 10);
 
     if (!offline_) {
 
@@ -625,16 +624,6 @@ void FlightControllerInterface::batteryCallback(
     }
 
     estimated_flight_time_remaining_ = amp_hours_left / estimated_current_ * 3600;
-
-    // Publish custom battery message
-    messages_88::msg::Battery batt_msg;
-    batt_msg.header.stamp = this->get_clock()->now();
-    batt_msg.percentage = battery_percentage_;
-    batt_msg.estimated_current = estimated_current_;
-    batt_msg.amp_hours_left = amp_hours_left;
-    batt_msg.flight_time_remaining = estimated_flight_time_remaining_;
-
-    battery_pub_->publish(batt_msg);
 }
 
 void FlightControllerInterface::statusCallback(const mavros_msgs::msg::State::SharedPtr msg) {
