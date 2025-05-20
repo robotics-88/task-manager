@@ -91,6 +91,7 @@ TaskManager::TaskManager(
       vision_pose_timeout_(rclcpp::Duration::from_seconds(0.5)),
       path_timeout_(rclcpp::Duration::from_seconds(3.0)),
       rosbag_timeout_(rclcpp::Duration::from_seconds(1.0)) {
+
     RCLCPP_INFO(this->get_logger(), "TM entered init");
 
     this->declare_parameter("enable_autonomy", enable_autonomy_);
@@ -118,10 +119,6 @@ TaskManager::TaskManager(
     this->declare_parameter("record_config_file", record_config_file_);
     this->declare_parameter("explicit_global", explicit_global_params_);
     this->declare_parameter("estimated_drone_speed", estimated_drone_speed_);
-    estimated_drone_speed_ =
-        estimated_drone_speed_ < 1
-            ? 1.0
-            : estimated_drone_speed_; // this protects against a later potential div by 0
     this->declare_parameter("battery_failsafe_safety_factor", battery_failsafe_safety_factor_);
     this->declare_parameter("lidar_pitch", lidar_pitch_);
     this->declare_parameter("lidar_x", lidar_x_);
@@ -211,17 +208,10 @@ TaskManager::TaskManager(
     marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/lawnmower", 10);
 
     // Task status pub
-    task_pub_ = this->create_publisher<messages_88::msg::TaskStatus>("task_status", 10);
     goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
         goal_topic, 10, std::bind(&TaskManager::goalCallback, this, _1));
     task_msg_.enable_autonomy = enable_autonomy_;
 
-    // tymbal pub/subs
-    tymbal_hd_pub_ = this->create_publisher<std_msgs::msg::String>("/tymbal/to_hello_decco", 10);
-    tymbal_sub_ = this->create_subscription<std_msgs::msg::String>(
-        "/tymbal/to_decco", 10, std::bind(&TaskManager::packageFromTymbal, this, _1));
-    // Maybe the above topic should be called "from_hello_decco", feels a little more readable
-    tymbal_puddle_pub_ = this->create_publisher<std_msgs::msg::String>("/tymbal/to_puddle", 10);
     map_region_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("/map_region", 10);
 
     // TF
@@ -237,8 +227,6 @@ TaskManager::TaskManager(
     task_manager_timer_ =
         this->create_wall_timer(std::chrono::duration<float>(task_manager_loop_duration_),
                                 std::bind(&TaskManager::runTaskManager, this));
-    heartbeat_timer_ =
-        this->create_wall_timer(1s, std::bind(&TaskManager::heartbeatTimerCallback, this));
 
     // To be tested later
     // utm_tf_update_timer_ = this->create_wall_timer(1s, std::bind(&TaskManager::updateUTMTF,
@@ -271,17 +259,15 @@ void TaskManager::runTaskManager() {
         if (!initialized_) {
             initialize();
         } else {
-            logEvent(EventType::STATE_MACHINE, Severity::LOW, "Drone initialized");
+            RCLCPP_INFO(this->get_logger(), "Drone initialized");
             if (!offline_) {
                 flight_controller_interface_->setMode(flight_controller_interface_->guided_mode_);
 
                 if (flight_controller_interface_->getDroneReadyToArm()) {
-                    logEvent(EventType::STATE_MACHINE, Severity::LOW,
-                             "Preflight checks passed, ready to arm");
+                    RCLCPP_INFO(this->get_logger(), "Preflight checks passed, ready to arm");
                     updateCurrentTask(Task::READY);
                 } else {
-                    logEvent(EventType::STATE_MACHINE, Severity::LOW,
-                             "Waiting for preflight checks to pass");
+                    RCLCPP_INFO(this->get_logger(), "Waiting for preflight checks to pass");
                     updateCurrentTask(Task::PREFLIGHT_CHECK);
                 }
             } else {
@@ -296,14 +282,12 @@ void TaskManager::runTaskManager() {
         // However, other things still fail. Eventually we should fix this and set ARMING_CHECK to 1
         // in ardupilot
         if (flight_controller_interface_->getDroneReadyToArm() || simulate_) {
-            logEvent(EventType::STATE_MACHINE, Severity::LOW,
-                     "Preflight checks passed, ready to arm");
+            RCLCPP_INFO(this->get_logger(), "Preflight checks passed, ready to arm");
             updateCurrentTask(Task::READY);
         } else if (this->get_clock()->now() - last_preflight_check_log_stamp_ >
                    rclcpp::Duration::from_seconds(10.0)) {
-            logEvent(EventType::FLIGHT_CONTROL, Severity::MEDIUM,
-                     "Preflight check failed due to " +
-                         flight_controller_interface_->getPreflightCheckReasons());
+            RCLCPP_INFO(this->get_logger(), "Preflight check failed due to %s",
+                        flight_controller_interface_->getPreflightCheckReasons().c_str());
             last_preflight_check_log_stamp_ = this->get_clock()->now();
         }
         break;
@@ -318,17 +302,15 @@ void TaskManager::runTaskManager() {
         // this flag gets triggered when received a burn unit or setpoint
         if (needs_takeoff_) {
             if (takeoff_attempts_ > 5) {
-                logEvent(EventType::STATE_MACHINE, Severity::MEDIUM,
-                         "Takeoff failed after 5 attempts");
+                RCLCPP_WARN(this->get_logger(), "Takeoff failed after 5 attempts");
                 needs_takeoff_ = false;
                 takeoff_attempts_ = 0;
             } else {
                 if (!enable_autonomy_) {
-                    logEvent(EventType::STATE_MACHINE, Severity::MEDIUM,
-                             "Not taking off, autonomy not enabled");
+                    RCLCPP_WARN(this->get_logger(), "Not taking off, autonomy not enabled");
                     needs_takeoff_ = false;
                 } else {
-                    logEvent(EventType::STATE_MACHINE, Severity::LOW, "Starting takeoff");
+                    RCLCPP_INFO(this->get_logger(), "Starting takeoff");
                     startTakeoff();
                 }
             }
@@ -374,7 +356,7 @@ void TaskManager::runTaskManager() {
     }
     case Task::LAWNMOWER: {
         if (lawnmower_started_ && lawnmower_points_.empty()) {
-            logEvent(EventType::STATE_MACHINE, Severity::LOW, "Lawnmower complete, doing RTL_88");
+            RCLCPP_INFO(this->get_logger(), "Lawnmower complete, doing RTL_88");
             startRtl88();
         } else {
             if (lawnmower_started_ && !lawnmowerGoalComplete()) {
@@ -392,7 +374,7 @@ void TaskManager::runTaskManager() {
             flight_controller_interface_->getCurrentLocalPosition().pose.position,
             home_pos_.pose.position, 1.0);
         if (at_home_position) {
-            logEvent(EventType::STATE_MACHINE, Severity::LOW, "RTL_88 completed, landing");
+            RCLCPP_INFO(this->get_logger(), "RTL_88 completed, landing");
             startLanding();
         }
         break;
@@ -412,25 +394,6 @@ void TaskManager::runTaskManager() {
         break;
     }
     }
-
-    task_msg_.header.stamp = this->get_clock()->now();
-    task_msg_.cmd_history.data = cmd_history_.c_str();
-    task_msg_.current_status.data = getTaskString(current_task_);
-    task_pub_->publish(task_msg_);
-    json task_json = makeTaskJson();
-    auto ts_msg =
-        hello_decco_manager_->packageToTymbalHD("task_status", task_json, this->get_clock()->now());
-    tymbal_hd_pub_->publish(ts_msg);
-
-    json path_json;
-    path_json["timestamp"] = static_cast<float>(
-        flight_controller_interface_->getCurrentGlobalPosition().header.stamp.sec +
-        static_cast<float>(
-            flight_controller_interface_->getCurrentGlobalPosition().header.stamp.nanosec) /
-            1e9);
-    path_json["latitude"] = flight_controller_interface_->getCurrentGlobalPosition().latitude;
-    path_json["longitude"] = flight_controller_interface_->getCurrentGlobalPosition().longitude;
-    // hello_decco_manager_->packageToTymbalPuddle("/flight", path_json);
 }
 
 void TaskManager::startTakeoff() {
@@ -446,7 +409,7 @@ void TaskManager::startTakeoff() {
 
     // this is a redundant check but probably good to keep
     if (!task_msg_.enable_autonomy) {
-        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM, "Not taking off, autonomy disabled");
+        RCLCPP_WARN(this->get_logger(), "Not taking off, autonomy disabled");
         return;
     }
 
@@ -456,8 +419,8 @@ void TaskManager::startTakeoff() {
             rclcpp::sleep_for(
                 1s); // Wait a second after before arming to get some extra data before takeoff
         } else
-            logEvent(EventType::INFO, Severity::LOW,
-                     "Recording flag already true, not starting new recording");
+            RCLCPP_INFO(this->get_logger(),
+                        "Recording flag already true, not starting new recording");
     }
 
     if (flight_controller_interface_->takeOff(target_altitude_)) {
@@ -467,7 +430,7 @@ void TaskManager::startTakeoff() {
         takeoff_attempts_ = 0;
         is_armed_ = true;
     } else {
-        logEvent(EventType::FLIGHT_CONTROL, Severity::MEDIUM, "Takeoff request failed. Retrying.");
+        RCLCPP_WARN(this->get_logger(), "Takeoff request failed. Retrying.");
         takeoff_attempts_++;
     }
 }
@@ -502,7 +465,7 @@ void TaskManager::startPause() {
 
 void TaskManager::updateCurrentTask(Task task) {
     std::string task_str = getTaskString(task);
-    logEvent(EventType::TASK_STATUS, Severity::LOW, "Current task updated to " + task_str);
+    RCLCPP_INFO(this->get_logger(), "Current task updated to %s", task_str.c_str());
     current_task_ = task;
 }
 
@@ -519,10 +482,7 @@ void TaskManager::checkHealth() {
     health_checks_.path_ok = now - last_path_planner_stamp_ < path_timeout_;
     health_checks_.rosbag_ok = now - last_rosbag_stamp_ < rosbag_timeout_;
 
-    if (now - last_health_pub_stamp_ > health_check_pub_duration_) {
-        publishHealth();
-        last_health_pub_stamp_ = now;
-    }
+    // What to do with this?
 }
 
 void TaskManager::checkFailsafes() {
@@ -533,7 +493,7 @@ void TaskManager::checkFailsafes() {
     // Check for manual takeover
     std::string mode = flight_controller_interface_->getFlightMode();
     if (mode == "STABILIZE" || mode == "ALT_HOLD" || mode == "POSHOLD") {
-        logEvent(EventType::FLIGHT_CONTROL, Severity::MEDIUM, "Manual takeover initiated");
+        RCLCPP_WARN(this->get_logger(), "Manual takeover initiated");
         updateCurrentTask(Task::MANUAL_FLIGHT);
         in_autonomous_flight_ = false;
         pauseOperations();
@@ -554,14 +514,14 @@ void TaskManager::checkFailsafes() {
     if (need_failsafe_landing) {
         if (current_task_ != Task::FAILSAFE_LANDING) {
             if (use_failsafes_) {
-                logEvent(EventType::FAILSAFE, Severity::HIGH,
-                         "Failsafe landing initiated due to " + failsafe_reason);
+                RCLCPP_ERROR(this->get_logger(), "Failsafe landing initiated due to %s",
+                             failsafe_reason.c_str());
                 startFailsafeLanding();
             } else {
                 if (current_task_ != Task::PAUSE) {
-                    logEvent(EventType::FAILSAFE, Severity::MEDIUM,
-                             "Failsafe landing requested for " + failsafe_reason +
-                                 " but failsafes not active");
+                    RCLCPP_INFO(this->get_logger(),
+                                "Failsafe landing requested for %s but failsafes not active",
+                                failsafe_reason.c_str());
                 }
             }
         }
@@ -580,8 +540,7 @@ void TaskManager::checkFailsafes() {
     if (need_rtl_88 && current_task_ != Task::RTL_88 && current_task_ != Task::LANDING &&
         current_task_ != Task::COMPLETE) {
 
-        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM,
-                 "Starting RTL 88 due to " + rtl_88_reason);
+        RCLCPP_INFO(this->get_logger(), "Starting RTL 88 due to %s", rtl_88_reason.c_str());
         startRtl88();
     }
 }
@@ -593,14 +552,14 @@ void TaskManager::initialize() {
         return;
 
     // Get roll, pitch for map stabilization
-    logEvent(EventType::INFO, Severity::LOW, "Getting initial IMU");
+    RCLCPP_INFO(this->get_logger(), "Getting initial IMU");
     geometry_msgs::msg::Quaternion init_orientation =
         flight_controller_interface_->getInitOrientation();
 
     // Check for valid init orientation
     if (init_orientation.x == 0 && init_orientation.y == 0 && init_orientation.z == 0 &&
         init_orientation.w == 0) {
-        logEvent(EventType::INFO, Severity::HIGH, "Failed to get initial orientation");
+        RCLCPP_ERROR(this->get_logger(), "Failed to get initial orientation");
         return;
     }
 
@@ -650,7 +609,7 @@ void TaskManager::initialize() {
     map_tf_init_ = true;
     flight_controller_interface_->setMapSlamTf(map_to_slam_tf_);
 
-    logEvent(EventType::INFO, Severity::LOW, "Waiting for global position");
+    RCLCPP_INFO(this->get_logger(), "Waiting for global position");
     home_utm_zone_ = flight_controller_interface_->getUTMZone();
     if (home_utm_zone_ < 0) {
         return;
@@ -681,8 +640,7 @@ void TaskManager::initialize() {
             RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
             publishTif();
         } else {
-            logEvent(EventType::TASK_STATUS, Severity::HIGH,
-                     "No elevation, can only perform manual flight.");
+            RCLCPP_WARN(this->get_logger(), "No elevation, can only perform manual flight.");
         }
     }
 
@@ -701,9 +659,9 @@ bool TaskManager::convert2Geo(const std::shared_ptr<rmw_request_id_t> /*request_
                               const std::shared_ptr<messages_88::srv::Geopoint::Response> resp) {
     // Sanity check UTM
     if (home_utm_zone_ != flight_controller_interface_->getUTMZone()) {
-        logEvent(EventType::INFO, Severity::LOW,
-                 "UTM zones crossed. Home UTM: " + std::to_string(home_utm_zone_) +
-                     "Now UTM: " + std::to_string(flight_controller_interface_->getUTMZone()));
+        RCLCPP_INFO(this->get_logger(), "UTM zones crossed. Home UTM: %s, Now UTM:, %s",
+                    std::to_string(home_utm_zone_).c_str(),
+                    std::to_string(flight_controller_interface_->getUTMZone()).c_str());
         return false;
         // TODO decide what to do about it
     }
@@ -797,8 +755,8 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t> /*request_h
     point_stamped.point = req->map_position;
     double ret_altitude;
     if (!getElevationAtPoint(point_stamped, ret_altitude)) {
-        logEvent(EventType::INFO, Severity::MEDIUM,
-                 "Elevation at requested point not found, not adjusting for terrain");
+        RCLCPP_WARN(this->get_logger(),
+                    "Elevation at requested point not found, not adjusting for terrain");
         resp->success = false;
         return false;
     }
@@ -816,8 +774,8 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t> /*request_h
         map2UtmPoint(in, out);
         double my_altitude;
         if (!hello_decco_manager_->getElevationValue(out.point.x, out.point.y, my_altitude)) {
-            logEvent(EventType::INFO, Severity::MEDIUM,
-                     "Elevation at current position not found, not adjusting for terrain");
+            RCLCPP_WARN(this->get_logger(),
+                        "Elevation at current position not found, not adjusting for terrain");
             resp->success = false;
             return false;
         }
@@ -854,41 +812,6 @@ void TaskManager::publishTif() {
     tif_pcl_pub_->publish(cloud_msg);
 }
 
-void TaskManager::heartbeatTimerCallback() {
-    sensor_msgs::msg::NavSatFix hb = flight_controller_interface_->getCurrentGlobalPosition();
-    geometry_msgs::msg::PoseStamped local = flight_controller_interface_->getCurrentLocalPosition();
-    double altitudeAgl = flight_controller_interface_->getAltitudeAGL();
-    double yaw = flight_controller_interface_->getCompass();
-    json j = {{"latitude", hb.latitude},
-              {"longitude", hb.longitude},
-              {"altitude", (int)altitudeAgl},
-              {"heading", yaw},
-              {"header",
-               {{"frame_id", hb.header.frame_id},
-                {"stamp", static_cast<float>(hb.header.stamp.sec) +
-                              static_cast<float>(hb.header.stamp.nanosec) / 1e9}}}};
-    if (in_autonomous_flight_) {
-        j["deccoId"] = hd_drone_id_;
-        j["startTime"] = start_time_;
-    }
-    auto hb_msg =
-        hello_decco_manager_->packageToTymbalHD("decco_heartbeat", j, this->get_clock()->now());
-    tymbal_hd_pub_->publish(hb_msg);
-
-    // rclcpp::Time now_time = this->get_clock()->now();
-    // float interval = (now_time - last_ui_heartbeat_stamp_).seconds();
-    // TODO needs also check if drone state is in air/action
-    // if (interval > ui_hb_threshold_) {
-    //     messages_88::srv::Emergency emergency;
-    //     // TODO fill in pause msg
-    //     // emergency_client_.call(emergency);
-    // }
-}
-
-void TaskManager::uiHeartbeatCallback(const json &msg) {
-    last_ui_heartbeat_stamp_ = this->get_clock()->now();
-}
-
 bool TaskManager::pauseOperations() {
 
     // TODO figure out how to pause and restart
@@ -898,7 +821,7 @@ bool TaskManager::pauseOperations() {
 void TaskManager::checkArmStatus() {
     bool armed = flight_controller_interface_->getIsArmed();
     if (!is_armed_ && armed) {
-        logEvent(EventType::INFO, Severity::LOW, "Drone armed manually");
+        RCLCPP_INFO(this->get_logger(), "Drone armed manually");
         is_armed_ = true;
 
         // Only get arm status in offline mode, rest is not needed
@@ -910,20 +833,19 @@ void TaskManager::checkArmStatus() {
             RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
             publishTif();
         } else {
-            logEvent(EventType::TASK_STATUS, Severity::HIGH,
-                     "No elevation, can only perform manual flight.");
+            RCLCPP_WARN(this->get_logger(), "No elevation, can only perform manual flight.");
         }
 
         if (do_record_) {
             if (!recording_)
                 startRecording();
             else
-                logEvent(EventType::INFO, Severity::LOW,
-                         "Recording flag already true, not starting new recording");
+                RCLCPP_INFO(this->get_logger(),
+                            "Recording flag already true, not starting new recording");
         }
     }
     if (is_armed_ && !armed) {
-        logEvent(EventType::INFO, Severity::MEDIUM, "Disarm detected");
+        RCLCPP_INFO(this->get_logger(), "Disarm detected");
         updateCurrentTask(Task::COMPLETE);
         if (recording_) {
             rclcpp::sleep_for(2s); // Wait a bit to make sure we have all messages in bag through
@@ -952,7 +874,7 @@ void TaskManager::startRecording() {
     if (!boost::filesystem::exists(flight_directory)) {
         boost::filesystem::create_directories(flight_directory);
     }
-    logEvent(EventType::INFO, Severity::LOW, "Recording starting, dir: " + flight_directory);
+    RCLCPP_INFO(this->get_logger(), "Recording starting, dir: %s", flight_directory.c_str());
 
     // Handle bag
     std::shared_ptr<rclcpp::Node> bag_record_node = rclcpp::Node::make_shared("bag_record_client");
@@ -1016,97 +938,6 @@ void TaskManager::stopRecording() {
     recording_ = false;
 }
 
-bool TaskManager::polygonDistanceOk(geometry_msgs::msg::PoseStamped &target,
-                                    geometry_msgs::msg::Polygon &map_region) {
-
-    if (decco_utilities::isInside(
-            map_polygon_, flight_controller_interface_->getCurrentLocalPosition().pose.position))
-        return true;
-
-    // Medium check, computes distance to nearest point on 2 most likely polygon edges
-    // Polygon is already in map coordinates, i.e., expressed in meters from UAS home
-    double min_dist = DBL_MAX;
-    unsigned closest_point_ind = 0;
-    for (unsigned ii = 0; ii < map_region.points.size(); ii++) {
-        double d =
-            std::pow(map_region.points.at(ii).x, 2) + std::pow(map_region.points.at(ii).y, 2);
-        if (d < min_dist) {
-            min_dist = d;
-            closest_point_ind = ii;
-        }
-    }
-    // Find line intersection with each segment connecting to closest point
-    geometry_msgs::msg::Point32 point1, point2,
-        closest_point = map_region.points.at(closest_point_ind);
-    unsigned ind1, ind2;
-    if (closest_point_ind == 0) {
-        ind1 = map_region.points.size() - 1;
-    } else {
-        ind1 = closest_point_ind - 1;
-    }
-    if (closest_point_ind == map_region.points.size() - 1) {
-        ind2 = 0;
-    } else {
-        ind2 = closest_point_ind + 1;
-    }
-    point1 = map_region.points.at(ind1);
-    point2 = map_region.points.at(ind2);
-
-    // Compute intersections
-
-    geometry_msgs::msg::Point drone_location_64 =
-        flight_controller_interface_->getCurrentLocalPosition().pose.position;
-    geometry_msgs::msg::Point32 drone_location;
-    drone_location.x = drone_location_64.x;
-    drone_location.y = drone_location_64.y;
-
-    geometry_msgs::msg::Point32 intersection_point_1;
-    bool intersection1 = decco_utilities::intersectsOrthogonal(
-        closest_point, point1, drone_location, intersection_point_1);
-    double dist1 = decco_utilities::distance_xy(drone_location, intersection_point_1);
-
-    geometry_msgs::msg::Point32 intersection_point_2;
-    bool intersection2 = decco_utilities::intersectsOrthogonal(
-        closest_point, point2, drone_location, intersection_point_2);
-    double dist2 = decco_utilities::distance_xy(drone_location, intersection_point_2);
-
-    geometry_msgs::msg::Point target_position;
-    if (intersection1 && intersection2) {
-
-        if (dist1 < dist2) {
-            min_dist = dist1;
-            target_position.x = intersection_point_1.x;
-            target_position.y = intersection_point_1.y;
-        } else {
-            min_dist = dist2;
-            target_position.x = intersection_point_2.x;
-            target_position.y = intersection_point_2.y;
-        }
-    } else if (intersection1) {
-        min_dist = dist1;
-        target_position.x = intersection_point_1.x;
-        target_position.y = intersection_point_1.y;
-    } else if (intersection2) {
-        min_dist = dist2;
-        target_position.x = intersection_point_2.x;
-        target_position.y = intersection_point_2.y;
-    } else {
-        target_position.x = closest_point.x;
-        target_position.y = closest_point.y;
-    }
-    target.pose.position = target_position;
-    target.pose.position.z = target_altitude_;
-
-    if (min_dist > std::pow(max_dist_to_polygon_, 2)) {
-        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM,
-                 "Max dist to polygon exceeded, will not execute flight. Max distance is: " +
-                     std::to_string(max_dist_to_polygon_) +
-                     "m, Closest point: " + std::to_string(std::sqrt(min_dist)) + "m");
-        return false;
-    }
-    return true;
-}
-
 std::string TaskManager::getTaskString(Task task) {
     switch (task) {
     case Task::INITIALIZING:
@@ -1140,35 +971,6 @@ std::string TaskManager::getTaskString(Task task) {
     }
 }
 
-std::string TaskManager::getEventTypeString(EventType type) {
-    switch (type) {
-    case EventType::TASK_STATUS:
-        return "TASK_STATUS";
-    case EventType::STATE_MACHINE:
-        return "STATE_MACHINE";
-    case EventType::FLIGHT_CONTROL:
-        return "FLIGHT_CONTROL";
-    case EventType::FAILSAFE:
-        return "FAILSAFE";
-    case EventType::INFO:
-        return "INFO";
-    default:
-        return "unknown";
-    }
-}
-
-std::string TaskManager::getSeverityString(Severity sev) {
-    switch (sev) {
-    case Severity::LOW:
-        return "LOW";
-    case Severity::MEDIUM:
-        return "MEDIUM";
-    case Severity::HIGH:
-        return "HIGH";
-    default:
-        return "unknown";
-    }
-}
 void TaskManager::clickedPointCallback(const geometry_msgs::msg::PointStamped::SharedPtr msg) {
     double elevation;
     getElevationAtPoint(*msg, elevation);
@@ -1224,119 +1026,6 @@ void TaskManager::rosbagCallback(const std_msgs::msg::String::SharedPtr msg) {
 
 void TaskManager::goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
     goal_ = *msg;
-}
-
-void TaskManager::packageFromTymbal(const std_msgs::msg::String::SharedPtr msg) {
-    json mapver_json = json::parse(msg->data);
-    if (!mapver_json.contains("topic")) {
-        RCLCPP_ERROR(this->get_logger(), "Received tymbal message without topic, ignoring.");
-        logEvent(TASK_STATUS, HIGH, "Bad message sent to drone, ignoring.");
-        return;
-    }
-    std::string topic = static_cast<std::string>(mapver_json["topic"]);
-    json gossip_json = mapver_json["gossip"];
-    if (topic == "flight_send") {
-        acceptFlight(mapver_json);
-    } else if (topic == "target_setpoint") {
-        setpointResponse(mapver_json);
-    } else if (topic == "emergency") {
-        std::string severity = static_cast<std::string>(gossip_json["severity"]);
-        emergencyResponse(severity);
-    } else if (topic == "altitudes") {
-        altitudesResponse(gossip_json);
-    } else {
-        RCLCPP_ERROR(this->get_logger(), "Got a tymbal topic I don't understand.");
-    }
-}
-
-void TaskManager::acceptFlight(json mapver_json) {
-
-    rclcpp::Time timestamp = this->get_clock()->now();
-
-    json flight = mapver_json["gossip"];
-
-    if (!map_tf_init_) {
-        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM,
-                 "Not ready for flight, try again after initialized");
-        auto rej_msg = hello_decco_manager_->rejectFlight(mapver_json, timestamp);
-        tymbal_hd_pub_->publish(rej_msg);
-        return;
-    }
-    burn_unit_name_ = static_cast<std::string>(flight["burnUnitName"]);
-    hd_drone_id_ = flight["droneId"];
-
-    start_time_ = decco_utilities::rosTimeToMilliseconds(timestamp);
-
-    std::string type = static_cast<std::string>(flight["type"]);
-    if (type == "PERI") {
-        getLawnmowerPattern(map_polygon_, lawnmower_points_);
-        visualizeLawnmower();
-        survey_type_ = SurveyType::SUPER;
-        RCLCPP_INFO(this->get_logger(), "lawnmower starting. ");
-    } else if (type == "POST") {
-        // TODO update types in HD
-        if (!do_trail_) {
-            logEvent(EventType::INFO, Severity::HIGH,
-                     "Trail requested but trail detector not active.");
-            auto msg = hello_decco_manager_->rejectFlight(mapver_json, timestamp);
-            tymbal_hd_pub_->publish(msg);
-            return;
-        }
-        survey_type_ = SurveyType::TRAIL;
-    } else {
-        survey_type_ = SurveyType::SUB;
-    }
-
-    geometry_msgs::msg::Polygon polygon;
-
-    // Process flight via HDM
-    auto receipt = hello_decco_manager_->flightReceipt(mapver_json, timestamp);
-    tymbal_hd_pub_->publish(receipt);
-
-    bool poly_valid, has_elevation;
-    auto burn_unit_rcv = hello_decco_manager_->acceptFlight(
-        mapver_json, polygon, poly_valid, home_elevation_, timestamp, has_elevation);
-    tymbal_hd_pub_->publish(burn_unit_rcv);
-
-    if (!poly_valid) {
-        logEvent(EventType::INFO, Severity::MEDIUM, "Polygon invalid, not continuing flight");
-        auto rej_msg = hello_decco_manager_->rejectFlight(mapver_json, timestamp);
-        tymbal_hd_pub_->publish(rej_msg);
-        return;
-    }
-    if (!has_elevation) {
-        logEvent(EventType::INFO, Severity::MEDIUM, "No elevation data, not continuing flight");
-        auto rej_msg = hello_decco_manager_->rejectFlight(mapver_json, timestamp);
-        tymbal_hd_pub_->publish(rej_msg);
-        return;
-    }
-
-    publishTif();
-    RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
-
-    // Now publish polygon visualization
-    auto vis = hello_decco_manager_->visualizePolygon(timestamp);
-    map_region_pub_->publish(vis);
-
-    auto req = std::make_shared<mavros_msgs::srv::WaypointPush::Request>();
-    if (hello_decco_manager_->polygonToGeofence(
-            polygon, req, flight_controller_interface_->getCurrentLocalPosition())) {
-        auto result = mavros_geofence_client_->async_send_request(req);
-        // TODO see if there is a clean way to handle result - I think I had issues with this last
-        // time I tried
-    } else {
-        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM,
-                 "Geofence invalid, not setting geofence");
-    }
-
-    map_polygon_ = hello_decco_manager_->getMapPolygon();
-    if (!polygonDistanceOk(goal_, map_polygon_)) {
-        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM,
-                 "Polygon rejected, exceeds maximum starting distance threshold");
-        return;
-    }
-
-    needs_takeoff_ = true;
 }
 
 // TODO where should this live?
@@ -1454,202 +1143,6 @@ bool TaskManager::lawnmowerGoalComplete() {
                      std::pow(current_pos.pose.position.y - goal_.pose.position.y, 2);
     double min_dist = std::pow(3, 2); // within 2m
     return dist_sq < min_dist;
-}
-
-void TaskManager::setpointResponse(json &json_msg) {
-    if (!map_tf_init_) {
-        logEvent(EventType::STATE_MACHINE, Severity::MEDIUM,
-                 "Not ready for flight, try again after initialized");
-        auto resp = hello_decco_manager_->rejectFlight(json_msg, this->get_clock()->now());
-        tymbal_hd_pub_->publish(resp);
-        return;
-    }
-
-    double lat = json_msg["gossip"]["latitude"];
-    double lon = json_msg["gossip"]["longitude"];
-    double px, py;
-    hello_decco_manager_->llToMap(lat, lon, px, py);
-
-    // Check distance makes sense
-    double max_dist = 100.0;
-    double diff_x = px - flight_controller_interface_->getCurrentLocalPosition().pose.position.x;
-    double diff_y = py - flight_controller_interface_->getCurrentLocalPosition().pose.position.y;
-    if (std::abs(diff_x) < max_dist && std::abs(diff_y) < max_dist) {
-        has_setpoint_ = true;
-        setpoint_started_ = false;
-
-        goal_.pose.position.x = px;
-        goal_.pose.position.y = py;
-
-        double yaw_target_ = atan2(diff_y, diff_x);
-        tf2::Quaternion setpoint_q;
-        setpoint_q.setRPY(0.0, 0.0, yaw_target_);
-        tf2::convert(setpoint_q, goal_.pose.orientation);
-
-        // Give confirmation
-        auto conf_msg = hello_decco_manager_->packageToTymbalHD("confirmation", json_msg,
-                                                                this->get_clock()->now());
-        tymbal_hd_pub_->publish(conf_msg);
-
-        if (hello_decco_manager_->getHomeElevation(home_elevation_)) {
-            RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
-            publishTif();
-            if (!is_armed_) {
-                needs_takeoff_ = true;
-            }
-        } else {
-            logEvent(EventType::TASK_STATUS, Severity::HIGH,
-                     "No elevation, can only perform manual flight.");
-            auto rej_msg = hello_decco_manager_->rejectFlight(json_msg, this->get_clock()->now());
-            tymbal_hd_pub_->publish(rej_msg);
-        }
-
-    } else {
-        logEvent(EventType::TASK_STATUS, Severity::HIGH,
-                 "Setpoint rejected, farther than max distance.");
-        auto rej_msg = hello_decco_manager_->rejectFlight(json_msg, this->get_clock()->now());
-        tymbal_hd_pub_->publish(rej_msg);
-    }
-}
-
-void TaskManager::emergencyResponse(const std::string severity) {
-    logEvent(EventType::FAILSAFE, Severity::HIGH, severity + " initiated due to pilot request");
-
-    // Then respond based on severity
-    if (severity == "PAUSE") {
-        // NOTICE = PAUSE
-        // TODO, tell exploration to stop searching frontiers. For now, will keep blacklisting them,
-        // but the drone is in PAUSE mode. Currently no way to pick back up and set to guided mode
-        // (here or in HD) Immediately set to hover
-        startPause();
-    } else if (severity == "LAND") {
-        // EMERGENCY = LAND IMMEDIATELY
-        startFailsafeLanding();
-    } else if (severity == "RTL") {
-        // CRITICAL = RTL
-        startRtl88();
-    }
-}
-
-void TaskManager::altitudesResponse(json &json_msg) {
-
-    if (!json_msg["max_altitude"].is_number() || !json_msg["min_altitude"].is_number() ||
-        !json_msg["default_altitude"].is_number()) {
-        RCLCPP_WARN(this->get_logger(), "Altitude message from mapversation contains invalid data");
-        return;
-    }
-
-    max_agl_ = json_msg["max_altitude"];
-    min_agl_ = json_msg["min_altitude"];
-    target_agl_ = json_msg["default_altitude"];
-
-    max_altitude_ = max_agl_ + altitude_offset_;
-    min_altitude_ = min_agl_ + altitude_offset_;
-    target_altitude_ = target_agl_ + altitude_offset_;
-
-    this->set_parameter(rclcpp::Parameter("max_alt", max_altitude_));
-    this->set_parameter(rclcpp::Parameter("min_alt", min_altitude_));
-    this->set_parameter(rclcpp::Parameter("default_alt", target_altitude_));
-}
-
-void TaskManager::publishHealth() {
-
-    auto jsonObjects = json::object();
-    json header = {
-        {"frame_id", "decco"},
-        {"stamp", this->get_clock()->now().seconds()},
-    };
-    jsonObjects["header"] = header;
-
-    auto healthObjects = json::array();
-
-    json j = {{"name", "battery"}, {"label", "Battery"}, {"isHealthy", health_checks_.battery_ok}};
-    healthObjects.push_back(j);
-    if (do_slam_) {
-        j = {{"name", "slamPosition"},
-             {"label", "SLAM position"},
-             {"isHealthy", health_checks_.slam_ok}};
-        healthObjects.push_back(j);
-        j = {{"name", "pathPlanner"},
-             {"label", "Path planner"},
-             {"isHealthy", health_checks_.path_ok}};
-        healthObjects.push_back(j);
-    }
-    // ROS bag
-    if (is_armed_ && !simulate_) {
-        j = {{"name", "rosbag"}, {"label", "ROS bag"}, {"isHealthy", health_checks_.rosbag_ok}};
-        healthObjects.push_back(j);
-    }
-
-    jsonObjects["healthIndicators"] = healthObjects;
-    auto hr_msg = hello_decco_manager_->packageToTymbalHD("health_report", jsonObjects,
-                                                          this->get_clock()->now());
-    tymbal_hd_pub_->publish(hr_msg);
-}
-
-void TaskManager::logEvent(EventType type, Severity sev, std::string description) {
-    switch (sev) {
-    case Severity::LOW: {
-        RCLCPP_INFO(this->get_logger(), "%s", description.c_str());
-        break;
-    }
-    case Severity::MEDIUM: {
-        RCLCPP_WARN(this->get_logger(), "%s", description.c_str());
-        break;
-    }
-    case Severity::HIGH: {
-        RCLCPP_ERROR(this->get_logger(), "%s", description.c_str());
-        break;
-    }
-    }
-
-    cmd_history_.append(description + "\n");
-
-    json j;
-    j["flightId"] = 1; // TODO
-    j["level"] = getSeverityString(sev);
-    j["droneId"] = 1;
-    j["timestamp"] = decco_utilities::rosTimeToMilliseconds(this->get_clock()->now());
-    j["type"] = getEventTypeString(type);
-    j["description"] = description.substr(0, 256); // Limit string size to 256
-
-    auto event_msg = hello_decco_manager_->packageToTymbalHD("event", j, this->get_clock()->now());
-    tymbal_hd_pub_->publish(event_msg);
-
-    if (in_autonomous_flight_) {
-        j["deccoId"] = hd_drone_id_;
-        j["startTime"] = start_time_;
-        sensor_msgs::msg::NavSatFix hb = flight_controller_interface_->getCurrentGlobalPosition();
-        json ll_json = {{"latitude", hb.latitude}, {"longitude", hb.longitude}};
-        j["location"] = ll_json;
-        auto puddle_msg = hello_decco_manager_->packageToTymbalPuddle("/flight-event", j);
-        // tymbal_puddle_pub_->publish(puddle_msg);
-    }
-}
-
-json TaskManager::makeTaskJson() {
-    json j;
-    j["flightMode"] = flight_controller_interface_->getFlightMode();
-    if (in_autonomous_flight_) {
-        double xval = goal_.pose.position.x;
-        double yval = goal_.pose.position.y;
-        double lat, lon;
-        hello_decco_manager_->mapToLl(xval, yval, lat, lon);
-        json goalObject;
-        goalObject["latitude"] = lat;
-        goalObject["longitude"] = lon;
-        j["goal"] = goalObject;
-    }
-    j["taskStatus"] = getTaskString(current_task_);
-    j["minAltitude"] = min_agl_;
-    j["maxAltitude"] = max_agl_;
-    j["targetAltitude"] = target_agl_;
-    j["flightMinLeft"] = (int)(flight_controller_interface_->getFlightTimeRemaining() / 60.f);
-    j["operatorID"] = operator_id_;
-    j["rawVoltage"] = (int)(flight_controller_interface_->getBatteryVoltage() * 100);
-    j["readyToArm"] = flight_controller_interface_->getDroneReadyToArm();
-    j["isArmed"] = flight_controller_interface_->getIsArmed();
-    return j;
 }
 
 } // namespace task_manager
