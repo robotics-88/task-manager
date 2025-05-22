@@ -39,8 +39,8 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "tf2_ros/transform_broadcaster.h"
 #include "tf2_ros/transform_listener.h"
 
+#include "elevation_manager.h"
 #include "flight_controller_interface.h"
-#include "hello_decco_manager.h"
 #include "json.hpp"
 using json = nlohmann::json;
 
@@ -82,10 +82,6 @@ class TaskManager : public rclcpp::Node {
 
     Task getCurrentTask();
 
-    // Timer callbacks
-    void uiHeartbeatCallback(const json &msg);
-    void heartbeatTimerCallback();
-
     // Subscriber callbacks
     void clickedPointCallback(const geometry_msgs::msg::PointStamped::SharedPtr msg);
     void slamPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr slam_pose);
@@ -100,7 +96,7 @@ class TaskManager : public rclcpp::Node {
     rclcpp::TimerBase::SharedPtr health_check_timer_;
 
     // Subclasses
-    std::shared_ptr<hello_decco_manager::HelloDeccoManager> hello_decco_manager_;
+    std::shared_ptr<elevation_manager::ElevationManager> elevation_manager_;
     std::shared_ptr<flight_controller_interface::FlightControllerInterface>
         flight_controller_interface_;
 

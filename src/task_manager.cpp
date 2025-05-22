@@ -233,7 +233,7 @@ TaskManager::TaskManager(
     // this));
 
     // Initialize hello decco manager
-    hello_decco_manager_ = std::make_shared<hello_decco_manager::HelloDeccoManager>(
+    elevation_manager_ = std::make_shared<elevation_manager::ElevationManager>(
         flightleg_area_acres_, mavros_map_frame_);
 
     // Tif pubs for visualization
@@ -618,7 +618,7 @@ void TaskManager::initialize() {
                 flight_controller_interface_->getCurrentGlobalPosition().latitude,
                 flight_controller_interface_->getCurrentGlobalPosition().longitude);
     flight_controller_interface_->initUTM(home_utm_x_, home_utm_y_);
-    hello_decco_manager_->setUtm(home_utm_x_, home_utm_y_, home_utm_zone_);
+    elevation_manager_->setUtm(home_utm_x_, home_utm_y_, home_utm_zone_);
     RCLCPP_INFO(this->get_logger(), "UTM offsets: (%f, %f)", home_utm_x_, home_utm_y_);
     utm2map_tf_.header.frame_id = "utm";
     utm2map_tf_.header.stamp = this->get_clock()->now();
@@ -636,7 +636,7 @@ void TaskManager::initialize() {
     initialized_ = true;
 
     if (offline_) {
-        if (hello_decco_manager_->getHomeElevation(home_elevation_)) {
+        if (elevation_manager_->getHomeElevation(home_elevation_)) {
             RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
             publishTif();
         } else {
@@ -735,7 +735,7 @@ bool TaskManager::getElevationAtPoint(geometry_msgs::msg::PointStamped &point, d
     geometry_msgs::msg::PointStamped point_utm;
     map2UtmPoint(point, point_utm);
     bool worked =
-        hello_decco_manager_->getElevationValue(point_utm.point.x, point_utm.point.y, elevation);
+        elevation_manager_->getElevationValue(point_utm.point.x, point_utm.point.y, elevation);
     if (!worked) {
         RCLCPP_INFO(this->get_logger(), "Failed to get elevation at map point [%f, %f]",
                     point.point.x, point.point.y);
@@ -773,7 +773,7 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t> /*request_h
         in.point.y = local.pose.position.y;
         map2UtmPoint(in, out);
         double my_altitude;
-        if (!hello_decco_manager_->getElevationValue(out.point.x, out.point.y, my_altitude)) {
+        if (!elevation_manager_->getElevationValue(out.point.x, out.point.y, my_altitude)) {
             RCLCPP_WARN(this->get_logger(),
                         "Elevation at current position not found, not adjusting for terrain");
             resp->success = false;
@@ -802,8 +802,8 @@ bool TaskManager::getMapData(const std::shared_ptr<rmw_request_id_t> /*request_h
 }
 
 void TaskManager::publishTif() {
-    auto tif_grid = hello_decco_manager_->getTifGrid();
-    auto cloud = hello_decco_manager_->getTifPcl();
+    auto tif_grid = elevation_manager_->getTifGrid();
+    auto cloud = elevation_manager_->getTifCloud();
     tif_grid_pub_->publish(tif_grid);
     sensor_msgs::msg::PointCloud2 cloud_msg;
     pcl::toROSMsg(cloud, cloud_msg);
@@ -829,7 +829,7 @@ void TaskManager::checkArmStatus() {
             return;
 
         updateCurrentTask(Task::MANUAL_FLIGHT);
-        if (hello_decco_manager_->getHomeElevation(home_elevation_)) {
+        if (elevation_manager_->getHomeElevation(home_elevation_)) {
             RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
             publishTif();
         } else {
