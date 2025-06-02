@@ -19,18 +19,12 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "geometry_msgs/msg/twist.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
-
-#include "livox_ros_driver2/msg/custom_msg.hpp"
-
-#include "nav_msgs/msg/occupancy_grid.hpp"
-
 #include "mavros_msgs/msg/basic_id.hpp"
 #include "mavros_msgs/msg/operator_id.hpp"
 #include "mavros_msgs/msg/self_id.hpp"
 #include "mavros_msgs/msg/system.hpp"
 #include "mavros_msgs/msg/system_update.hpp"
 
-#include "messages_88/action/explore.hpp"
 #include "messages_88/action/nav_to_point.hpp"
 #include "messages_88/msg/frontier.hpp"
 #include "messages_88/msg/task_status.hpp"
@@ -50,15 +44,15 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "tf2_ros/transform_broadcaster.h"
 #include "tf2_ros/transform_listener.h"
 
+#include "elevation_manager.h"
 #include "flight_controller_interface.h"
-#include "hello_decco_manager.h"
 #include "json.hpp"
 using json = nlohmann::json;
 
 namespace task_manager {
 /**
  * @class TaskManager
- * @brief The TaskManager manages the task queue (e.g., navigate to polygon, explore, handle
+ * @brief The TaskManager manages the task queue (e.g., navigate to polygon, handle
  * emergency). Handles comms to/from UI, including task assignment, starting capabilities, and
  * safety features based on drone status.
  */
@@ -73,10 +67,8 @@ class TaskManager : public rclcpp::Node {
         READY,
         MANUAL_FLIGHT,
         PAUSE,
-        EXPLORING,
         LAWNMOWER,
         TRAIL_FOLLOW,
-        IN_TRANSIT,
         SETPOINT,
         RTL_88,
         TAKING_OFF,
@@ -95,9 +87,6 @@ class TaskManager : public rclcpp::Node {
 
     Task getCurrentTask();
 
-    // Timer callbacks
-    void uiHeartbeatCallback(const json &msg);
-    void heartbeatTimerCallback();
     void odidTimerCallback();
 
     // Subscriber callbacks
@@ -105,12 +94,6 @@ class TaskManager : public rclcpp::Node {
     void slamPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr slam_pose);
     void registeredPclCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
     void pathPlannerCallback(const std_msgs::msg::Header::SharedPtr msg);
-    void costmapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
-    void pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
-    void livoxCallback(const livox_ros_driver2::msg::CustomMsg::SharedPtr msg);
-    void mapirCallback(const sensor_msgs::msg::Image::SharedPtr msg);
-    void attolloCallback(const sensor_msgs::msg::Image::SharedPtr msg);
-    void thermalCallback(const sensor_msgs::msg::Image::SharedPtr msg);
     void rosbagCallback(const std_msgs::msg::String::SharedPtr msg);
     void goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
 
@@ -120,7 +103,7 @@ class TaskManager : public rclcpp::Node {
     rclcpp::TimerBase::SharedPtr health_check_timer_;
 
     // Subclasses
-    std::shared_ptr<hello_decco_manager::HelloDeccoManager> hello_decco_manager_;
+    std::shared_ptr<elevation_manager::ElevationManager> elevation_manager_;
     std::shared_ptr<flight_controller_interface::FlightControllerInterface>
         flight_controller_interface_;
 
@@ -148,12 +131,7 @@ class TaskManager : public rclcpp::Node {
     // Subscriptions
     rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr clicked_point_sub_;
     rclcpp::Subscription<std_msgs::msg::Header>::SharedPtr path_planner_sub_;
-    rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr costmap_sub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr lidar_sub_;
-    rclcpp::Subscription<livox_ros_driver2::msg::CustomMsg>::SharedPtr livox_lidar_sub_;
-    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr mapir_sub_;
-    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr attollo_sub_;
-    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr thermal_sub_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr rosbag_sub_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr tymbal_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr slam_pose_sub_;
@@ -163,41 +141,20 @@ class TaskManager : public rclcpp::Node {
 
     struct HealthChecks {
         bool battery_ok;
-        bool lidar_ok;
         bool slam_ok;
         bool path_ok;
-        bool costmap_ok;
-        bool explore_ok;
-        bool mapir_ok;
-        bool attollo_ok;
-        bool thermal_ok;
         bool rosbag_ok;
     } health_checks_;
 
     std::string path_planner_topic_;
-    std::string costmap_topic_;
     std::string lidar_topic_;
-    std::string attollo_topic_;
-    std::string mapir_rgb_topic_;
-    std::string mapir_topic_;
-    std::string thermal_topic_;
     std::string rosbag_topic_;
 
     rclcpp::Duration lidar_timeout_;
     rclcpp::Duration vision_pose_timeout_;
     rclcpp::Duration path_timeout_;
-    rclcpp::Duration costmap_timeout_;
-    rclcpp::Duration mapir_timeout_;
-    rclcpp::Duration attollo_timeout_;
-    rclcpp::Duration thermal_timeout_;
     rclcpp::Duration rosbag_timeout_;
-    std::chrono::seconds explore_timeout_;
-    rclcpp::Time last_lidar_stamp_;
     rclcpp::Time last_path_planner_stamp_;
-    rclcpp::Time last_costmap_stamp_;
-    rclcpp::Time last_mapir_stamp_;
-    rclcpp::Time last_thermal_stamp_;
-    rclcpp::Time last_attollo_stamp_;
     rclcpp::Time last_rosbag_stamp_;
 
     float task_manager_loop_duration_;
@@ -212,15 +169,6 @@ class TaskManager : public rclcpp::Node {
     bool enable_autonomy_;
     bool use_failsafes_;
     bool do_trail_;
-
-    bool do_attollo_;
-    bool do_mapir_rgn_;
-    bool do_mapir_rgb_;
-    bool do_seek_thermal_;
-    bool do_see3cam_down_;
-    bool do_see3cam_fwd_;
-    bool do_immervision_down_;
-    bool do_immervision_front_;
 
     // Offline handling
     bool offline_;
@@ -291,18 +239,6 @@ class TaskManager : public rclcpp::Node {
     bool needs_takeoff_;
     int takeoff_attempts_;
 
-    // Explore action
-    using Explore = messages_88::action::Explore;
-    using ExploreGoalHandle = rclcpp_action::ClientGoalHandle<Explore>;
-    messages_88::action::Explore_Goal current_explore_goal_;
-    rclcpp_action::Client<Explore>::SharedPtr explore_action_client_;
-    rclcpp_action::ClientGoalHandle<Explore>::SharedPtr explore_action_goal_handle_;
-    rclcpp_action::ResultCode explore_action_result_;
-    void explore_goal_response_callback(const ExploreGoalHandle::SharedPtr &goal_handle);
-    void explore_feedback_callback(ExploreGoalHandle::SharedPtr,
-                                   const std::shared_ptr<const Explore::Feedback> feedback);
-    void explore_result_callback(const ExploreGoalHandle::WrappedResult &result);
-
     // State
     bool initialized_;
     bool is_armed_;
@@ -336,8 +272,6 @@ class TaskManager : public rclcpp::Node {
     // Task methods
     void updateCurrentTask(Task task);
     void startTakeoff();
-    void startTransit();
-    void startExploration();
     void startRtl88();
     void startLanding();
     void startFailsafeLanding();
@@ -382,7 +316,6 @@ class TaskManager : public rclcpp::Node {
     void setpointResponse(json &json_msg);
     void emergencyResponse(const std::string severity);
     void altitudesResponse(json &json_msg);
-    void remoteIDResponse(json &json);
     void publishHealth();
     json makeTaskJson();
     void acceptFlight(json flight);

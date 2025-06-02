@@ -4,7 +4,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 */
 
 #include "task_manager/flight_controller_interface.h"
-#include "messages_88/action/explore.hpp"
 #include "messages_88/msg/battery.hpp"
 
 #include "geometry_msgs/msg/polygon_stamped.hpp"
@@ -133,7 +132,6 @@ FlightControllerInterface::FlightControllerInterface()
     // Decco pub/subs
     slam_pose_subscriber_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
         "/decco/pose", 10, std::bind(&FlightControllerInterface::slamPoseCallback, this, _1));
-    battery_pub_ = this->create_publisher<messages_88::msg::Battery>("/decco/battery", 10);
 
     if (!offline_) {
 
@@ -234,60 +232,6 @@ void FlightControllerInterface::initializeArducopter() {
 
     // If param fetch is done, MAVLink streams should be clear, so request streams again
     requestMavlinkStreams();
-
-    // Clear geofence
-    auto geofence_clear_client =
-        service_call_node->create_client<mavros_msgs::srv::WaypointClear>("/mavros/geofence/clear");
-    auto geofence_clear_req = std::make_shared<mavros_msgs::srv::WaypointClear::Request>();
-
-    attempts = 3;
-    for (unsigned i = 0; i < attempts; i++) {
-
-        auto result = geofence_clear_client->async_send_request(geofence_clear_req);
-        if (rclcpp::spin_until_future_complete(service_call_node, result, 1s) ==
-            rclcpp::FutureReturnCode::SUCCESS) {
-            if (result.get()->success) {
-                RCLCPP_INFO(this->get_logger(), "Geofence clear complete");
-                break;
-            }
-        } else {
-            RCLCPP_ERROR(this->get_logger(), "Failed to call service /mavros/geofence/clear");
-        }
-
-        if (i == attempts - 1) {
-            RCLCPP_ERROR(this->get_logger(),
-                         "Geofence clear unsuccessful after 3 attempts, not initializing drone");
-            return;
-        }
-    }
-
-    // Clear mission
-    auto mission_clear_client =
-        service_call_node->create_client<mavros_msgs::srv::WaypointClear>("/mavros/mission/clear");
-    auto mission_clear_req = std::make_shared<mavros_msgs::srv::WaypointClear::Request>();
-
-    auto result = mission_clear_client->async_send_request(mission_clear_req);
-    // TODO figure out why spin_until_future_complete never returns
-
-    // if (rclcpp::spin_until_future_complete(mission_clear_node, result) ==
-    //     rclcpp::FutureReturnCode::SUCCESS)
-    // {
-    //     RCLCPP_INFO(this->get_logger(), "Got mission clear res");
-    //     if (result.get()->success) {
-    //         RCLCPP_INFO(this->get_logger(), "Mission clear complete");
-    //         break;
-    //     }
-    //     else {
-    //         if (attempts_ > 3) {
-    //             RCLCPP_ERROR(this->get_logger(), "Mission clear unsuccessful after 3 attempts,
-    //             not initializing drone"); return;
-    //         }
-    //         return;
-    //     }
-
-    // } else {
-    //     RCLCPP_ERROR(this->get_logger(), "Failed to call service /mavros/mission/clear");
-    // }
 
     // Set params from param map
     auto param_set_req = std::make_shared<rcl_interfaces::srv::SetParameters::Request>();
@@ -626,16 +570,6 @@ void FlightControllerInterface::batteryCallback(
     }
 
     estimated_flight_time_remaining_ = amp_hours_left / estimated_current_ * 3600;
-
-    // Publish custom battery message
-    messages_88::msg::Battery batt_msg;
-    batt_msg.header.stamp = this->get_clock()->now();
-    batt_msg.percentage = battery_percentage_;
-    batt_msg.estimated_current = estimated_current_;
-    batt_msg.amp_hours_left = amp_hours_left;
-    batt_msg.flight_time_remaining = estimated_flight_time_remaining_;
-
-    battery_pub_->publish(batt_msg);
 }
 
 void FlightControllerInterface::statusCallback(const mavros_msgs::msg::State::SharedPtr msg) {
@@ -931,62 +865,5 @@ float FlightControllerInterface::calculateBatteryPercentage(float voltage) {
 
     return battery_percentage;
 }
-
-// These are old methods of getting battery percentage. They aren't currently used but I don't want
-// to delete them just yet.
-
-// void FlightControllerInterface::calculateBatteryPercentage(float voltage_adj) {
-
-//     // Battery voltage to battery percentage conversion is not linear.
-//     // Use this piecewise function based on gathered data to estimate battery percentage.
-//     if (voltage_adj >= 25.2) {
-//         battery_percentage_ = 100.0;
-//     }
-//     else if (voltage_adj >= 22.95) {
-//         // For this voltage range:
-//         // voltage ~= 2.9*(1-percentage)^2 - 5.95*(1-percentage) + 25.2
-//         // To get percentage, use quadratic formula.
-//         // 0 = 2.9*(1-percentage)^2 - 5.95*(1-percentage) + 25.2 - voltage
-//         float a = 2.9;
-//         float b = -5.95;
-//         float c = 25.2 - voltage_adj;
-//         battery_percentage_ = (1 - findValidRoot(a, b, c)) * 100;
-//     }
-//     else if (voltage_adj >= 22.213) {
-//         // For this voltage range:
-//         // voltage ~= -1.733*(1-percentage)+23.816
-//         battery_percentage_ = (voltage_adj - 22.083) / 1.733 * 100;
-//     }
-//     else if (voltage_adj >= 21) {
-//         // For this voltage range:
-//         // voltage ~= -169.068 * (1-percentage)2 + 309.282(1-percentage)-119.214
-//         // Solve as before
-//         float a = -169.068;
-//         float b = 309.282;
-//         float c = -119.214 - voltage_adj;
-//         battery_percentage_ = (1 - findValidRoot(a, b, c)) * 100;
-//     }
-//     else {
-//         battery_percentage_ = 0.0;
-//     }
-// }
-
-// float FlightControllerInterface::findValidRoot(float a, float b, float c) {
-//     float discriminant = b*b - 4*a*c;
-//     float x1, x2;
-
-//     if (discriminant < 0) {
-//         RCLCPP_WARN(this->get_logger(), "Invalid battery calculation");
-//         return 0.0;
-//     }
-//     else if (discriminant > 0) {
-//         // Note: this is only one of the 2 real roots.
-//         // However, this one is the correct one for the possible input values
-//         return (-b - sqrt(discriminant)) / (2*a);
-//     }
-//     else if (discriminant == 0) {
-//         return -b/(2*a);
-//     }
-// }
 
 } // namespace flight_controller_interface

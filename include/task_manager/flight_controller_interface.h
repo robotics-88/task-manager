@@ -28,7 +28,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 #include "messages_88/action/explore.hpp"
 #include "messages_88/action/nav_to_point.hpp"
-#include "messages_88/msg/battery.hpp"
 #include "messages_88/srv/geopoint.hpp"
 
 #include "rcl_interfaces/srv/set_parameters.hpp"
@@ -131,8 +130,6 @@ class FlightControllerInterface : public rclcpp::Node {
 
     // Publishers
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr vision_pose_publisher_;
-    rclcpp::Publisher<messages_88::msg::Battery>::SharedPtr
-        battery_pub_; // Publisher mostly for debug
 
     // Param sync client
     std::shared_ptr<rclcpp::SyncParametersClient> sync_params_client_;

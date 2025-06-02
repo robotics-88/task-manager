@@ -51,7 +51,7 @@ include_directories(
 add_library(task_manager SHARED
   src/decco_utilities.cpp
   src/flight_controller_interface.cpp
-  src/hello_decco_manager.cpp
+  src/elevation_manager.cpp
   src/task_manager.cpp
   )
 
@@ -113,7 +113,7 @@ if(BUILD_TESTING)
   #   launch/test/tests_task_manager.launch 
   #   src/decco_utilities.cpp
   #   src/task_manager.cpp
-  #   src/hello_decco_manager.cpp
+  #   src/elevation_manager.cpp
   #   src/flight_controller_interface.cpp
   #   test/task_manager_test.cpp
   # )
@@ -124,7 +124,7 @@ if(BUILD_TESTING)
   #   launch/test/tests_task_manager.launch 
   #   src/decco_utilities.cpp
   #   src/task_manager.cpp
-  #   src/hello_decco_manager.cpp
+  #   src/elevation_manager.cpp
   #   src/flight_controller_interface.cpp
   #   test/task_manager_test.cpp
   # )
@@ -138,7 +138,7 @@ if(BUILD_TESTING)
   # add_rostest_gtest(tests_hellodecco
   #   launch/test/tests_hellodecco.launch
   #   src/decco_utilities.cpp
-  #   src/hello_decco_manager.cpp 
+  #   src/elevation_manager.cpp 
   #   test/hellodecco_test.cpp
   # )
 

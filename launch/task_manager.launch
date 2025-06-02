@@ -6,15 +6,6 @@
     <arg name="goal_topic" default="/mavros/setpoint_position/local"/> <!-- for mavros without OA, use /mavros/setpoint_position/local. default is /goal.-->
 
     <!-- Which hardware to add to health report -->
-    <arg name="do_mapir_rgn" default="false"/>
-    <arg name="do_mapir_rgb" default="false"/>
-    <arg name="do_attollo" default="false"/>
-    <arg name="do_seek_thermal" default="false"/>
-    <arg name="do_see3cam_down" default="false"/>
-    <arg name="do_see3cam_fwd" default="false"/>
-    <arg name="do_immervision_down" default="false"/>
-    <arg name="do_immervision_front" default="false"/>
-    <arg name="lidar_type" default="4"/> <!-- 2 = Velodyne, 4 = Mid360-->
     <arg name="lidar_pitch" default="0.0"/>
     <arg name="lidar_x" default="0.0"/>
     <arg name="lidar_z" default="0.11"/>
@@ -32,13 +23,8 @@
 
     <!-- Health topics -->
     <arg name="path_planner_topic" default="/path_planner/heartbeat"/>
-    <arg name="costmap_topic" default="/occ_density_grid"/>
     <arg name="lidar_topic" default="/livox/lidar"/>
-    <arg name="attollo_topic" default="/attollo_cam/image_rect"/>
-    <arg name="mapir_topic" default="/mapir_rgn/image_rect_color"/>
-    <arg name="mapir_rgb_topic" default="/mapir_rgb/image_rect_color"/>
     <arg name="rosbag_topic" default="/record/heartbeat"/>
-    <arg name="thermal_topic" default="/seek_thermal/image_rect_color"/>
 
      <!-- Record -->
     <arg name="do_slam" default="true"/>
@@ -69,12 +55,7 @@
         <param name="slam_map_frame" value="$(var slam_map_frame)"/>
         <param name="path_planner_topic" value="$(var path_planner_topic)"/>
         <param name="slam_pose_topic" value="$(var slam_pose_topic)"/>
-        <param name="costmap_topic" value="$(var costmap_topic)"/>
         <param name="lidar_topic" value="$(var lidar_topic)"/>
-        <param name="mapir_topic" value="$(var mapir_topic)"/>
-        <param name="mapir_rgb_topic" value="$(var mapir_rgb_topic)"/>
-        <param name="attollo_topic" value="$(var attollo_topic)"/>
-        <param name="thermal_topic" value="$(var thermal_topic)"/>
         <param name="rosbag_topic" value="$(var rosbag_topic)"/>
         <param name="default_alt" value="$(var default_alt)"/>
         <param name="min_alt" value="$(var min_alt)"/>
@@ -87,15 +68,6 @@
         
         <param name="estimated_drone_speed" value="2.0"/>
         <param name="battery_failsafe_safety_factor" value="2.0"/>
-        <param name="do_mapir_rgn" value="$(var do_mapir_rgn)"/>
-        <param name="do_mapir_rgb" value="$(var do_mapir_rgb)"/>
-        <param name="do_attollo" value="$(var do_attollo)"/>
-        <param name="do_seek_thermal" value="$(var do_seek_thermal)"/>
-        <param name="do_see3cam_down" value="$(var do_see3cam_down)"/>
-        <param name="do_see3cam_fwd" value="$(var do_see3cam_fwd)"/>
-        <param name="do_immervision_down" value="$(var do_immervision_down)"/>
-        <param name="do_immervision_front" value="$(var do_immervision_front)"/>
-        <param name="lidar_type" value="$(var lidar_type)"/>
         <param name="lidar_pitch" value="$(var lidar_pitch)"/>
         <param name="lidar_x" value="$(var lidar_x)"/>
         <param name="lidar_z" value="$(var lidar_z)"/>
