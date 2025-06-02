@@ -19,6 +19,11 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "geometry_msgs/msg/twist.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
+#include "mavros_msgs/msg/basic_id.hpp"
+#include "mavros_msgs/msg/operator_id.hpp"
+#include "mavros_msgs/msg/self_id.hpp"
+#include "mavros_msgs/msg/system.hpp"
+#include "mavros_msgs/msg/system_update.hpp"
 
 #include "messages_88/action/nav_to_point.hpp"
 #include "messages_88/msg/frontier.hpp"
@@ -82,6 +87,8 @@ class TaskManager : public rclcpp::Node {
 
     Task getCurrentTask();
 
+    void odidTimerCallback();
+
     // Subscriber callbacks
     void clickedPointCallback(const geometry_msgs::msg::PointStamped::SharedPtr msg);
     void slamPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr slam_pose);
@@ -105,6 +112,11 @@ class TaskManager : public rclcpp::Node {
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud_repub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr goal_pos_pub_;
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr local_vel_pub_;
+    rclcpp::Publisher<mavros_msgs::msg::BasicID>::SharedPtr odid_basic_id_pub_;
+    rclcpp::Publisher<mavros_msgs::msg::OperatorID>::SharedPtr odid_operator_id_pub_;
+    rclcpp::Publisher<mavros_msgs::msg::SelfID>::SharedPtr odid_self_id_pub_;
+    rclcpp::Publisher<mavros_msgs::msg::System>::SharedPtr odid_system_pub_;
+    rclcpp::Publisher<mavros_msgs::msg::SystemUpdate>::SharedPtr odid_system_update_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr stop_record_pub_;
     rclcpp::Publisher<messages_88::msg::TaskStatus>::SharedPtr task_pub_;
     rclcpp::Publisher<sensor_msgs::msg::NavSatFix>::SharedPtr global_pose_pub_;

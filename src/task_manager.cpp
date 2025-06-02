@@ -207,6 +207,18 @@ TaskManager::TaskManager(
 
     marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/lawnmower", 10);
 
+    // Remote ID
+    odid_basic_id_pub_ =
+        this->create_publisher<mavros_msgs::msg::BasicID>("/mavros/open_drone_id/basic_id", 10);
+    odid_operator_id_pub_ = this->create_publisher<mavros_msgs::msg::OperatorID>(
+        "/mavros/open_drone_id/operator_id", 10);
+    odid_self_id_pub_ =
+        this->create_publisher<mavros_msgs::msg::SelfID>("/mavros/open_drone_id/self_id", 10);
+    odid_system_pub_ =
+        this->create_publisher<mavros_msgs::msg::System>("/mavros/open_drone_id/system", 10);
+    odid_system_update_pub_ = this->create_publisher<mavros_msgs::msg::SystemUpdate>(
+        "/mavros/open_drone_id/system_update", 10);
+
     // Task status pub
     goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
         goal_topic, 10, std::bind(&TaskManager::goalCallback, this, _1));
@@ -227,6 +239,7 @@ TaskManager::TaskManager(
     task_manager_timer_ =
         this->create_wall_timer(std::chrono::duration<float>(task_manager_loop_duration_),
                                 std::bind(&TaskManager::runTaskManager, this));
+    odid_timer_ = this->create_wall_timer(1s, std::bind(&TaskManager::odidTimerCallback, this));
 
     // To be tested later
     // utm_tf_update_timer_ = this->create_wall_timer(1s, std::bind(&TaskManager::updateUTMTF,
@@ -810,6 +823,17 @@ void TaskManager::publishTif() {
     cloud_msg.header.frame_id = tif_grid.header.frame_id;
     cloud_msg.header.stamp = tif_grid.header.stamp;
     tif_pcl_pub_->publish(cloud_msg);
+}
+
+// Publish the ODID messages that require updates
+void TaskManager::odidTimerCallback() {
+
+    // Self ID
+    mavros_msgs::msg::SelfID self_id;
+    self_id.header.stamp = this->get_clock()->now();
+    self_id.description_type = mavros_msgs::msg::SelfID::MAV_ODID_DESC_TYPE_TEXT;
+    self_id.description = "FLIGHT";
+    odid_self_id_pub_->publish(self_id);
 }
 
 bool TaskManager::pauseOperations() {
