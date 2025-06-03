@@ -87,7 +87,9 @@ install(TARGETS
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
-install(DIRECTORY launch
+install(DIRECTORY 
+  launch 
+  missions
   DESTINATION share/${PROJECT_NAME}
 )
 

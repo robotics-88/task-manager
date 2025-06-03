@@ -61,27 +61,26 @@ class TaskManager : public rclcpp::Node {
     TaskManager(std::shared_ptr<flight_controller_interface::FlightControllerInterface> fci);
     ~TaskManager();
 
+    enum Mission {
+        NONE,
+        LAWNMOWER,
+        TRAIL_FOLLOW,
+        SETPOINT
+    };
+
     enum Task {
         INITIALIZING,
         PREFLIGHT_CHECK,
         READY,
         MANUAL_FLIGHT,
         PAUSE,
-        LAWNMOWER,
-        TRAIL_FOLLOW,
-        SETPOINT,
+        MISSION,
         RTL_88,
         TAKING_OFF,
         LANDING,
         FAILSAFE_LANDING,
         COMPLETE
     };
-
-    enum EventType { TASK_STATUS, STATE_MACHINE, FLIGHT_CONTROL, FAILSAFE, INFO };
-
-    enum SurveyType { SUB, SUPER, TRAIL };
-
-    enum Severity { LOW, MEDIUM, HIGH };
 
     void runTaskManager();
 
@@ -127,6 +126,7 @@ class TaskManager : public rclcpp::Node {
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr tif_grid_pub_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr tif_pcl_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr trigger_recording_pub_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr rest_capabilities_pub_;
 
     // Subscriptions
     rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr clicked_point_sub_;
@@ -231,7 +231,6 @@ class TaskManager : public rclcpp::Node {
     std::vector<geometry_msgs::msg::PoseStamped> lawnmower_points_;
     bool lawnmower_started_;
     bool setpoint_started_;
-    SurveyType survey_type_;
 
     geometry_msgs::msg::PoseStamped goal_;
     double estimated_drone_speed_;
@@ -251,6 +250,8 @@ class TaskManager : public rclcpp::Node {
     std::string operator_id_;
 
     Task current_task_;
+    Mission current_mission_;
+    std::string perception_path_;
     rclcpp::TimerBase::SharedPtr status_timer_;
     int hd_drone_id_;
     unsigned long start_time_;
@@ -269,6 +270,10 @@ class TaskManager : public rclcpp::Node {
     // MAVROS geofence publisher
     rclcpp::Client<mavros_msgs::srv::WaypointPush>::SharedPtr mavros_geofence_client_;
 
+    // Capabilities
+    std::map<std::string,bool> perception_status_;
+    std::map<std::string,std::vector<std::string>> perception_hardware_;
+
     // Task methods
     void updateCurrentTask(Task task);
     void startTakeoff();
@@ -277,6 +282,10 @@ class TaskManager : public rclcpp::Node {
     void startFailsafeLanding();
     void startPause();
     void startTrailFollowing(bool start);
+
+    // Capabilities
+    void checkMissions();
+    void loadPerceptionRegistry();
 
     // Other methods
     bool isBatteryOk();
@@ -287,13 +296,7 @@ class TaskManager : public rclcpp::Node {
     bool pauseOperations();
     void startRecording();
     void stopRecording();
-    bool polygonDistanceOk(geometry_msgs::msg::PoseStamped &target,
-                           geometry_msgs::msg::Polygon &map_region);
-    void padNavTarget(geometry_msgs::msg::PoseStamped &target);
     std::string getTaskString(Task task);
-    std::string getEventTypeString(EventType type);
-    std::string getSeverityString(Severity sev);
-    void logEvent(EventType type, Severity sev, std::string description);
     void getLawnmowerPattern(const geometry_msgs::msg::Polygon &polygon,
                              std::vector<geometry_msgs::msg::PoseStamped> &lawnmower_points);
     void getLawnmowerGoal();
@@ -312,14 +315,6 @@ class TaskManager : public rclcpp::Node {
                     const std::shared_ptr<messages_88::srv::GetMapData::Request> req,
                     const std::shared_ptr<messages_88::srv::GetMapData::Response> resp);
 
-    // mapversation methods
-    void setpointResponse(json &json_msg);
-    void emergencyResponse(const std::string severity);
-    void altitudesResponse(json &json_msg);
-    void publishHealth();
-    json makeTaskJson();
-    void acceptFlight(json flight);
-    void packageFromTymbal(const std_msgs::msg::String::SharedPtr msg);
 };
 
 } // namespace task_manager

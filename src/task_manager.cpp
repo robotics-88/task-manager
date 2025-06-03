@@ -22,12 +22,14 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 using std::placeholders::_1;
 using namespace std::chrono_literals;
+using json = nlohmann::json;
 
 namespace task_manager {
 TaskManager::TaskManager(
     std::shared_ptr<flight_controller_interface::FlightControllerInterface> fci)
     : Node("task_manager"),
       current_task_(Task::INITIALIZING),
+      current_mission_(Mission::NONE),
       flight_controller_interface_(fci),
       task_manager_loop_duration_(1.0),
       simulate_(false),
@@ -68,6 +70,7 @@ TaskManager::TaskManager(
       is_armed_(false),
       in_autonomous_flight_(false),
       has_setpoint_(false),
+      perception_path_(""),
       explicit_global_params_(false),
       init_remote_id_message_sent_(false),
       takeoff_attempts_(0),
@@ -124,6 +127,7 @@ TaskManager::TaskManager(
     this->declare_parameter("lidar_x", lidar_x_);
     this->declare_parameter("lidar_z", lidar_z_);
     this->declare_parameter("flightleg_area_acres", flightleg_area_acres_);
+    this->declare_parameter("perception_file", perception_path_);
 
     // Now get parameters
     this->get_parameter("enable_autonomy", enable_autonomy_);
@@ -158,6 +162,7 @@ TaskManager::TaskManager(
     this->get_parameter("lidar_x", lidar_x_);
     this->get_parameter("lidar_z", lidar_z_);
     this->get_parameter("flightleg_area_acres", flightleg_area_acres_);
+    this->get_parameter("perception_file", perception_path_);
 
     // Init agl altitude params
     max_agl_ = max_altitude_;
@@ -257,6 +262,10 @@ TaskManager::TaskManager(
 
     trigger_recording_pub_ =
         this->create_publisher<std_msgs::msg::String>("/trigger_recording", 10);
+
+    rest_capabilities_pub_ =
+        this->create_publisher<std_msgs::msg::String>("capabilities",
+        rclcpp::QoS(rclcpp::KeepLast(1)).transient_local());
 }
 
 TaskManager::~TaskManager() {}
@@ -266,6 +275,8 @@ void TaskManager::runTaskManager() {
     // Check arm status and make sure bag recording is happening properly.
     checkArmStatus();
     checkFailsafes();
+    loadPerceptionRegistry();
+    checkMissions();
 
     switch (current_task_) {
     case Task::INITIALIZING: {
@@ -333,7 +344,8 @@ void TaskManager::runTaskManager() {
     case Task::MANUAL_FLIGHT: {
         // Allow for moving to setpoint from manual mode
         if (has_setpoint_) {
-            updateCurrentTask(Task::SETPOINT);
+            current_mission_ = Mission::SETPOINT;
+            updateCurrentTask(Task::MISSION);
         }
         break;
     }
@@ -346,39 +358,46 @@ void TaskManager::runTaskManager() {
         if (flight_controller_interface_->getAltitudeAGL() > (target_altitude_ - 1)) {
             // If not in polygon, start navigation task
             if (has_setpoint_) {
-                updateCurrentTask(Task::SETPOINT);
+                current_mission_ = Mission::SETPOINT;
+                updateCurrentTask(Task::MISSION);
             }
         }
         break;
     }
-    case Task::SETPOINT: {
-        if (!setpoint_started_) {
-            goal_pos_pub_->publish(goal_);
-            setpoint_started_ = true;
-        } else {
-            bool reached = decco_utilities::isInAcceptanceRadius(
-                flight_controller_interface_->getCurrentLocalPosition().pose.position,
-                goal_.pose.position, 3.0);
-            if (reached) {
-                has_setpoint_ = false;
-                setpoint_started_ = false;
-                updateCurrentTask(Task::READY);
-            }
-        }
-        break;
-    }
-    case Task::LAWNMOWER: {
-        if (lawnmower_started_ && lawnmower_points_.empty()) {
-            RCLCPP_INFO(this->get_logger(), "Lawnmower complete, doing RTL_88");
-            startRtl88();
-        } else {
-            if (lawnmower_started_ && !lawnmowerGoalComplete()) {
-                break;
+    case Task::MISSION: {
+        // Handle mission tasks
+        if (current_mission_ == Mission::LAWNMOWER) {
+            if (lawnmower_started_ && lawnmower_points_.empty()) {
+                RCLCPP_INFO(this->get_logger(), "Lawnmower complete, doing RTL_88");
+                startRtl88();
             } else {
-                getLawnmowerGoal();
-                goal_pos_pub_->publish(goal_);
-                lawnmower_started_ = true;
+                if (lawnmower_started_ && !lawnmowerGoalComplete()) {
+                    break;
+                } else {
+                    getLawnmowerGoal();
+                    goal_pos_pub_->publish(goal_);
+                    lawnmower_started_ = true;
+                }
             }
+        } else if (current_mission_ == Mission::TRAIL_FOLLOW) {
+            // TODO
+        } else if (current_mission_ == Mission::SETPOINT) {
+            if (!setpoint_started_) {
+                goal_pos_pub_->publish(goal_);
+                setpoint_started_ = true;
+            } else {
+                bool reached = decco_utilities::isInAcceptanceRadius(
+                    flight_controller_interface_->getCurrentLocalPosition().pose.position,
+                    goal_.pose.position, 3.0);
+                if (reached) {
+                    has_setpoint_ = false;
+                    setpoint_started_ = false;
+                    updateCurrentTask(Task::READY);
+                }
+            }
+        } else {
+            RCLCPP_WARN(this->get_logger(), "No mission set, returning to READY state");
+            updateCurrentTask(Task::READY);
         }
         break;
     }
@@ -484,6 +503,167 @@ void TaskManager::updateCurrentTask(Task task) {
 
 TaskManager::Task TaskManager::getCurrentTask() {
     return current_task_;
+}
+
+void TaskManager::checkMissions()
+  {
+    json capabilities_json;
+    capabilities_json["missions"] = json::array();
+
+    // 1) Example hardware status (you can replace with actual detection)
+    std::map<std::string, bool> hardware_status = {
+      {"lidar", true},
+      {"camera", false}
+    };
+
+    // 2) Use the already‐loaded perception_status_ map (from loadPerceptionRegistry)
+    //    so no need to re‐open perception.json here.
+    const auto &perception_status = perception_status_;
+
+    // 3) Build a copy of perception_status_ into a simple json object at the end
+    //    (for publishing)
+    json perception_module_states = json::object();
+    for (auto & [mod, is_on] : perception_status_) {
+      perception_module_states[mod] = is_on;
+    }
+
+    // 4) Now iterate over each mission JSON file in the “missions/” folder
+    std::string pkg_path = ament_index_cpp::get_package_share_directory("task_manager");
+    std::string missions_dir = pkg_path + "/missions";
+
+    for (const auto &entry : std::filesystem::directory_iterator(missions_dir)) {
+      if (entry.path().extension() != ".json") {
+        continue;
+      }
+      std::ifstream file(entry.path());
+      if (!file.is_open()) {
+        continue;
+      }
+
+      json mission_json;
+      try {
+        file >> mission_json;
+      } catch (const std::exception &e) {
+        RCLCPP_WARN(this->get_logger(),
+                    "Failed to parse mission file: %s", entry.path().c_str());
+        continue;
+      }
+
+      // 4a) Extract mission name
+      std::string name = mission_json["mission"]["name"].get<std::string>();
+
+      // 4b) Gather required/optional perception modules from mission definition
+      std::set<std::string> required_perception;
+      std::set<std::string> optional_perception;
+
+      if (mission_json["requirements"].contains("perception")
+          && mission_json["requirements"]["perception"].contains("required"))
+      {
+        for (const auto &mod : mission_json["requirements"]["perception"]["required"]) {
+          required_perception.insert(mod.get<std::string>());
+        }
+      }
+      if (mission_json["requirements"].contains("perception")
+          && mission_json["requirements"]["perception"].contains("optional"))
+      {
+        for (const auto &mod : mission_json["requirements"]["perception"]["optional"]) {
+          optional_perception.insert(mod.get<std::string>());
+        }
+      }
+
+      // 4c) Determine hardware needed by “required” perception
+      std::set<std::string> all_required_hardware;
+      for (const auto &mod : required_perception) {
+        if (perception_hardware_.count(mod)) {
+          for (auto &hw : perception_hardware_[mod]) {
+            all_required_hardware.insert(hw);
+          }
+        }
+      }
+      // 4d) If an optional module is actually “on”, it also brings its hardware
+      for (const auto &mod : optional_perception) {
+        if (perception_status.count(mod) && perception_status.at(mod)) {
+          if (perception_hardware_.count(mod)) {
+            for (auto &hw : perception_hardware_[mod]) {
+              all_required_hardware.insert(hw);
+            }
+          }
+        }
+      }
+
+      // 4e) Check if all hardware is present
+      bool hardware_ok = true;
+      for (const auto &hw : all_required_hardware) {
+        if (!hardware_status.count(hw) || !hardware_status[hw]) {
+          hardware_ok = false;
+          break;
+        }
+      }
+      if (!hardware_ok) {
+        // skip this mission entirely if required hardware is missing
+        continue;
+      }
+
+      // 4f) Check perception “on/off” constraints
+      bool mission_available = true;
+      std::vector<std::string> unmet;
+
+      // Any required perception that is not “on” makes mission unavailable
+      for (const auto &mod : required_perception) {
+        if (!perception_status.count(mod) || !perception_status.at(mod)) {
+          mission_available = false;
+          unmet.push_back(mod);
+        }
+      }
+      // Any optional perception that is off just goes into “requires_activation”
+      for (const auto &mod : optional_perception) {
+        if (!perception_status.count(mod) || !perception_status.at(mod)) {
+          unmet.push_back(mod);
+        }
+      }
+
+      // 4g) Build JSON entry for this mission
+      json mission_entry;
+      mission_entry["name"] = name;
+      mission_entry["available"] = mission_available;
+      if (!unmet.empty()) {
+        mission_entry["requires_activation"] = unmet;
+      }
+
+      capabilities_json["missions"].push_back(mission_entry);
+    }
+
+    // 5) Finally, embed the perception module states and publish
+    capabilities_json["perception_modules"] = perception_module_states;
+
+    auto msg = std_msgs::msg::String();
+    msg.data = capabilities_json.dump();
+    rest_capabilities_pub_->publish(msg);
+}
+
+void TaskManager::loadPerceptionRegistry() {
+    std::ifstream f(perception_path_);
+    json perception_registry = json::parse(f);
+  
+    // 2) For each module in perception_registry, look up its "launch_arg"
+    for (auto& [module_name, info] : perception_registry.items()) {
+      std::string launch_arg = info["launch_arg"].get<std::string>();
+      bool was_launched = false;
+  
+      // 3) Check if task_manager node was given that parameter
+      if (this->has_parameter(launch_arg)) {
+        // e.g. if user did `ros2 launch ... do_trail:=true`
+        was_launched = this->get_parameter(launch_arg).as_bool();
+      }
+  
+      // 4) Now record:
+      perception_status_[module_name] = was_launched;
+  
+      // 5) Also cache that module's hardware requirements:
+      for (auto& hw : info["hardware_required"]) {
+        perception_hardware_[module_name].push_back(hw.get<std::string>());
+      }
+    }
 }
 
 void TaskManager::checkHealth() {
@@ -974,12 +1154,8 @@ std::string TaskManager::getTaskString(Task task) {
         return "MANUAL_FLIGHT";
     case Task::PAUSE:
         return "PAUSE";
-    case Task::LAWNMOWER:
-        return "LAWNMOWER";
-    case Task::TRAIL_FOLLOW:
-        return "TRAIL_FOLLOW";
-    case Task::SETPOINT:
-        return "SETPOINT";
+    case Task::MISSION:
+        return "MISSION";
     case Task::RTL_88:
         return "RTL_88";
     case Task::TAKING_OFF:

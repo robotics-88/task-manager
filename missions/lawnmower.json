@@ -1,0 +1,11 @@
+{
+  "mission": {
+    "name": "LAWNMOWER"
+  },
+  "requirements": {
+    "perception": {
+      "required": ["lidar_slam"],
+      "optional": ["obstacle_avoidance"]
+    }
+  }
+}

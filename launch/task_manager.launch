@@ -5,6 +5,8 @@
     <arg name="slam_pose_topic" default="/decco/pose"/>
     <arg name="goal_topic" default="/mavros/setpoint_position/local"/> <!-- for mavros without OA, use /mavros/setpoint_position/local. default is /goal.-->
 
+    <arg name="perception_file" default="$(find-pkg-share vehicle_launch)/config/perception.json"/>
+
     <!-- Which hardware to add to health report -->
     <arg name="lidar_pitch" default="0.0"/>
     <arg name="lidar_x" default="0.0"/>
@@ -50,6 +52,7 @@
         <param name="do_record" value="$(var do_record)"/>
         <param name="data_directory" value="$(var data_directory)"/>
         <param name="record_config_file" value="$(var record_config_file)"/>
+        <param name="perception_file" value="$(var perception_file)"/>
         <param name="mavros_map_frame" value="$(var mavros_map_frame)"/>
         <param name="base_frame" value="$(var base_frame)"/>
         <param name="slam_map_frame" value="$(var slam_map_frame)"/>

@@ -1,0 +1,12 @@
+{
+  "mission": {
+    "name": "TRAIL_FOLLOW"
+  },
+  "requirements": {
+    "perception": {
+      "required": ["lidar_slam", 
+                  "obstacle_avoidance", 
+                  "trail_detection"]
+    }
+  }
+}
