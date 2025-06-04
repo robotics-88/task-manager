@@ -61,11 +61,18 @@ class TaskManager : public rclcpp::Node {
     TaskManager(std::shared_ptr<flight_controller_interface::FlightControllerInterface> fci);
     ~TaskManager();
 
-    enum Mission {
+    enum MissionType {
         NONE,
         LAWNMOWER,
         TRAIL_FOLLOW,
         SETPOINT
+    };
+
+    struct Mission {
+        MissionType type;
+        bool completed;
+        geometry_msgs::msg::Polygon polygon;
+        geometry_msgs::msg::Point setpoint;
     };
 
     enum Task {
@@ -95,6 +102,7 @@ class TaskManager : public rclcpp::Node {
     void pathPlannerCallback(const std_msgs::msg::Header::SharedPtr msg);
     void rosbagCallback(const std_msgs::msg::String::SharedPtr msg);
     void goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
+    void missionCallback(const std_msgs::msg::String::SharedPtr msg);
 
   private:
     const std::shared_ptr<rclcpp::Node> nh_;
@@ -138,6 +146,7 @@ class TaskManager : public rclcpp::Node {
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr registered_cloud_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_sub_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr burn_unit_sub_;
+    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr rest_mission_sub_;
 
     struct HealthChecks {
         bool battery_ok;
@@ -250,8 +259,6 @@ class TaskManager : public rclcpp::Node {
     std::string operator_id_;
 
     Task current_task_;
-    Mission current_mission_;
-    std::string perception_path_;
     rclcpp::TimerBase::SharedPtr status_timer_;
     int hd_drone_id_;
     unsigned long start_time_;
@@ -270,6 +277,12 @@ class TaskManager : public rclcpp::Node {
     // MAVROS geofence publisher
     rclcpp::Client<mavros_msgs::srv::WaypointPush>::SharedPtr mavros_geofence_client_;
 
+    // Missions
+    Mission current_mission_;
+    std::string perception_path_;
+    bool has_mission_;
+    Mission mission_;
+
     // Capabilities
     std::map<std::string,bool> perception_status_;
     std::map<std::string,std::vector<std::string>> perception_hardware_;
@@ -286,6 +299,9 @@ class TaskManager : public rclcpp::Node {
     // Capabilities
     void checkMissions();
     void loadPerceptionRegistry();
+    MissionType getMissionType(std::string mission_type);
+    void startMission();
+    bool parseMission(json mission_json);
 
     // Other methods
     bool isBatteryOk();
@@ -297,9 +313,9 @@ class TaskManager : public rclcpp::Node {
     void startRecording();
     void stopRecording();
     std::string getTaskString(Task task);
-    void getLawnmowerPattern(const geometry_msgs::msg::Polygon &polygon,
+    bool getLawnmowerPattern(const geometry_msgs::msg::Polygon &polygon,
                              std::vector<geometry_msgs::msg::PoseStamped> &lawnmower_points);
-    void getLawnmowerGoal();
+    bool getLawnmowerGoal();
     bool lawnmowerGoalComplete();
     void visualizeLawnmower();
     void publishTif();

@@ -29,7 +29,6 @@ TaskManager::TaskManager(
     std::shared_ptr<flight_controller_interface::FlightControllerInterface> fci)
     : Node("task_manager"),
       current_task_(Task::INITIALIZING),
-      current_mission_(Mission::NONE),
       flight_controller_interface_(fci),
       task_manager_loop_duration_(1.0),
       simulate_(false),
@@ -93,7 +92,8 @@ TaskManager::TaskManager(
       lidar_timeout_(rclcpp::Duration::from_seconds(0.5)),
       vision_pose_timeout_(rclcpp::Duration::from_seconds(0.5)),
       path_timeout_(rclcpp::Duration::from_seconds(3.0)),
-      rosbag_timeout_(rclcpp::Duration::from_seconds(1.0)) {
+      rosbag_timeout_(rclcpp::Duration::from_seconds(1.0)),
+      has_mission_(false) {
 
     RCLCPP_INFO(this->get_logger(), "TM entered init");
 
@@ -262,10 +262,14 @@ TaskManager::TaskManager(
 
     trigger_recording_pub_ =
         this->create_publisher<std_msgs::msg::String>("/trigger_recording", 10);
-
+    
+    // REST pub/sub
     rest_capabilities_pub_ =
         this->create_publisher<std_msgs::msg::String>("capabilities",
         rclcpp::QoS(rclcpp::KeepLast(1)).transient_local());
+    
+    rest_mission_sub_ = this->create_subscription<std_msgs::msg::String>(
+        "/frontend/run_mission", 10, std::bind(&TaskManager::missionCallback, this, _1));
 }
 
 TaskManager::~TaskManager() {}
@@ -343,9 +347,8 @@ void TaskManager::runTaskManager() {
     }
     case Task::MANUAL_FLIGHT: {
         // Allow for moving to setpoint from manual mode
-        if (has_setpoint_) {
-            current_mission_ = Mission::SETPOINT;
-            updateCurrentTask(Task::MISSION);
+        if (has_mission_) {
+            startMission();
         }
         break;
     }
@@ -357,16 +360,16 @@ void TaskManager::runTaskManager() {
         // Once we reach takeoff altitude, transition to next flight state
         if (flight_controller_interface_->getAltitudeAGL() > (target_altitude_ - 1)) {
             // If not in polygon, start navigation task
-            if (has_setpoint_) {
-                current_mission_ = Mission::SETPOINT;
-                updateCurrentTask(Task::MISSION);
+            if (has_mission_) {
+                startMission();
             }
         }
         break;
     }
     case Task::MISSION: {
         // Handle mission tasks
-        if (current_mission_ == Mission::LAWNMOWER) {
+        if (current_mission_.type == MissionType::LAWNMOWER) {
+            // TODO generate lawnmower pattern from polygon
             if (lawnmower_started_ && lawnmower_points_.empty()) {
                 RCLCPP_INFO(this->get_logger(), "Lawnmower complete, doing RTL_88");
                 startRtl88();
@@ -374,15 +377,18 @@ void TaskManager::runTaskManager() {
                 if (lawnmower_started_ && !lawnmowerGoalComplete()) {
                     break;
                 } else {
-                    getLawnmowerGoal();
-                    goal_pos_pub_->publish(goal_);
-                    lawnmower_started_ = true;
+                    bool got_goal = getLawnmowerGoal();
+                    if (got_goal) {
+                        goal_pos_pub_->publish(goal_);
+                        lawnmower_started_ = true;
+                    }
                 }
             }
-        } else if (current_mission_ == Mission::TRAIL_FOLLOW) {
+        } else if (current_mission_.type == MissionType::TRAIL_FOLLOW) {
             // TODO
-        } else if (current_mission_ == Mission::SETPOINT) {
+        } else if (current_mission_.type == MissionType::SETPOINT) {
             if (!setpoint_started_) {
+                goal_.pose.position = current_mission_.setpoint;
                 goal_pos_pub_->publish(goal_);
                 setpoint_started_ = true;
             } else {
@@ -1177,6 +1183,19 @@ std::string TaskManager::getTaskString(Task task) {
     }
 }
 
+TaskManager::MissionType TaskManager::getMissionType(std::string mission_type) {
+    if (mission_type == "TRAIL_FOLLOW") {
+        return MissionType::TRAIL_FOLLOW;
+    } else if (mission_type == "LAWNMOWER") {
+        return MissionType::LAWNMOWER;
+    } else if (mission_type == "SETPOINT") {
+        return MissionType::SETPOINT;
+    } else {
+        RCLCPP_WARN(this->get_logger(), "Unknown mission type: %s", mission_type.c_str());
+        return MissionType::NONE;
+    }
+}
+
 void TaskManager::clickedPointCallback(const geometry_msgs::msg::PointStamped::SharedPtr msg) {
     double elevation;
     getElevationAtPoint(*msg, elevation);
@@ -1234,6 +1253,133 @@ void TaskManager::goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr 
     goal_ = *msg;
 }
 
+void TaskManager::missionCallback(const std_msgs::msg::String::SharedPtr msg) {
+    RCLCPP_INFO(this->get_logger(), "Received mission: %s", msg->data.c_str());
+    if (current_task_ == Task::MANUAL_FLIGHT || current_task_ == Task::MISSION ){
+        json mission_json = json::parse(msg->data);
+        RCLCPP_INFO(this->get_logger(), "Accepting new mission");
+        parseMission(mission_json);
+        startMission();
+    }
+    else if (current_task_ == Task::READY) {
+        json mission_json = json::parse(msg->data);
+        RCLCPP_INFO(this->get_logger(), "Preparing for mission");
+        parseMission(mission_json);
+    }
+    else {
+        // TODO add send response to frontend
+        RCLCPP_WARN(this->get_logger(), "Cant switch to mission from current task: %s",
+                    getTaskString(current_task_).c_str());
+        return;
+    }
+}
+
+bool TaskManager::parseMission(json mission_json) {
+    if (!mission_json.contains("type")) {
+        RCLCPP_ERROR(this->get_logger(), "Mission JSON missing 'mission.type'");
+        return false;
+    }
+
+    std::string type = mission_json["type"];
+    std::string file_name = type;
+    std::transform(file_name.begin(), file_name.end(), file_name.begin(), ::tolower);
+
+    // Load full mission definition from disk
+    std::string pkg_path = ament_index_cpp::get_package_share_directory("task_manager");
+    std::string mission_path = pkg_path + "/missions/" + file_name + ".json";
+
+    std::ifstream file(mission_path);
+    if (!file.is_open()) {
+        RCLCPP_ERROR(this->get_logger(), "Could not open mission file: %s", mission_path.c_str());
+        return false;
+    }
+
+    json mission_def;
+    try {
+        file >> mission_def;
+    } catch (const std::exception &e) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to parse mission file: %s", e.what());
+        return false;
+    }
+
+    std::string geometry_type;
+    if (mission_def.contains("requirements") && mission_def["requirements"].contains("input_geometry")) {
+        geometry_type = mission_def["requirements"]["input_geometry"].get<std::string>();
+    }
+
+    Mission mission;
+    mission.completed = false;
+
+    // Geometry validation
+    if (geometry_type == "polygon") {
+        if (!mission_json.contains("polygon") || !mission_json["polygon"].is_array()) {
+            RCLCPP_ERROR(this->get_logger(), "Mission '%s' requires a 'geometry' array", type.c_str());
+            return false;
+        }
+
+        for (const auto &pt : mission_json["polygon"]) {
+            if (!pt.contains("lat") || !pt.contains("lon")) {
+                RCLCPP_ERROR(this->get_logger(), "Each polygon point must have 'lat' and 'lon'");
+                return false;
+            }
+            geometry_msgs::msg::Point32 p;
+            double x,y;
+            elevation_manager_->llToMap(pt["lat"], pt["lon"], x, y);
+            p.x = x;
+            p.y = y;
+            p.z = target_altitude_;  // default altitude
+            mission.polygon.points.push_back(p);
+        }
+
+    } else if (geometry_type == "point") {
+        if (!mission_json.contains("setpoint")) {
+            RCLCPP_ERROR(this->get_logger(), "Mission '%s' requires a 'setpoint'", type.c_str());
+            return false;
+        }
+        const auto& sp = mission_json["setpoint"];
+        if (!sp.contains("lat") || !sp.contains("lon")) {
+            RCLCPP_ERROR(this->get_logger(), "Setpoint must include 'lat' and 'lon'");
+            return false;
+        }
+        double x,y;
+        elevation_manager_->llToMap(sp["lat"], sp["lon"], x, y);
+        mission.setpoint.x = x;
+        mission.setpoint.y = y;
+        mission.setpoint.z = target_altitude_;  // default altitude
+    } else if (!geometry_type.empty()) {
+        RCLCPP_WARN(this->get_logger(), "Unhandled geometry type: '%s'", geometry_type.c_str());
+        return false;
+    }
+
+    // Save mission
+    mission.type = getMissionType(type);
+    current_mission_ = mission;
+    has_mission_ = true;
+    if (!is_armed_) {
+        needs_takeoff_ = true;
+    }
+    return true;
+}
+
+void TaskManager::startMission() {
+    switch (current_mission_.type) {
+        case MissionType::TRAIL_FOLLOW:
+            updateCurrentTask(Task::MISSION);
+            current_mission_.type = MissionType::TRAIL_FOLLOW;
+            break;
+        case MissionType::LAWNMOWER:
+            updateCurrentTask(Task::MISSION);
+            current_mission_.type = MissionType::LAWNMOWER;
+            break;
+        case MissionType::SETPOINT:
+            updateCurrentTask(Task::MISSION);
+            current_mission_.type = MissionType::SETPOINT;
+            break;
+        default:
+            RCLCPP_WARN(this->get_logger(), "Unknown mission type in startMission");
+    }
+}
+
 // TODO where should this live?
 void TaskManager::startTrailFollowing(bool start) {
     // Start trail goal enabled in pcl analysis
@@ -1260,8 +1406,7 @@ void TaskManager::startTrailFollowing(bool start) {
     auto result = client->async_send_request(request);
 }
 
-// TODO where should this live?
-void TaskManager::getLawnmowerPattern(
+bool TaskManager::getLawnmowerPattern(
     const geometry_msgs::msg::Polygon &polygon,
     std::vector<geometry_msgs::msg::PoseStamped> &lawnmower_points) {
     std::vector<lawnmower::Point> polygon_points;
@@ -1272,6 +1417,10 @@ void TaskManager::getLawnmowerPattern(
         polygon_points.push_back(pt);
     }
     std::vector<lawnmower::Point> points = lawnmower::generateLawnmowerPattern(polygon_points, 10);
+    if (points.empty()) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to generate lawnmower pattern");
+        return false;
+    }
     geometry_msgs::msg::PoseStamped pose_stamped;
     pose_stamped.header.frame_id = mavros_map_frame_;
     pose_stamped.header.stamp = this->get_clock()->now();
@@ -1282,8 +1431,9 @@ void TaskManager::getLawnmowerPattern(
         pose.position.y = points.at(ii).y;
         pose.position.z = target_altitude_;
         pose_stamped.pose = pose;
-        lawnmower_points.push_back(pose_stamped);
+        lawnmower_points_.push_back(pose_stamped);
     }
+    return true;
 }
 
 // TODO remove this once confirmed
@@ -1326,7 +1476,14 @@ void TaskManager::visualizeLawnmower() {
     marker_pub_->publish(markers_msg);
 }
 
-void TaskManager::getLawnmowerGoal() {
+bool TaskManager::getLawnmowerGoal() {
+    if (lawnmower_points_.empty()) {
+        bool success = getLawnmowerPattern(current_mission_.polygon, lawnmower_points_);
+        if (!success) {
+            RCLCPP_ERROR(this->get_logger(), "Failed to get lawnmower pattern");
+            return false;
+        }
+    }
     goal_ = lawnmower_points_.at(0);
 
     // Determine heading
@@ -1340,6 +1497,7 @@ void TaskManager::getLawnmowerGoal() {
     tf2::convert(setpoint_q, goal_.pose.orientation);
 
     lawnmower_points_.erase(lawnmower_points_.begin());
+    return true;
 }
 
 bool TaskManager::lawnmowerGoalComplete() {
