@@ -7,6 +7,7 @@
       "required": ["lidar_slam", 
                   "obstacle_avoidance", 
                   "trail_detection"]
-    }
+    },
+    "input_geometry": ""
   }
 }

@@ -6,6 +6,7 @@
     "perception": {
       "required": ["lidar_slam"],
       "optional": ["obstacle_avoidance"]
-    }
+    },
+    "input_geometry": "point"
   }
 }

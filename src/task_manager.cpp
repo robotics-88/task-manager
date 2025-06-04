@@ -555,6 +555,11 @@ void TaskManager::checkMissions()
       // 4b) Gather required/optional perception modules from mission definition
       std::set<std::string> required_perception;
       std::set<std::string> optional_perception;
+      
+      std::string geometry_type = "";
+      if (mission_json["requirements"].contains("input_geometry")) {
+        geometry_type = mission_json["requirements"]["input_geometry"].get<std::string>();
+      }
 
       if (mission_json["requirements"].contains("perception")
           && mission_json["requirements"]["perception"].contains("required"))
@@ -626,6 +631,7 @@ void TaskManager::checkMissions()
       json mission_entry;
       mission_entry["name"] = name;
       mission_entry["available"] = mission_available;
+      mission_entry["geometry_type"] = geometry_type;
       if (!unmet.empty()) {
         mission_entry["requires_activation"] = unmet;
       }
