@@ -2,7 +2,8 @@
 <package format="2">
   <name>task_manager</name>
   <version>1.0.0</version>
-  <license>commercial</license>
+  <!--   BSD, MIT, Boost Software License, GPLv2, GPLv3, LGPLv2.1, LGPLv3 -->
+  <license>GPLv3</license>
 
   <description>Task manager handles which tasks and capabilities to start and when, based on UI connection and drone status.</description>
 
