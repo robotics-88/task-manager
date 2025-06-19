@@ -135,6 +135,7 @@ class TaskManager : public rclcpp::Node {
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr tif_pcl_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr trigger_recording_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr rest_capabilities_pub_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr rest_status_pub_;
 
     // Subscriptions
     rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr clicked_point_sub_;
@@ -287,6 +288,9 @@ class TaskManager : public rclcpp::Node {
     std::map<std::string,bool> perception_status_;
     std::map<std::string,std::vector<std::string>> perception_hardware_;
 
+    // Status
+    int num_cameras_;
+
     // Task methods
     void updateCurrentTask(Task task);
     void startTakeoff();
@@ -304,6 +308,7 @@ class TaskManager : public rclcpp::Node {
     bool parseMission(json mission_json);
 
     // Other methods
+    void updateStatus();
     bool isBatteryOk();
     void checkHealth();
     void checkFailsafes();

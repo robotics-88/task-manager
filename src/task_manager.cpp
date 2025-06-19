@@ -93,7 +93,8 @@ TaskManager::TaskManager(
       vision_pose_timeout_(rclcpp::Duration::from_seconds(0.5)),
       path_timeout_(rclcpp::Duration::from_seconds(3.0)),
       rosbag_timeout_(rclcpp::Duration::from_seconds(1.0)),
-      has_mission_(false) {
+      has_mission_(false),
+      num_cameras_(0) {
 
     RCLCPP_INFO(this->get_logger(), "TM entered init");
 
@@ -128,6 +129,7 @@ TaskManager::TaskManager(
     this->declare_parameter("lidar_z", lidar_z_);
     this->declare_parameter("flightleg_area_acres", flightleg_area_acres_);
     this->declare_parameter("perception_file", perception_path_);
+    this->declare_parameter("num_cameras", num_cameras_);
 
     // Now get parameters
     this->get_parameter("enable_autonomy", enable_autonomy_);
@@ -163,6 +165,7 @@ TaskManager::TaskManager(
     this->get_parameter("lidar_z", lidar_z_);
     this->get_parameter("flightleg_area_acres", flightleg_area_acres_);
     this->get_parameter("perception_file", perception_path_);
+    this->get_parameter("num_cameras", num_cameras_);
 
     // Init agl altitude params
     max_agl_ = max_altitude_;
@@ -267,6 +270,9 @@ TaskManager::TaskManager(
     rest_capabilities_pub_ =
         this->create_publisher<std_msgs::msg::String>("capabilities",
         rclcpp::QoS(rclcpp::KeepLast(1)).transient_local());
+
+    rest_status_pub_ =
+        this->create_publisher<std_msgs::msg::String>("rest_status", 10);
     
     rest_mission_sub_ = this->create_subscription<std_msgs::msg::String>(
         "/frontend/run_mission", 10, std::bind(&TaskManager::missionCallback, this, _1));
@@ -279,8 +285,11 @@ void TaskManager::runTaskManager() {
     // Check arm status and make sure bag recording is happening properly.
     checkArmStatus();
     checkFailsafes();
-    loadPerceptionRegistry();
-    checkMissions();
+    if (!initialized_) {
+        loadPerceptionRegistry();
+        checkMissions();
+    }
+    updateStatus();
 
     switch (current_task_) {
     case Task::INITIALIZING: {
@@ -676,6 +685,26 @@ void TaskManager::loadPerceptionRegistry() {
         perception_hardware_[module_name].push_back(hw.get<std::string>());
       }
     }
+}
+
+void TaskManager::updateStatus() {
+    json status_json;
+    // Update task message
+    std::string task_string = getTaskString(current_task_);
+    status_json["status"] = task_string;
+
+    float home_dist = 2.0;
+    status_json["distance"] = home_dist;
+
+    float ground_speed = 3.1;
+    status_json["speed"] = ground_speed;
+
+    status_json["num_cameras"] = num_cameras_;
+
+    // Publish status
+    std_msgs::msg::String status_msg;
+    status_msg.data = status_json.dump();
+    rest_status_pub_->publish(status_msg);
 }
 
 void TaskManager::checkHealth() {

@@ -22,6 +22,7 @@
     <arg name="max_alt" default="10.0"/>
     <arg name="max_dist_to_polygon" default="500.0"/>
     <arg name="flightleg_area_acres" default="3.0"/> <!-- 1 acre = 4046 m2-->
+    <arg name="num_cameras" default="0"/>
 
     <!-- Health topics -->
     <arg name="path_planner_topic" default="/path_planner/heartbeat"/>
@@ -68,6 +69,7 @@
         <param name="do_trail" value="$(var do_trail)"/>
         <param name="simulate" value="$(var simulate)"/>
         <param name="offline" value="$(var offline)"/>
+        <param name="num_cameras" value="$(var num_cameras)"/>
         
         <param name="estimated_drone_speed" value="2.0"/>
         <param name="battery_failsafe_safety_factor" value="2.0"/>
