@@ -693,11 +693,9 @@ void TaskManager::updateStatus() {
     std::string task_string = getTaskString(current_task_);
     status_json["status"] = task_string;
 
-    float home_dist = 2.0;
-    status_json["distance"] = home_dist;
+    status_json["distance"] = flight_controller_interface_->getHomeDistance();
 
-    float ground_speed = 3.1;
-    status_json["speed"] = ground_speed;
+    status_json["speed"] = flight_controller_interface_->getGroundSpeed();
 
     status_json["num_cameras"] = num_cameras_;
 
