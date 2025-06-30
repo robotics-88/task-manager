@@ -90,6 +90,7 @@ install(TARGETS
 install(DIRECTORY 
   launch 
   missions
+  dem
   DESTINATION share/${PROJECT_NAME}
 )
 
