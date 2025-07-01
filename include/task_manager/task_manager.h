@@ -89,6 +89,13 @@ class TaskManager : public rclcpp::Node {
         COMPLETE
     };
 
+    enum LogLevel {
+        NORMAL,
+        INFO,
+        WARN,
+        ERROR
+    };
+
     void runTaskManager();
 
     Task getCurrentTask();
@@ -136,6 +143,7 @@ class TaskManager : public rclcpp::Node {
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr trigger_recording_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr rest_capabilities_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr rest_status_pub_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr rest_log_pub_;
 
     // Subscriptions
     rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr clicked_point_sub_;
@@ -309,6 +317,7 @@ class TaskManager : public rclcpp::Node {
 
     // Other methods
     void updateStatus();
+    void publishLog(LogLevel level, const std::string &message);
     bool isBatteryOk();
     void checkHealth();
     void checkFailsafes();

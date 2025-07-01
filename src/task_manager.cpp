@@ -273,7 +273,10 @@ TaskManager::TaskManager(
 
     rest_status_pub_ =
         this->create_publisher<std_msgs::msg::String>("rest_status", 10);
-    
+
+    rest_log_pub_ =
+        this->create_publisher<std_msgs::msg::String>("rest_log", 10);
+
     rest_mission_sub_ = this->create_subscription<std_msgs::msg::String>(
         "/frontend/run_mission", 10, std::bind(&TaskManager::missionCallback, this, _1));
 }
@@ -703,6 +706,22 @@ void TaskManager::updateStatus() {
     std_msgs::msg::String status_msg;
     status_msg.data = status_json.dump();
     rest_status_pub_->publish(status_msg);
+}
+
+void TaskManager::publishLog(LogLevel level, const std::string &message) {
+    json log_json;
+    std::string level_string;
+    switch (level) {
+        case LogLevel::NORMAL: level_string = "NORMAL"; break;
+        case LogLevel::INFO: level_string = "INFO"; break;
+        case LogLevel::WARN: level_string = "WARN"; break;
+        case LogLevel::ERROR: level_string = "ERROR"; break;
+    }
+    log_json["level"] = level_string;
+    log_json["message"] = "DRONE::" + message;
+    std_msgs::msg::String log_msg;
+    log_msg.data = log_json.dump();
+    rest_log_pub_->publish(log_msg);
 }
 
 void TaskManager::checkHealth() {
@@ -1282,9 +1301,11 @@ void TaskManager::goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr 
 
 void TaskManager::missionCallback(const std_msgs::msg::String::SharedPtr msg) {
     RCLCPP_INFO(this->get_logger(), "Received mission: %s", msg->data.c_str());
+    publishLog(LogLevel::INFO, "Received mission: " + msg->data);
     if (current_task_ == Task::MANUAL_FLIGHT || current_task_ == Task::MISSION ){
         json mission_json = json::parse(msg->data);
         RCLCPP_INFO(this->get_logger(), "Accepting new mission");
+        publishLog(LogLevel::INFO, "Accepting new mission: " + msg->data);
         parseMission(mission_json);
         startMission();
     }
@@ -1295,8 +1316,10 @@ void TaskManager::missionCallback(const std_msgs::msg::String::SharedPtr msg) {
     }
     else {
         // TODO add send response to frontend
-        RCLCPP_WARN(this->get_logger(), "Cant switch to mission from current task: %s",
+        RCLCPP_WARN(this->get_logger(), "Cannot switch to mission from current task: %s",
                     getTaskString(current_task_).c_str());
+        publishLog(LogLevel::WARN, "Cannot switch to mission from current task: " +
+                   getTaskString(current_task_));
         return;
     }
 }
