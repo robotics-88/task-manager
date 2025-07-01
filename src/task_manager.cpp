@@ -217,14 +217,14 @@ TaskManager::TaskManager(
 
     // Remote ID
     odid_basic_id_pub_ =
-        this->create_publisher<mavros_msgs::msg::BasicID>("/mavros/open_drone_id/basic_id", 10);
-    odid_operator_id_pub_ = this->create_publisher<mavros_msgs::msg::OperatorID>(
+        this->create_publisher<mavros_msgs::msg::OpenDroneIDBasicID>("/mavros/open_drone_id/basic_id", 10);
+    odid_operator_id_pub_ = this->create_publisher<mavros_msgs::msg::OpenDroneIDOperatorID>(
         "/mavros/open_drone_id/operator_id", 10);
     odid_self_id_pub_ =
-        this->create_publisher<mavros_msgs::msg::SelfID>("/mavros/open_drone_id/self_id", 10);
+        this->create_publisher<mavros_msgs::msg::OpenDroneIDSelfID>("/mavros/open_drone_id/self_id", 10);
     odid_system_pub_ =
-        this->create_publisher<mavros_msgs::msg::System>("/mavros/open_drone_id/system", 10);
-    odid_system_update_pub_ = this->create_publisher<mavros_msgs::msg::SystemUpdate>(
+        this->create_publisher<mavros_msgs::msg::OpenDroneIDSystem>("/mavros/open_drone_id/system", 10);
+    odid_system_update_pub_ = this->create_publisher<mavros_msgs::msg::OpenDroneIDSystemUpdate>(
         "/mavros/open_drone_id/system_update", 10);
 
     // Task status pub
@@ -1067,9 +1067,9 @@ void TaskManager::publishTif() {
 void TaskManager::odidTimerCallback() {
 
     // Self ID
-    mavros_msgs::msg::SelfID self_id;
+    mavros_msgs::msg::OpenDroneIDSelfID self_id;
     self_id.header.stamp = this->get_clock()->now();
-    self_id.description_type = mavros_msgs::msg::SelfID::MAV_ODID_DESC_TYPE_TEXT;
+    self_id.description_type = mavros_msgs::msg::OpenDroneIDSelfID::DESC_TYPE_TEXT;
     self_id.description = "FLIGHT";
     odid_self_id_pub_->publish(self_id);
 }
