@@ -28,6 +28,7 @@ namespace task_manager {
 TaskManager::TaskManager(
     std::shared_ptr<flight_controller_interface::FlightControllerInterface> fci)
     : Node("task_manager"),
+      perception_modules_loaded_(false),
       current_task_(Task::INITIALIZING),
       flight_controller_interface_(fci),
       task_manager_loop_duration_(1.0),
@@ -279,6 +280,13 @@ TaskManager::TaskManager(
 
     rest_mission_sub_ = this->create_subscription<std_msgs::msg::String>(
         "/frontend/run_mission", 10, std::bind(&TaskManager::missionCallback, this, _1));
+
+    rest_toggle_sub_ = this->create_subscription<std_msgs::msg::String>(
+        "/frontend/toggle_module", 10, std::bind(&TaskManager::toggleCallback, this, _1));
+
+    // Parameter handling
+    param_subscriber_ = std::make_shared<rclcpp::ParameterEventHandler>(this);
+    cb_handle_ = param_subscriber_->add_parameter_event_callback(std::bind(&TaskManager::parameterCallback, this, std::placeholders::_1));
 }
 
 TaskManager::~TaskManager() {}
@@ -534,15 +542,11 @@ void TaskManager::checkMissions()
       {"camera", false}
     };
 
-    // 2) Use the already‐loaded perception_status_ map (from loadPerceptionRegistry)
-    //    so no need to re‐open perception.json here.
-    const auto &perception_status = perception_status_;
-
     // 3) Build a copy of perception_status_ into a simple json object at the end
     //    (for publishing)
     json perception_module_states = json::object();
-    for (auto & [mod, is_on] : perception_status_) {
-      perception_module_states[mod] = is_on;
+    for (const auto &module : perception_modules_) {
+        perception_module_states[module.second.module_name] = module.second.is_active;
     }
 
     // 4) Now iterate over each mission JSON file in the “missions/” folder
@@ -594,25 +598,26 @@ void TaskManager::checkMissions()
         }
       }
 
-      // 4c) Determine hardware needed by “required” perception
-      std::set<std::string> all_required_hardware;
-      for (const auto &mod : required_perception) {
-        if (perception_hardware_.count(mod)) {
-          for (auto &hw : perception_hardware_[mod]) {
-            all_required_hardware.insert(hw);
-          }
-        }
-      }
-      // 4d) If an optional module is actually “on”, it also brings its hardware
-      for (const auto &mod : optional_perception) {
-        if (perception_status.count(mod) && perception_status.at(mod)) {
-          if (perception_hardware_.count(mod)) {
-            for (auto &hw : perception_hardware_[mod]) {
-              all_required_hardware.insert(hw);
+    // 4c) Determine hardware needed by “required” perception
+    std::set<std::string> all_required_hardware;
+    for (const auto &mod : required_perception) {
+        auto it = perception_modules_.find(mod);
+        if (it != perception_modules_.end()) {
+            for (const auto &hw : it->second.hardware) {
+                all_required_hardware.insert(hw);
             }
-          }
         }
-      }
+    }
+
+    // 4d) If an optional module is actually “on”, it also brings its hardware
+    for (const auto &mod : optional_perception) {
+        auto it = perception_modules_.find(mod);
+        if (it != perception_modules_.end() && it->second.is_active) {
+            for (const auto &hw : it->second.hardware) {
+                all_required_hardware.insert(hw);
+            }
+        }
+    }
 
       // 4e) Check if all hardware is present
       bool hardware_ok = true;
@@ -633,15 +638,17 @@ void TaskManager::checkMissions()
 
       // Any required perception that is not “on” makes mission unavailable
       for (const auto &mod : required_perception) {
-        if (!perception_status.count(mod) || !perception_status.at(mod)) {
-          mission_available = false;
-          unmet.push_back(mod);
+        auto it = perception_modules_.find(mod);
+        if (it == perception_modules_.end() || !it->second.is_active) {
+            mission_available = false;
+            unmet.push_back(mod);
         }
       }
       // Any optional perception that is off just goes into “requires_activation”
       for (const auto &mod : optional_perception) {
-        if (!perception_status.count(mod) || !perception_status.at(mod)) {
-          unmet.push_back(mod);
+        auto it = perception_modules_.find(mod);
+        if (it == perception_modules_.end() || !it->second.is_active) {
+            unmet.push_back(mod);
         }
       }
 
@@ -666,28 +673,38 @@ void TaskManager::checkMissions()
 }
 
 void TaskManager::loadPerceptionRegistry() {
-    std::ifstream f(perception_path_);
-    json perception_registry = json::parse(f);
-  
-    // 2) For each module in perception_registry, look up its "launch_arg"
-    for (auto& [module_name, info] : perception_registry.items()) {
-      std::string launch_arg = info["launch_arg"].get<std::string>();
-      bool was_launched = false;
-  
-      // 3) Check if task_manager node was given that parameter
-      if (this->has_parameter(launch_arg)) {
-        // e.g. if user did `ros2 launch ... do_trail:=true`
-        was_launched = this->get_parameter(launch_arg).as_bool();
-      }
-  
-      // 4) Now record:
-      perception_status_[module_name] = was_launched;
-  
-      // 5) Also cache that module's hardware requirements:
-      for (auto& hw : info["hardware_required"]) {
-        perception_hardware_[module_name].push_back(hw.get<std::string>());
-      }
+    if (perception_modules_loaded_) {
+        return;
     }
+    std::ifstream f(perception_path_);
+    std::cout << "Loading perception registry from: " << perception_path_ << std::endl;
+    if (!f.is_open()) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to open perception registry file: %s",
+                     perception_path_.c_str());
+        return;
+    }
+    json perception_registry = json::parse(f);
+    std::cout << "Perception registry loaded successfully: " << perception_registry.dump(2) << std::endl;
+
+    // For each module in perception_registry, look up its node name and hardware requirements
+    for (auto& [module_name, info] : perception_registry.items()) {
+        PerceptionModule module;
+        module.module_name = module_name;
+        module.node_name = info["node"].get<std::string>();
+
+        module.is_active = false;
+
+        // Cache that module's hardware requirements:
+        for (auto& hw : info["hardware_required"]) {
+            module.hardware.push_back(hw.get<std::string>());
+        }
+        perception_modules_[module_name] = module;
+
+        // Setup parameter monitoring for this module
+        std::string param_name = "/task_manager/" + module_name + "/set_node_active";
+        this->declare_parameter(param_name, false);
+    }
+    perception_modules_loaded_ = true;
 }
 
 void TaskManager::updateStatus() {
@@ -1323,6 +1340,33 @@ void TaskManager::missionCallback(const std_msgs::msg::String::SharedPtr msg) {
         return;
     }
 }
+
+void TaskManager::toggleCallback(const std_msgs::msg::String::SharedPtr msg) {
+    json toggle_json = json::parse(msg->data);
+    if (!toggle_json.contains("module_name") || !toggle_json.contains("active")) {
+        RCLCPP_ERROR(this->get_logger(), "Invalid toggle message format received from frontend");
+        return;
+    }
+
+    std::string module_name = toggle_json["module_name"];
+    bool active = toggle_json["active"];
+
+    RCLCPP_INFO(this->get_logger(), "Toggling local param for module '%s' %s",
+                module_name.c_str(), active ? "ON" : "OFF");
+
+    std::string param_name = "/task_manager/" + module_name + "/set_node_active";
+
+    try {
+        rclcpp::Parameter param(param_name, active);
+        this->set_parameter(param);
+    } catch (const rclcpp::exceptions::ParameterNotDeclaredException &e) {
+        RCLCPP_ERROR(this->get_logger(),
+                     "Parameter '%s' not declared. Make sure it exists.", param_name.c_str());
+    } catch (const std::exception &e) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to set param: %s", e.what());
+    }
+}
+
 
 bool TaskManager::parseMission(json mission_json) {
     if (!mission_json.contains("type")) {

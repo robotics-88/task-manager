@@ -12,7 +12,7 @@ find_package(ament_cmake REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 
-find_package(rclcpp_action REQUIRED)
+find_package(rcl_interfaces REQUIRED)
 find_package(bag_recorder_2 REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(geometry_msgs REQUIRED)
@@ -57,6 +57,7 @@ add_library(task_manager SHARED
 
 ament_target_dependencies(task_manager
   rclcpp
+  rcl_interfaces
   ament_index_cpp
   cv_bridge
   bag_recorder_2

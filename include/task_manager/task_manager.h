@@ -9,7 +9,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 #define BOOST_BIND_NO_PLACEHOLDERS
 
 #include "rclcpp/rclcpp.hpp"
-#include "rclcpp_action/rclcpp_action.hpp"
 
 #include "bag_recorder_2/srv/record.hpp"
 
@@ -25,7 +24,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "mavros_msgs/msg/open_drone_id_system.hpp"
 #include "mavros_msgs/msg/open_drone_id_system_update.hpp"
 
-#include "messages_88/action/nav_to_point.hpp"
 #include "messages_88/msg/frontier.hpp"
 #include "messages_88/msg/task_status.hpp"
 #include "messages_88/srv/emergency.hpp"
@@ -75,6 +73,14 @@ class TaskManager : public rclcpp::Node {
         geometry_msgs::msg::Point setpoint;
     };
 
+    struct PerceptionModule {
+        std::string module_name;
+        bool is_active;
+        std::string node_name;
+        std::vector<std::string> hardware;
+    };
+
+
     enum Task {
         INITIALIZING,
         PREFLIGHT_CHECK,
@@ -110,6 +116,7 @@ class TaskManager : public rclcpp::Node {
     void rosbagCallback(const std_msgs::msg::String::SharedPtr msg);
     void goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
     void missionCallback(const std_msgs::msg::String::SharedPtr msg);
+    void toggleCallback(const std_msgs::msg::String::SharedPtr msg);
 
   private:
     const std::shared_ptr<rclcpp::Node> nh_;
@@ -150,12 +157,17 @@ class TaskManager : public rclcpp::Node {
     rclcpp::Subscription<std_msgs::msg::Header>::SharedPtr path_planner_sub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr lidar_sub_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr rosbag_sub_;
-    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr tymbal_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr slam_pose_sub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr registered_cloud_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_sub_;
-    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr burn_unit_sub_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr rest_mission_sub_;
+    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr rest_toggle_sub_;
+
+    // Parameter & capabilities handling
+    std::shared_ptr<rclcpp::ParameterEventHandler> param_subscriber_;
+    std::shared_ptr<rclcpp::ParameterEventCallbackHandle> cb_handle_;
+    std::map<std::string, PerceptionModule> perception_modules_;
+    bool perception_modules_loaded_;
 
     struct HealthChecks {
         bool battery_ok;
@@ -291,10 +303,6 @@ class TaskManager : public rclcpp::Node {
     std::string perception_path_;
     bool has_mission_;
     Mission mission_;
-
-    // Capabilities
-    std::map<std::string,bool> perception_status_;
-    std::map<std::string,std::vector<std::string>> perception_hardware_;
 
     // Status
     int num_cameras_;
