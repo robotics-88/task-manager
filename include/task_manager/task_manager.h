@@ -76,6 +76,7 @@ class TaskManager : public rclcpp::Node {
     struct PerceptionModule {
         std::string module_name;
         bool is_active;
+        bool togglable;
         std::string node_name;
         std::vector<std::string> hardware;
     };

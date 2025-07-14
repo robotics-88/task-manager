@@ -6,7 +6,7 @@
     "perception": {
       "required": ["lidar_slam", 
                   "obstacle_avoidance", 
-                  "trail_detection"]
+                  "trail_follower"]
     },
     "input_geometry": ""
   }

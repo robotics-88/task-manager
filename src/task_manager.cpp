@@ -284,9 +284,6 @@ TaskManager::TaskManager(
     rest_toggle_sub_ = this->create_subscription<std_msgs::msg::String>(
         "/frontend/toggle_module", 10, std::bind(&TaskManager::toggleCallback, this, _1));
 
-    // Parameter handling
-    param_subscriber_ = std::make_shared<rclcpp::ParameterEventHandler>(this);
-    cb_handle_ = param_subscriber_->add_parameter_event_callback(std::bind(&TaskManager::parameterCallback, this, std::placeholders::_1));
 }
 
 TaskManager::~TaskManager() {}
@@ -533,23 +530,31 @@ TaskManager::Task TaskManager::getCurrentTask() {
 
 void TaskManager::checkMissions()
   {
+    if (!perception_modules_loaded_) {
+        RCLCPP_WARN(this->get_logger(), "Perception modules not loaded yet, cannot check missions");
+        return;
+    }
     json capabilities_json;
     capabilities_json["missions"] = json::array();
 
-    // 1) Example hardware status (you can replace with actual detection)
+    // Build a copy of perception_status_ into a simple json object at the end
+    //    (for publishing)
+    json perception_module_states = json::object();
+    for (const auto &module : perception_modules_) {
+        perception_module_states[module.second.module_name] = {
+            {"active", module.second.is_active},
+            {"togglable", module.second.togglable}
+        };
+    }
+
+    // Example hardware status (later replace with actual detection)
     std::map<std::string, bool> hardware_status = {
       {"lidar", true},
       {"camera", false}
     };
 
-    // 3) Build a copy of perception_status_ into a simple json object at the end
-    //    (for publishing)
-    json perception_module_states = json::object();
-    for (const auto &module : perception_modules_) {
-        perception_module_states[module.second.module_name] = module.second.is_active;
-    }
 
-    // 4) Now iterate over each mission JSON file in the “missions/” folder
+    // Now iterate over each mission JSON file in the “missions/” folder
     std::string pkg_path = ament_index_cpp::get_package_share_directory("task_manager");
     std::string missions_dir = pkg_path + "/missions";
 
@@ -619,7 +624,7 @@ void TaskManager::checkMissions()
         }
     }
 
-      // 4e) Check if all hardware is present
+      // 4e) TODO this is meaningless rn, change it to checking topics
       bool hardware_ok = true;
       for (const auto &hw : all_required_hardware) {
         if (!hardware_status.count(hw) || !hardware_status[hw]) {
@@ -693,6 +698,15 @@ void TaskManager::loadPerceptionRegistry() {
         module.node_name = info["node"].get<std::string>();
 
         module.is_active = false;
+
+        if (do_slam_ && (module.module_name == "lidar_slam" || module.module_name == "obstacle_avoidance")) {
+            module.togglable = false;
+            module.is_active = true; // These modules are always active in SLAM mode and cannot be turned off
+        }
+        else {
+            module.togglable = true;
+        }
+
 
         // Cache that module's hardware requirements:
         for (auto& hw : info["hardware_required"]) {
@@ -1359,6 +1373,8 @@ void TaskManager::toggleCallback(const std_msgs::msg::String::SharedPtr msg) {
     try {
         rclcpp::Parameter param(param_name, active);
         this->set_parameter(param);
+        perception_modules_[module_name].is_active = active;
+        checkMissions();
     } catch (const rclcpp::exceptions::ParameterNotDeclaredException &e) {
         RCLCPP_ERROR(this->get_logger(),
                      "Parameter '%s' not declared. Make sure it exists.", param_name.c_str());
