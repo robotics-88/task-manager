@@ -550,6 +550,7 @@ void TaskManager::checkMissions()
     // Example hardware status (later replace with actual detection)
     std::map<std::string, bool> hardware_status = {
       {"lidar", true},
+      {"thermal", true},
       {"camera", false}
     };
 
@@ -715,8 +716,9 @@ void TaskManager::loadPerceptionRegistry() {
         perception_modules_[module_name] = module;
 
         // Setup parameter monitoring for this module
-        std::string param_name = "/task_manager/" + module_name + "/set_node_active";
+        std::string param_name = "/task_manager/" + module.node_name + "/set_node_active";
         this->declare_parameter(param_name, false);
+        RCLCPP_INFO(this->get_logger(), "Declared parameter %s", param_name.c_str());
     }
     perception_modules_loaded_ = true;
 }
@@ -1363,12 +1365,16 @@ void TaskManager::toggleCallback(const std_msgs::msg::String::SharedPtr msg) {
     }
 
     std::string module_name = toggle_json["module_name"];
+    if (perception_modules_.find(module_name) == perception_modules_.end()) {
+        RCLCPP_ERROR(this->get_logger(), "Unknown perception module: %s. Not toggling.", module_name.c_str());
+        return;
+    }
     bool active = toggle_json["active"];
 
     RCLCPP_INFO(this->get_logger(), "Toggling local param for module '%s' %s",
                 module_name.c_str(), active ? "ON" : "OFF");
 
-    std::string param_name = "/task_manager/" + module_name + "/set_node_active";
+    std::string param_name = "/task_manager/" + perception_modules_[module_name].node_name + "/set_node_active";
 
     try {
         rclcpp::Parameter param(param_name, active);
