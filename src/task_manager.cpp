@@ -712,16 +712,6 @@ void TaskManager::loadPerceptionRegistry() {
         module.module_name = module_name;
         module.node_name = info["node"].get<std::string>();
 
-        module.is_active = false;
-
-        if (do_slam_ && (module.module_name == "obstacle_avoidance")) {
-            module.togglable = false;
-            module.is_active = true; // These modules are always active in SLAM mode and cannot be turned off
-        }
-        else {
-            module.togglable = true;
-        }
-
         bool skip_module = false;
         for (const auto& hw : info["hardware_required"]) {
             std::string hw_str = hw.get<std::string>();
@@ -744,11 +734,20 @@ void TaskManager::loadPerceptionRegistry() {
                         module_name.c_str());
             continue;
         }
+
+        if (do_slam_ && (module.module_name == "obstacle_avoidance")) {
+            module.togglable = false;
+            module.is_active = true; // These modules are always active in SLAM mode and cannot be turned off
+        }
+        else {
+            module.togglable = true;
+            module.is_active = false;
+        }
         perception_modules_[module_name] = module;
 
         // Setup parameter monitoring for this module
         std::string param_name = "/task_manager/" + module.node_name + "/set_node_active";
-        this->declare_parameter(param_name, false);
+        this->declare_parameter(param_name, module.is_active);
         RCLCPP_INFO(this->get_logger(), "Declared parameter %s", param_name.c_str());
     }
     perception_modules_loaded_ = true;
