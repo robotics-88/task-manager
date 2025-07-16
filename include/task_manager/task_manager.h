@@ -177,6 +177,10 @@ class TaskManager : public rclcpp::Node {
         bool rosbag_ok;
     } health_checks_;
 
+    bool has_lidar_;
+    bool has_thermal_;
+    bool has_camera_;
+
     std::string path_planner_topic_;
     std::string lidar_topic_;
     std::string rosbag_topic_;

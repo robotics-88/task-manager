@@ -11,6 +11,9 @@
     <arg name="lidar_pitch" default="0.0"/>
     <arg name="lidar_x" default="0.0"/>
     <arg name="lidar_z" default="0.11"/>
+    <arg name="has_lidar" default="false"/>
+    <arg name="has_thermal" default="false"/>
+    <arg name="has_camera" default="false"/>
 
     <arg name="enable_autonomy" default="false"/>
     <arg name="use_failsafes" default="false"/>
@@ -70,6 +73,9 @@
         <param name="simulate" value="$(var simulate)"/>
         <param name="offline" value="$(var offline)"/>
         <param name="num_cameras" value="$(var num_cameras)"/>
+        <param name="has_lidar" value="$(var has_lidar)"/>
+        <param name="has_thermal" value="$(var has_thermal)"/>
+        <param name="has_camera" value="$(var has_camera)"/>
         
         <param name="estimated_drone_speed" value="2.0"/>
         <param name="battery_failsafe_safety_factor" value="2.0"/>

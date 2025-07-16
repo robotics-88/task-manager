@@ -29,6 +29,9 @@ TaskManager::TaskManager(
     std::shared_ptr<flight_controller_interface::FlightControllerInterface> fci)
     : Node("task_manager"),
       perception_modules_loaded_(false),
+      has_lidar_(false),
+      has_thermal_(false),
+      has_camera_(false),
       current_task_(Task::INITIALIZING),
       flight_controller_interface_(fci),
       task_manager_loop_duration_(1.0),
@@ -131,6 +134,9 @@ TaskManager::TaskManager(
     this->declare_parameter("flightleg_area_acres", flightleg_area_acres_);
     this->declare_parameter("perception_file", perception_path_);
     this->declare_parameter("num_cameras", num_cameras_);
+    this->declare_parameter("has_lidar", has_lidar_);
+    this->declare_parameter("has_thermal", has_thermal_);
+    this->declare_parameter("has_camera", has_camera_);
 
     // Now get parameters
     this->get_parameter("enable_autonomy", enable_autonomy_);
@@ -167,6 +173,9 @@ TaskManager::TaskManager(
     this->get_parameter("flightleg_area_acres", flightleg_area_acres_);
     this->get_parameter("perception_file", perception_path_);
     this->get_parameter("num_cameras", num_cameras_);
+    this->get_parameter("has_lidar", has_lidar_);
+    this->get_parameter("has_thermal", has_thermal_);
+    this->get_parameter("has_camera", has_camera_);
 
     // Init agl altitude params
     max_agl_ = max_altitude_;
@@ -547,11 +556,11 @@ void TaskManager::checkMissions()
         };
     }
 
-    // Example hardware status (later replace with actual detection)
+    // Hardware status
     std::map<std::string, bool> hardware_status = {
-      {"lidar", true},
-      {"thermal", true},
-      {"camera", false}
+      {"lidar", has_lidar_},
+      {"thermal", has_thermal_},
+      {"camera", has_camera_}
     };
 
 
@@ -579,7 +588,7 @@ void TaskManager::checkMissions()
 
       // 4a) Extract mission name
       std::string name = mission_json["mission"]["name"].get<std::string>();
-      
+
       if (mission_json["requirements"]["slam"].get<bool>() && !do_slam_) {
         RCLCPP_WARN(this->get_logger(), "Skipping mission %s, requires SLAM mode", name.c_str());
         continue; // Skip missions that require SLAM if not in SLAM mode
@@ -705,7 +714,7 @@ void TaskManager::loadPerceptionRegistry() {
 
         module.is_active = false;
 
-        if (do_slam_ && (module.module_name == "lidar_slam" || module.module_name == "obstacle_avoidance")) {
+        if (do_slam_ && (module.module_name == "obstacle_avoidance")) {
             module.togglable = false;
             module.is_active = true; // These modules are always active in SLAM mode and cannot be turned off
         }
@@ -713,10 +722,27 @@ void TaskManager::loadPerceptionRegistry() {
             module.togglable = true;
         }
 
+        bool skip_module = false;
+        for (const auto& hw : info["hardware_required"]) {
+            std::string hw_str = hw.get<std::string>();
+            std::cout << "Hardware required for module " << module_name << ": " << hw_str << std::endl;
 
-        // Cache that module's hardware requirements:
-        for (auto& hw : info["hardware_required"]) {
-            module.hardware.push_back(hw.get<std::string>());
+            if (hw_str == "lidar" && has_lidar_) {
+                module.hardware.push_back(hw_str);
+            } else if (hw_str == "thermal" && has_thermal_) {
+                module.hardware.push_back(hw_str);
+            } else if (hw_str == "camera" && has_camera_) {
+                module.hardware.push_back(hw_str);
+            } else {
+                RCLCPP_WARN(this->get_logger(), "Perception module %s requires unsupported hardware: %s",
+                            module_name.c_str(), hw_str.c_str());
+                skip_module = true;
+            }
+        }
+        if (skip_module) {
+            RCLCPP_WARN(this->get_logger(), "Skipping perception module %s due to unsupported hardware",
+                        module_name.c_str());
+            continue;
         }
         perception_modules_[module_name] = module;
 
