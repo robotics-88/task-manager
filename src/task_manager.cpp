@@ -579,6 +579,11 @@ void TaskManager::checkMissions()
 
       // 4a) Extract mission name
       std::string name = mission_json["mission"]["name"].get<std::string>();
+      
+      if (mission_json["requirements"]["slam"].get<bool>() && !do_slam_) {
+        RCLCPP_WARN(this->get_logger(), "Skipping mission %s, requires SLAM mode", name.c_str());
+        continue; // Skip missions that require SLAM if not in SLAM mode
+      }
 
       // 4b) Gather required/optional perception modules from mission definition
       std::set<std::string> required_perception;

@@ -4,10 +4,10 @@
   },
   "requirements": {
     "perception": {
-      "required": ["lidar_slam", 
-                  "obstacle_avoidance", 
+      "required": ["obstacle_avoidance", 
                   "trail_follower"]
     },
-    "input_geometry": ""
+    "input_geometry": "",
+    "slam": true
   }
 }

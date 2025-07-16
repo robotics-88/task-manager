@@ -4,9 +4,10 @@
   },
   "requirements": {
     "perception": {
-      "required": ["lidar_slam"],
+      "required": [],
       "optional": ["obstacle_avoidance"]
     },
-    "input_geometry": "polygon"
+    "input_geometry": "polygon",
+    "slam": false
   }
 }

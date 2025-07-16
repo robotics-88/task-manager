@@ -4,9 +4,10 @@
   },
   "requirements": {
     "perception": {
-      "required": ["lidar_slam"],
+      "required": [],
       "optional": ["obstacle_avoidance"]
     },
-    "input_geometry": "point"
+    "input_geometry": "point",
+    "slam": false
   }
 }
