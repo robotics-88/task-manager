@@ -1364,7 +1364,7 @@ void TaskManager::goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr 
 
 void TaskManager::missionCallback(const std_msgs::msg::String::SharedPtr msg) {
     RCLCPP_INFO(this->get_logger(), "Received mission: %s", msg->data.c_str());
-    publishLog(LogLevel::INFO, "Received mission: " + msg->data);
+    publishLog(LogLevel::INFO, "Received mission: " + json::parse(msg->data).dump(2));
     if (current_task_ == Task::MANUAL_FLIGHT || current_task_ == Task::MISSION ){
         json mission_json = json::parse(msg->data);
         RCLCPP_INFO(this->get_logger(), "Accepting new mission");
