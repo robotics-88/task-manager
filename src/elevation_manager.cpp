@@ -21,10 +21,11 @@ ElevationManager::ElevationManager(const double flightleg_acres, const std::stri
 
 ElevationManager::~ElevationManager() {}
 
-bool ElevationManager::elevationInitializer(const double utm_x, const double utm_y) {
+bool ElevationManager::elevationInitializer(std::string tif_name) {
 
-    std::string tif_name =
-        ament_index_cpp::get_package_share_directory("task_manager") + "/dem/test.tif";
+    if (tif_name == "") {
+        tif_name = ament_index_cpp::get_package_share_directory("task_manager") + "/dem/test.tif";
+    }
 
     if (!boost::filesystem::exists(tif_name)) {
         RCLCPP_INFO(rclcpp::get_logger("elevation_manager"), "No elevation file found at: %s",
@@ -34,7 +35,7 @@ bool ElevationManager::elevationInitializer(const double utm_x, const double utm
     RCLCPP_INFO(rclcpp::get_logger("elevation_manager"), "Elevation file found at: %s",
                 tif_name.c_str());
 
-    elevation_init_ = initElevation(tif_name, utm_x, utm_y);
+    elevation_init_ = initElevation(tif_name, -1 * utm_x_offset_, -1 * utm_y_offset_);
     return elevation_init_;
 }
 
@@ -43,9 +44,8 @@ bool ElevationManager::getElevationChunk(const double utm_x, const double utm_y,
                                          double &max, double &min) {
     cv::Mat mat;
     if (!elevation_init_) {
-        bool has_elev = elevationInitializer(0, 0);
-        if (!has_elev)
-            return false;
+        RCLCPP_INFO(rclcpp::get_logger("elevation_manager"), "getElevationChunk called without tif available, returning false.");
+        return false;
     }
     bool worked = getElevationChunk(utm_x, utm_y, width, height, mat);
     if (worked) {
@@ -61,18 +61,16 @@ bool ElevationManager::getElevationChunk(const double utm_x, const double utm_y,
 
 bool ElevationManager::getHomeElevation(double &value) {
     if (!elevation_init_) {
-        bool has_elev = elevationInitializer(-1 * utm_x_offset_, -1 * utm_y_offset_);
-        if (!has_elev)
-            return false;
+        RCLCPP_INFO(rclcpp::get_logger("elevation_manager"), "getHomeElevation called without tif available, returning false.");
+        return false;
     }
     return getElevation(-1 * utm_x_offset_, -1 * utm_y_offset_, value);
 }
 
 bool ElevationManager::getElevationValue(const double utm_x, const double utm_y, double &value) {
     if (!elevation_init_) {
-        bool has_elev = elevationInitializer(0, 0);
-        if (!has_elev)
-            return false;
+        RCLCPP_INFO(rclcpp::get_logger("elevation_manager"), "getElevationValue called without tif available, returning false.");
+        return false;
     }
     return getElevation(utm_x, utm_y, value);
 }

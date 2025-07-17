@@ -1378,7 +1378,6 @@ void TaskManager::missionCallback(const std_msgs::msg::String::SharedPtr msg) {
         parseMission(mission_json);
     }
     else {
-        // TODO add send response to frontend
         RCLCPP_WARN(this->get_logger(), "Cannot switch to mission from current task: %s",
                     getTaskString(current_task_).c_str());
         publishLog(LogLevel::WARN, "Cannot switch to mission from current task: " +
@@ -1497,7 +1496,23 @@ bool TaskManager::parseMission(json mission_json) {
         return false;
     }
 
-    // Save mission
+    if (mission_json.contains("dem")) {
+        std::string dem_file = mission_json["dem"];
+        std::string dem_path = std::string(std::getenv("HOME")) + "/r88_public/dems/" + dem_file;
+        if (!std::filesystem::exists(dem_path)) {
+            RCLCPP_ERROR(this->get_logger(), "Could not find DEM file: %s", dem_path.c_str());
+            return false;
+        }
+        bool elev = elevation_manager_->elevationInitializer(dem_path);
+        if (!elev) {
+            RCLCPP_ERROR(this->get_logger(), "Found but could not load DEM file: %s", dem_path.c_str());
+        }
+    }
+    else {
+        RCLCPP_WARN(this->get_logger(), "No DEM file in json, proceeding without elevation correction: %s", mission_json.dump(2).c_str());
+    }
+
+    // Accept mission
     mission.type = getMissionType(type);
     current_mission_ = mission;
     has_mission_ = true;
