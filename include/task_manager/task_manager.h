@@ -118,6 +118,7 @@ class TaskManager : public rclcpp::Node {
     void goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
     void missionCallback(const std_msgs::msg::String::SharedPtr msg);
     void toggleCallback(const std_msgs::msg::String::SharedPtr msg);
+    void emergencyCallback(const std_msgs::msg::String::SharedPtr msg);
 
   private:
     const std::shared_ptr<rclcpp::Node> nh_;
@@ -152,6 +153,7 @@ class TaskManager : public rclcpp::Node {
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr rest_capabilities_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr rest_status_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr rest_log_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr path_manager_cancel_pub_;
 
     // Subscriptions
     rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr clicked_point_sub_;
@@ -163,6 +165,7 @@ class TaskManager : public rclcpp::Node {
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_sub_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr rest_mission_sub_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr rest_toggle_sub_;
+    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr rest_emergency_sub_;
 
     // Parameter & capabilities handling
     std::shared_ptr<rclcpp::ParameterEventHandler> param_subscriber_;

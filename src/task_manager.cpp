@@ -293,6 +293,11 @@ TaskManager::TaskManager(
     rest_toggle_sub_ = this->create_subscription<std_msgs::msg::String>(
         "/frontend/toggle_module", 10, std::bind(&TaskManager::toggleCallback, this, _1));
 
+    rest_emergency_sub_ = this->create_subscription<std_msgs::msg::String>(
+        "/frontend/emergency", 10, std::bind(&TaskManager::emergencyCallback, this, _1));
+
+    path_manager_cancel_pub_ =
+        this->create_publisher<geometry_msgs::msg::PoseStamped>("/path_manager/cancel", 10);
 }
 
 TaskManager::~TaskManager() {}
@@ -1138,8 +1143,20 @@ void TaskManager::odidTimerCallback() {
 }
 
 bool TaskManager::pauseOperations() {
+    if (current_task_ == Task::PAUSE) {
+        RCLCPP_WARN(this->get_logger(), "Already in PAUSE task, not pausing again");
+        return false;
+    }
+    RCLCPP_INFO(this->get_logger(), "Pausing operations");
+    path_manager_cancel_pub_->publish(home_pos_);
+    if (current_task_ != Task::MANUAL_FLIGHT) {
+        startPause();
+    }
+    else {
+        updateCurrentTask(Task::PAUSE);
+    }
 
-    // TODO figure out how to pause and restart
+    // TODO decide how to save state for restart
     return true;
 }
 
@@ -1177,7 +1194,6 @@ void TaskManager::checkArmStatus() {
                                    // full end of flight
             stopRecording();
         }
-        pauseOperations();
         is_armed_ = false; // Reset so can restart if another arming
     }
 }
@@ -1418,6 +1434,38 @@ void TaskManager::toggleCallback(const std_msgs::msg::String::SharedPtr msg) {
     }
 }
 
+void TaskManager::emergencyCallback(const std_msgs::msg::String::SharedPtr msg) {
+    RCLCPP_INFO(this->get_logger(), "Received emergency message: %s", msg->data.c_str());
+    publishLog(LogLevel::ERROR, "Received emergency message: " + msg->data);
+    switch (msg->data[0])  // Assuming first character indicates the emergency type
+    {
+    case 'e':  // Emergency stop
+        RCLCPP_ERROR(this->get_logger(), "Emergency stop requested");
+        pauseOperations();
+        startFailsafeLanding();
+        break;
+    case 'p':  // Emergency pause
+        RCLCPP_INFO(this->get_logger(), "Emergency pause requested");
+        if (current_task_ != Task::PAUSE) {
+            pauseOperations();
+        } else {
+            RCLCPP_WARN(this->get_logger(), "Already in PAUSE task, ignoring request");
+        }
+        break;
+    case 'r':  // Emergency rtl
+        RCLCPP_INFO(this->get_logger(), "Emergency RTL requested");
+        if (current_task_ != Task::RTL_88 && current_task_ != Task::LANDING &&
+            current_task_ != Task::COMPLETE) {
+            startRtl88();
+        } else {
+            RCLCPP_WARN(this->get_logger(), "Already in RTL task, ignoring request");
+        }
+        break;
+    
+    default:
+        break;
+    }
+}
 
 bool TaskManager::parseMission(json mission_json) {
     if (!mission_json.contains("type")) {
