@@ -119,6 +119,7 @@ class TaskManager : public rclcpp::Node {
     void missionCallback(const std_msgs::msg::String::SharedPtr msg);
     void toggleCallback(const std_msgs::msg::String::SharedPtr msg);
     void emergencyCallback(const std_msgs::msg::String::SharedPtr msg);
+    void remoteIDResponse(std_msgs::msg::String::SharedPtr msg);
 
   private:
     const std::shared_ptr<rclcpp::Node> nh_;
@@ -166,6 +167,7 @@ class TaskManager : public rclcpp::Node {
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr rest_mission_sub_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr rest_toggle_sub_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr rest_emergency_sub_;
+    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr rest_remote_id_sub_;
 
     // Parameter & capabilities handling
     std::shared_ptr<rclcpp::ParameterEventHandler> param_subscriber_;
