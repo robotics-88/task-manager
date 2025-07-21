@@ -1322,7 +1322,7 @@ void TaskManager::startRecording() {
     // Start pcl recording if enabled
     if (save_laz_) {
         std_msgs::msg::String msg;
-        msg.data = flight_directory;
+        msg.data = std::to_string(home_elevation_) + "_offset_" + flight_directory;
         laz_save_pub_->publish(msg);
     }
 
@@ -1645,6 +1645,14 @@ bool TaskManager::parseMission(json mission_json) {
         bool elev = elevation_manager_->elevationInitializer(dem_path);
         if (!elev) {
             RCLCPP_ERROR(this->get_logger(), "Found but could not load DEM file: %s", dem_path.c_str());
+        }
+        else {
+            if (elevation_manager_->getHomeElevation(home_elevation_)) {
+                RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
+                publishTif();
+            } else {
+                RCLCPP_WARN(this->get_logger(), "No elevation, can only perform manual flight.");
+            }
         }
     }
     else {
