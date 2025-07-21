@@ -29,6 +29,7 @@ TaskManager::TaskManager(
     std::shared_ptr<flight_controller_interface::FlightControllerInterface> fci)
     : Node("task_manager"),
       perception_modules_loaded_(false),
+      missions_loaded_(false),
       has_lidar_(false),
       has_thermal_(false),
       has_camera_(false),
@@ -545,10 +546,16 @@ TaskManager::Task TaskManager::getCurrentTask() {
     return current_task_;
 }
 
-void TaskManager::checkMissions()
+void TaskManager::checkMissions(const bool &refresh)
   {
     if (!perception_modules_loaded_) {
         RCLCPP_WARN(this->get_logger(), "Perception modules not loaded yet, cannot check missions");
+        return;
+    }
+    if (missions_loaded_ && !refresh) {
+        // Throttle log to every 5s
+        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                                "Missions already loaded, skipping check");
         return;
     }
     json capabilities_json;
@@ -698,6 +705,9 @@ void TaskManager::checkMissions()
     auto msg = std_msgs::msg::String();
     msg.data = capabilities_json.dump();
     rest_capabilities_pub_->publish(msg);
+    missions_loaded_ = true;
+    RCLCPP_INFO(this->get_logger(), "Missions loaded successfully: %s",
+                capabilities_json.dump(2).c_str());
 }
 
 void TaskManager::loadPerceptionRegistry() {
@@ -1488,7 +1498,7 @@ void TaskManager::toggleCallback(const std_msgs::msg::String::SharedPtr msg) {
         rclcpp::Parameter param(param_name, active);
         this->set_parameter(param);
         perception_modules_[module_name].is_active = active;
-        checkMissions();
+        checkMissions(true); // Recheck missions after toggling
     } catch (const rclcpp::exceptions::ParameterNotDeclaredException &e) {
         RCLCPP_ERROR(this->get_logger(),
                      "Parameter '%s' not declared. Make sure it exists.", param_name.c_str());

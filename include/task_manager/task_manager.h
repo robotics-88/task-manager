@@ -174,6 +174,7 @@ class TaskManager : public rclcpp::Node {
     std::shared_ptr<rclcpp::ParameterEventCallbackHandle> cb_handle_;
     std::map<std::string, PerceptionModule> perception_modules_;
     bool perception_modules_loaded_;
+    bool missions_loaded_;
 
     struct HealthChecks {
         bool battery_ok;
@@ -327,7 +328,7 @@ class TaskManager : public rclcpp::Node {
     void startTrailFollowing(bool start);
 
     // Capabilities
-    void checkMissions();
+    void checkMissions(const bool &refresh = false);
     void loadPerceptionRegistry();
     MissionType getMissionType(std::string mission_type);
     void startMission();
