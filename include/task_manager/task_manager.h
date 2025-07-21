@@ -155,6 +155,7 @@ class TaskManager : public rclcpp::Node {
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr rest_status_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr rest_log_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr path_manager_cancel_pub_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr laz_save_pub_;
 
     // Subscriptions
     rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr clicked_point_sub_;
@@ -210,6 +211,7 @@ class TaskManager : public rclcpp::Node {
     bool enable_autonomy_;
     bool use_failsafes_;
     bool do_trail_;
+    bool save_laz_;
 
     // Offline handling
     bool offline_;

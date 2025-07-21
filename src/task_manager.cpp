@@ -42,6 +42,7 @@ TaskManager::TaskManager(
       enable_autonomy_(false),
       use_failsafes_(false),
       do_trail_(false),
+      save_laz_(false),
       target_altitude_(3.0),
       target_agl_(3.0),
       min_altitude_(2.0),
@@ -138,6 +139,7 @@ TaskManager::TaskManager(
     this->declare_parameter("has_lidar", has_lidar_);
     this->declare_parameter("has_thermal", has_thermal_);
     this->declare_parameter("has_camera", has_camera_);
+    this->declare_parameter("save_laz", save_laz_);
 
     // Now get parameters
     this->get_parameter("enable_autonomy", enable_autonomy_);
@@ -177,6 +179,7 @@ TaskManager::TaskManager(
     this->get_parameter("has_lidar", has_lidar_);
     this->get_parameter("has_thermal", has_thermal_);
     this->get_parameter("has_camera", has_camera_);
+    this->get_parameter("save_laz", save_laz_);
 
     // Init agl altitude params
     max_agl_ = max_altitude_;
@@ -302,6 +305,8 @@ TaskManager::TaskManager(
 
     path_manager_cancel_pub_ =
         this->create_publisher<geometry_msgs::msg::PoseStamped>("/path_manager/cancel", 10);
+
+    laz_save_pub_ = this->create_publisher<std_msgs::msg::String>("/pcl_analysis/record", 10);
 }
 
 TaskManager::~TaskManager() {}
@@ -577,7 +582,7 @@ void TaskManager::checkMissions(const bool &refresh)
       {"thermal", has_thermal_},
       {"camera", has_camera_}
     };
-
+    capabilities_json["hardware"] = hardware_status;
 
     // Now iterate over each mission JSON file in the “missions/” folder
     std::string pkg_path = ament_index_cpp::get_package_share_directory("task_manager");
@@ -1314,6 +1319,13 @@ void TaskManager::startRecording() {
         }
     }
 
+    // Start pcl recording if enabled
+    if (save_laz_) {
+        std_msgs::msg::String msg;
+        msg.data = flight_directory;
+        laz_save_pub_->publish(msg);
+    }
+
     auto msg = std_msgs::msg::String();
     msg.data = flight_directory;
     trigger_recording_pub_->publish(msg);
@@ -1347,6 +1359,12 @@ void TaskManager::stopRecording() {
         } else {
             RCLCPP_ERROR(this->get_logger(), "Failed to call service /bag_recorder/record");
         }
+    }
+
+    if (save_laz_) {
+        std_msgs::msg::String msg;
+        msg.data = "";
+        laz_save_pub_->publish(msg);
     }
 
     recording_ = false;
@@ -1631,6 +1649,10 @@ bool TaskManager::parseMission(json mission_json) {
     }
     else {
         RCLCPP_WARN(this->get_logger(), "No DEM file in json, proceeding without elevation correction: %s", mission_json.dump(2).c_str());
+    }
+
+    if (mission_json.contains("save_laz")) {
+        save_laz_ = mission_json["save_laz"];
     }
 
     // Accept mission
