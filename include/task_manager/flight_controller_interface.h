@@ -14,6 +14,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 #include "geometry_msgs/msg/polygon.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "geometry_msgs/msg/twist_stamped.hpp"
 
 #include "mavros_msgs/msg/home_position.hpp"
 #include "mavros_msgs/msg/state.hpp"
@@ -81,6 +82,8 @@ class FlightControllerInterface : public rclcpp::Node {
     geometry_msgs::msg::Quaternion getInitOrientation() { return mavros_imu_init_.orientation; }
     bool getAveragedOrientation(geometry_msgs::msg::Quaternion &orientation);
     rclcpp::Time getLastVisionPosePubStamp() { return last_vision_pose_pub_stamp_; }
+    float getHomeDistance();
+    float getGroundSpeed();
 
     // Subscriber callbacks
     void slamPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
@@ -93,6 +96,7 @@ class FlightControllerInterface : public rclcpp::Node {
     void sysStatusCallback(const mavros_msgs::msg::SysStatus::SharedPtr msg);
     void statusCallback(const mavros_msgs::msg::State::SharedPtr msg);
     void statusTextCallback(const mavros_msgs::msg::StatusText::SharedPtr msg);
+    void speedCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);
 
     // General public methods
     void initUTM(double &utm_x, double &utm_y);
@@ -125,6 +129,7 @@ class FlightControllerInterface : public rclcpp::Node {
     rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr mavros_battery_subscriber_;
     rclcpp::Subscription<mavros_msgs::msg::SysStatus>::SharedPtr mavros_sys_status_subscriber_;
     rclcpp::Subscription<mavros_msgs::msg::StatusText>::SharedPtr mavros_status_text_subscriber_;
+    rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr mavros_speed_subscriber_;
 
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr slam_pose_subscriber_;
 
@@ -138,6 +143,7 @@ class FlightControllerInterface : public rclcpp::Node {
     sensor_msgs::msg::NavSatFix current_ll_;
     geometry_msgs::msg::PoseStamped current_pose_;
     sensor_msgs::msg::Imu current_imu_;
+    geometry_msgs::msg::TwistStamped current_speed_;
     std::deque<sensor_msgs::msg::Imu> imu_averaging_vec_;
     sensor_msgs::msg::Imu mavros_imu_init_;
     unsigned imu_averaging_n_;

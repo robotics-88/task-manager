@@ -22,11 +22,17 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 using std::placeholders::_1;
 using namespace std::chrono_literals;
+using json = nlohmann::json;
 
 namespace task_manager {
 TaskManager::TaskManager(
     std::shared_ptr<flight_controller_interface::FlightControllerInterface> fci)
     : Node("task_manager"),
+      perception_modules_loaded_(false),
+      missions_loaded_(false),
+      has_lidar_(false),
+      has_thermal_(false),
+      has_camera_(false),
       current_task_(Task::INITIALIZING),
       flight_controller_interface_(fci),
       task_manager_loop_duration_(1.0),
@@ -36,6 +42,7 @@ TaskManager::TaskManager(
       enable_autonomy_(false),
       use_failsafes_(false),
       do_trail_(false),
+      save_laz_(false),
       target_altitude_(3.0),
       target_agl_(3.0),
       min_altitude_(2.0),
@@ -68,6 +75,7 @@ TaskManager::TaskManager(
       is_armed_(false),
       in_autonomous_flight_(false),
       has_setpoint_(false),
+      perception_path_(""),
       explicit_global_params_(false),
       init_remote_id_message_sent_(false),
       takeoff_attempts_(0),
@@ -90,7 +98,9 @@ TaskManager::TaskManager(
       lidar_timeout_(rclcpp::Duration::from_seconds(0.5)),
       vision_pose_timeout_(rclcpp::Duration::from_seconds(0.5)),
       path_timeout_(rclcpp::Duration::from_seconds(3.0)),
-      rosbag_timeout_(rclcpp::Duration::from_seconds(1.0)) {
+      rosbag_timeout_(rclcpp::Duration::from_seconds(1.0)),
+      has_mission_(false),
+      num_cameras_(0) {
 
     RCLCPP_INFO(this->get_logger(), "TM entered init");
 
@@ -124,6 +134,12 @@ TaskManager::TaskManager(
     this->declare_parameter("lidar_x", lidar_x_);
     this->declare_parameter("lidar_z", lidar_z_);
     this->declare_parameter("flightleg_area_acres", flightleg_area_acres_);
+    this->declare_parameter("perception_file", perception_path_);
+    this->declare_parameter("num_cameras", num_cameras_);
+    this->declare_parameter("has_lidar", has_lidar_);
+    this->declare_parameter("has_thermal", has_thermal_);
+    this->declare_parameter("has_camera", has_camera_);
+    this->declare_parameter("save_laz", save_laz_);
 
     // Now get parameters
     this->get_parameter("enable_autonomy", enable_autonomy_);
@@ -158,6 +174,12 @@ TaskManager::TaskManager(
     this->get_parameter("lidar_x", lidar_x_);
     this->get_parameter("lidar_z", lidar_z_);
     this->get_parameter("flightleg_area_acres", flightleg_area_acres_);
+    this->get_parameter("perception_file", perception_path_);
+    this->get_parameter("num_cameras", num_cameras_);
+    this->get_parameter("has_lidar", has_lidar_);
+    this->get_parameter("has_thermal", has_thermal_);
+    this->get_parameter("has_camera", has_camera_);
+    this->get_parameter("save_laz", save_laz_);
 
     // Init agl altitude params
     max_agl_ = max_altitude_;
@@ -209,14 +231,14 @@ TaskManager::TaskManager(
 
     // Remote ID
     odid_basic_id_pub_ =
-        this->create_publisher<mavros_msgs::msg::BasicID>("/mavros/open_drone_id/basic_id", 10);
-    odid_operator_id_pub_ = this->create_publisher<mavros_msgs::msg::OperatorID>(
+        this->create_publisher<mavros_msgs::msg::OpenDroneIDBasicID>("/mavros/open_drone_id/basic_id", 10);
+    odid_operator_id_pub_ = this->create_publisher<mavros_msgs::msg::OpenDroneIDOperatorID>(
         "/mavros/open_drone_id/operator_id", 10);
     odid_self_id_pub_ =
-        this->create_publisher<mavros_msgs::msg::SelfID>("/mavros/open_drone_id/self_id", 10);
+        this->create_publisher<mavros_msgs::msg::OpenDroneIDSelfID>("/mavros/open_drone_id/self_id", 10);
     odid_system_pub_ =
-        this->create_publisher<mavros_msgs::msg::System>("/mavros/open_drone_id/system", 10);
-    odid_system_update_pub_ = this->create_publisher<mavros_msgs::msg::SystemUpdate>(
+        this->create_publisher<mavros_msgs::msg::OpenDroneIDSystem>("/mavros/open_drone_id/system", 10);
+    odid_system_update_pub_ = this->create_publisher<mavros_msgs::msg::OpenDroneIDSystemUpdate>(
         "/mavros/open_drone_id/system_update", 10);
 
     // Task status pub
@@ -257,6 +279,34 @@ TaskManager::TaskManager(
 
     trigger_recording_pub_ =
         this->create_publisher<std_msgs::msg::String>("/trigger_recording", 10);
+    
+    // REST pub/sub
+    rest_capabilities_pub_ =
+        this->create_publisher<std_msgs::msg::String>("capabilities",
+        rclcpp::QoS(rclcpp::KeepLast(1)).transient_local());
+
+    rest_status_pub_ =
+        this->create_publisher<std_msgs::msg::String>("rest_status", 10);
+
+    rest_log_pub_ =
+        this->create_publisher<std_msgs::msg::String>("rest_log", 10);
+
+    rest_mission_sub_ = this->create_subscription<std_msgs::msg::String>(
+        "/frontend/run_mission", 10, std::bind(&TaskManager::missionCallback, this, _1));
+
+    rest_toggle_sub_ = this->create_subscription<std_msgs::msg::String>(
+        "/frontend/toggle_module", 10, std::bind(&TaskManager::toggleCallback, this, _1));
+
+    rest_emergency_sub_ = this->create_subscription<std_msgs::msg::String>(
+        "/frontend/emergency", 10, std::bind(&TaskManager::emergencyCallback, this, _1));
+
+    rest_remote_id_sub_ = this->create_subscription<std_msgs::msg::String>(
+        "/frontend/remote_id", 10, std::bind(&TaskManager::remoteIDResponse, this, _1));
+
+    path_manager_cancel_pub_ =
+        this->create_publisher<geometry_msgs::msg::PoseStamped>("/path_manager/cancel", 10);
+
+    laz_save_pub_ = this->create_publisher<std_msgs::msg::String>("/pcl_analysis/record", 10);
 }
 
 TaskManager::~TaskManager() {}
@@ -266,6 +316,11 @@ void TaskManager::runTaskManager() {
     // Check arm status and make sure bag recording is happening properly.
     checkArmStatus();
     checkFailsafes();
+    if (!initialized_) {
+        loadPerceptionRegistry();
+        checkMissions();
+    }
+    updateStatus();
 
     switch (current_task_) {
     case Task::INITIALIZING: {
@@ -299,6 +354,9 @@ void TaskManager::runTaskManager() {
             updateCurrentTask(Task::READY);
         } else if (this->get_clock()->now() - last_preflight_check_log_stamp_ >
                    rclcpp::Duration::from_seconds(10.0)) {
+            publishLog(LogLevel::WARN,
+                "Preflight check failed, drone not ready to arm. Reasons: " +
+                flight_controller_interface_->getPreflightCheckReasons());
             RCLCPP_INFO(this->get_logger(), "Preflight check failed due to %s",
                         flight_controller_interface_->getPreflightCheckReasons().c_str());
             last_preflight_check_log_stamp_ = this->get_clock()->now();
@@ -332,8 +390,8 @@ void TaskManager::runTaskManager() {
     }
     case Task::MANUAL_FLIGHT: {
         // Allow for moving to setpoint from manual mode
-        if (has_setpoint_) {
-            updateCurrentTask(Task::SETPOINT);
+        if (has_mission_) {
+            startMission();
         }
         break;
     }
@@ -345,40 +403,50 @@ void TaskManager::runTaskManager() {
         // Once we reach takeoff altitude, transition to next flight state
         if (flight_controller_interface_->getAltitudeAGL() > (target_altitude_ - 1)) {
             // If not in polygon, start navigation task
-            if (has_setpoint_) {
-                updateCurrentTask(Task::SETPOINT);
+            if (has_mission_) {
+                startMission();
             }
         }
         break;
     }
-    case Task::SETPOINT: {
-        if (!setpoint_started_) {
-            goal_pos_pub_->publish(goal_);
-            setpoint_started_ = true;
-        } else {
-            bool reached = decco_utilities::isInAcceptanceRadius(
-                flight_controller_interface_->getCurrentLocalPosition().pose.position,
-                goal_.pose.position, 3.0);
-            if (reached) {
-                has_setpoint_ = false;
-                setpoint_started_ = false;
-                updateCurrentTask(Task::READY);
-            }
-        }
-        break;
-    }
-    case Task::LAWNMOWER: {
-        if (lawnmower_started_ && lawnmower_points_.empty()) {
-            RCLCPP_INFO(this->get_logger(), "Lawnmower complete, doing RTL_88");
-            startRtl88();
-        } else {
-            if (lawnmower_started_ && !lawnmowerGoalComplete()) {
-                break;
+    case Task::MISSION: {
+        // Handle mission tasks
+        if (current_mission_.type == MissionType::LAWNMOWER) {
+            // TODO generate lawnmower pattern from polygon
+            if (lawnmower_started_ && lawnmower_points_.empty()) {
+                RCLCPP_INFO(this->get_logger(), "Lawnmower complete, doing RTL_88");
+                startRtl88();
             } else {
-                getLawnmowerGoal();
-                goal_pos_pub_->publish(goal_);
-                lawnmower_started_ = true;
+                if (lawnmower_started_ && !lawnmowerGoalComplete()) {
+                    break;
+                } else {
+                    bool got_goal = getLawnmowerGoal();
+                    if (got_goal) {
+                        goal_pos_pub_->publish(goal_);
+                        lawnmower_started_ = true;
+                    }
+                }
             }
+        } else if (current_mission_.type == MissionType::TRAIL_FOLLOW) {
+            // TODO
+        } else if (current_mission_.type == MissionType::SETPOINT) {
+            if (!setpoint_started_) {
+                goal_.pose.position = current_mission_.setpoint;
+                goal_pos_pub_->publish(goal_);
+                setpoint_started_ = true;
+            } else {
+                bool reached = decco_utilities::isInAcceptanceRadius(
+                    flight_controller_interface_->getCurrentLocalPosition().pose.position,
+                    goal_.pose.position, 3.0);
+                if (reached) {
+                    has_setpoint_ = false;
+                    setpoint_started_ = false;
+                    updateCurrentTask(Task::READY);
+                }
+            }
+        } else {
+            RCLCPP_WARN(this->get_logger(), "No mission set, returning to READY state");
+            updateCurrentTask(Task::READY);
         }
         break;
     }
@@ -484,6 +552,276 @@ void TaskManager::updateCurrentTask(Task task) {
 
 TaskManager::Task TaskManager::getCurrentTask() {
     return current_task_;
+}
+
+void TaskManager::checkMissions(bool refresh)
+  {
+    if (!perception_modules_loaded_) {
+        RCLCPP_WARN(this->get_logger(), "Perception modules not loaded yet, cannot check missions");
+        return;
+    }
+    if (missions_loaded_ && !refresh) {
+        // Throttle log to every 5s
+        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                                "Missions already loaded, skipping check");
+        return;
+    }
+    json capabilities_json;
+    capabilities_json["missions"] = json::array();
+
+    // Build a copy of perception_status_ into a simple json object at the end
+    //    (for publishing)
+    json perception_module_states = json::object();
+    for (const auto &module : perception_modules_) {
+        perception_module_states[module.second.module_name] = {
+            {"active", module.second.is_active},
+            {"togglable", module.second.togglable}
+        };
+    }
+
+    // Hardware status
+    std::map<std::string, bool> hardware_status = {
+      {"lidar", has_lidar_},
+      {"thermal", has_thermal_},
+      {"camera", has_camera_}
+    };
+    capabilities_json["hardware"] = hardware_status;
+
+    // Now iterate over each mission JSON file in the “missions/” folder
+    std::string pkg_path = ament_index_cpp::get_package_share_directory("task_manager");
+    std::string missions_dir = pkg_path + "/missions";
+
+    for (const auto &entry : std::filesystem::directory_iterator(missions_dir)) {
+      if (entry.path().extension() != ".json") {
+        continue;
+      }
+      std::ifstream file(entry.path());
+      if (!file.is_open()) {
+        continue;
+      }
+
+      json mission_json;
+      try {
+        file >> mission_json;
+      } catch (const std::exception &e) {
+        RCLCPP_WARN(this->get_logger(),
+                    "Failed to parse mission file: %s", entry.path().c_str());
+        continue;
+      }
+
+      // 4a) Extract mission name
+      std::string name = mission_json["mission"]["name"].get<std::string>();
+
+      if (mission_json["requirements"]["slam"].get<bool>() && !do_slam_) {
+        RCLCPP_WARN(this->get_logger(), "Skipping mission %s, requires SLAM mode", name.c_str());
+        continue; // Skip missions that require SLAM if not in SLAM mode
+      }
+
+      // 4b) Gather required/optional perception modules from mission definition
+      std::set<std::string> required_perception;
+      std::set<std::string> optional_perception;
+      
+      std::string geometry_type = "";
+      if (mission_json["requirements"].contains("input_geometry")) {
+        geometry_type = mission_json["requirements"]["input_geometry"].get<std::string>();
+      }
+
+      if (mission_json["requirements"].contains("perception")
+          && mission_json["requirements"]["perception"].contains("required"))
+      {
+        for (const auto &mod : mission_json["requirements"]["perception"]["required"]) {
+          required_perception.insert(mod.get<std::string>());
+        }
+      }
+      if (mission_json["requirements"].contains("perception")
+          && mission_json["requirements"]["perception"].contains("optional"))
+      {
+        for (const auto &mod : mission_json["requirements"]["perception"]["optional"]) {
+          optional_perception.insert(mod.get<std::string>());
+        }
+      }
+
+    // 4c) Determine hardware needed by “required” perception
+    std::set<std::string> all_required_hardware;
+    for (const auto &mod : required_perception) {
+        auto it = perception_modules_.find(mod);
+        if (it != perception_modules_.end()) {
+            for (const auto &hw : it->second.hardware) {
+                all_required_hardware.insert(hw);
+            }
+        }
+    }
+
+    // 4d) If an optional module is actually “on”, it also brings its hardware
+    for (const auto &mod : optional_perception) {
+        auto it = perception_modules_.find(mod);
+        if (it != perception_modules_.end() && it->second.is_active) {
+            for (const auto &hw : it->second.hardware) {
+                all_required_hardware.insert(hw);
+            }
+        }
+    }
+
+      // 4e) TODO this is meaningless rn, change it to checking topics
+      bool hardware_ok = true;
+      for (const auto &hw : all_required_hardware) {
+        if (!hardware_status.count(hw) || !hardware_status[hw]) {
+          hardware_ok = false;
+          break;
+        }
+      }
+      if (!hardware_ok) {
+        // skip this mission entirely if required hardware is missing
+        continue;
+      }
+
+      // 4f) Check perception “on/off” constraints
+      bool mission_available = true;
+      std::vector<std::string> unmet;
+
+      // Any required perception that is not “on” makes mission unavailable
+      for (const auto &mod : required_perception) {
+        auto it = perception_modules_.find(mod);
+        if (it == perception_modules_.end() || !it->second.is_active) {
+            mission_available = false;
+            unmet.push_back(mod);
+        }
+      }
+      // Any optional perception that is off just goes into “requires_activation”
+      for (const auto &mod : optional_perception) {
+        auto it = perception_modules_.find(mod);
+        if (it == perception_modules_.end() || !it->second.is_active) {
+            unmet.push_back(mod);
+        }
+      }
+
+      // 4g) Build JSON entry for this mission
+      json mission_entry;
+      mission_entry["name"] = name;
+      mission_entry["available"] = mission_available;
+      mission_entry["geometry_type"] = geometry_type;
+      if (!unmet.empty()) {
+        mission_entry["requires_activation"] = unmet;
+      }
+
+      capabilities_json["missions"].push_back(mission_entry);
+    }
+
+    // 5) Finally, embed the perception module states and publish
+    capabilities_json["perception_modules"] = perception_module_states;
+
+    auto msg = std_msgs::msg::String();
+    msg.data = capabilities_json.dump();
+    rest_capabilities_pub_->publish(msg);
+    missions_loaded_ = true;
+    RCLCPP_INFO(this->get_logger(), "Missions loaded successfully: %s",
+                capabilities_json.dump(2).c_str());
+}
+
+void TaskManager::loadPerceptionRegistry() {
+    if (perception_modules_loaded_) {
+        return;
+    }
+    std::ifstream f(perception_path_);
+    RCLCPP_INFO(this->get_logger(), "Loading perception registry from: %s", perception_path_.c_str());
+    if (!f.is_open()) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to open perception registry file: %s",
+                     perception_path_.c_str());
+        return;
+    }
+    json perception_registry = json::parse(f);
+    RCLCPP_INFO(this->get_logger(), "Perception registry loaded successfully: %s", perception_registry.dump(2).c_str());
+
+    // For each module in perception_registry, look up its node name and hardware requirements
+    for (auto& [module_name, info] : perception_registry.items()) {
+        PerceptionModule module;
+        module.module_name = module_name;
+        module.node_name = info["node"].get<std::string>();
+
+        bool skip_module = false;
+        for (const auto& hw : info["hardware_required"]) {
+            std::string hw_str = hw.get<std::string>();
+            std::cout << "Hardware required for module " << module_name << ": " << hw_str << std::endl;
+
+            if (hw_str == "lidar" && has_lidar_) {
+                module.hardware.push_back(hw_str);
+            } else if (hw_str == "thermal" && has_thermal_) {
+                module.hardware.push_back(hw_str);
+            } else if (hw_str == "camera" && has_camera_) {
+                module.hardware.push_back(hw_str);
+            } else {
+                RCLCPP_WARN(this->get_logger(), "Perception module %s requires unsupported hardware: %s",
+                            module_name.c_str(), hw_str.c_str());
+                skip_module = true;
+            }
+        }
+        if (skip_module) {
+            RCLCPP_WARN(this->get_logger(), "Skipping perception module %s due to unsupported hardware",
+                        module_name.c_str());
+            continue;
+        }
+
+        if (do_slam_ && (module.module_name == "obstacle_avoidance")) {
+            module.togglable = false;
+            module.is_active = true; // These modules are always active in SLAM mode and cannot be turned off
+        }
+        else {
+            module.togglable = true;
+            module.is_active = false;
+        }
+        perception_modules_[module_name] = module;
+
+        // Setup parameter monitoring for this module
+        std::string param_name = "/task_manager/" + module.node_name + "/set_node_active";
+        this->declare_parameter(param_name, module.is_active);
+        RCLCPP_INFO(this->get_logger(), "Declared parameter %s", param_name.c_str());
+    }
+    perception_modules_loaded_ = true;
+}
+
+void TaskManager::updateStatus() {
+    json status_json;
+    // Update task message
+    std::string task_string = getTaskString(current_task_);
+    status_json["status"] = task_string;
+
+    status_json["distance"] = flight_controller_interface_->getHomeDistance();
+
+    status_json["speed"] = flight_controller_interface_->getGroundSpeed();
+
+    status_json["num_cameras"] = num_cameras_;
+
+    // Publish status
+    std_msgs::msg::String status_msg;
+    status_msg.data = status_json.dump();
+    rest_status_pub_->publish(status_msg);
+}
+
+void TaskManager::publishLog(LogLevel level, const std::string &message) {
+    json log_json;
+    std::string level_string;
+    switch (level) {
+        case LogLevel::NORMAL: level_string = "NORMAL"; break;
+        case LogLevel::INFO: level_string = "INFO"; break;
+        case LogLevel::WARN: level_string = "WARN"; break;
+        case LogLevel::ERROR: level_string = "ERROR"; break;
+    }
+    log_json["level"] = level_string;
+    log_json["message"] = "DRONE::" + message;
+    std_msgs::msg::String log_msg;
+    log_msg.data = log_json.dump();
+    rest_log_pub_->publish(log_msg);
+}
+
+TaskManager::EmergencyType TaskManager::getEmergencyType(const std::string &emergency_str) {
+    if (emergency_str == "e-stop") {
+        return EmergencyType::LAND;
+    } else if (emergency_str == "rtl") {
+        return EmergencyType::RTL;
+    } else if (emergency_str == "pause") {
+        return EmergencyType::E_PAUSE;
+    }
+    return EmergencyType::E_PAUSE;  // Default to PAUSE
 }
 
 void TaskManager::checkHealth() {
@@ -825,20 +1163,92 @@ void TaskManager::publishTif() {
     tif_pcl_pub_->publish(cloud_msg);
 }
 
+void TaskManager::remoteIDResponse(std_msgs::msg::String::SharedPtr msg) {
+    json json = json::parse(msg->data);
+
+    // Unpack JSON here for convenience
+    int uas_id_str = json["uas_id"].is_number_integer() ? (int)json["uas_id"] : 0;
+    int operator_id_str = json["operator_id"].is_number_integer() ? (int)json["operator_id"] : 0;
+    float operator_latitude =
+        json["operator_latitude"].is_number_float() ? (float)json["operator_latitude"] : 0.f;
+    float operator_longitude =
+        json["operator_longitude"].is_number_float() ? (float)json["operator_longitude"] : 0.f;
+    float operator_altitude_geo = json["operator_altitude_geo"].is_number_float()
+                                      ? (float)json["operator_altitude_geo"]
+                                      : 0.f;
+    int timestamp = json["timestamp"].is_number_integer() ? (int)json["timestamp"] : 0;
+
+    if (!init_remote_id_message_sent_) {
+        // Basic ID
+        mavros_msgs::msg::OpenDroneIDBasicID basic_id;
+        basic_id.header.stamp = this->get_clock()->now();
+        basic_id.id_type = mavros_msgs::msg::OpenDroneIDBasicID::ID_TYPE_CAA_REGISTRATION_ID;
+        basic_id.ua_type = mavros_msgs::msg::OpenDroneIDBasicID::UA_TYPE_HELICOPTER_OR_MULTIROTOR;
+        basic_id.uas_id = std::to_string(uas_id_str);
+        odid_basic_id_pub_->publish(basic_id);
+
+        // Operator ID
+        mavros_msgs::msg::OpenDroneIDOperatorID operator_id;
+        operator_id.header.stamp = this->get_clock()->now();
+        operator_id.operator_id_type = mavros_msgs::msg::OpenDroneIDOperatorID::ID_TYPE_CAA;
+        operator_id.operator_id = std::to_string(operator_id_str);
+        odid_operator_id_pub_->publish(operator_id);
+        operator_id_ = std::to_string(operator_id_str);
+
+        // System
+        // this should probably just be published at startup, and System Update published here
+        mavros_msgs::msg::OpenDroneIDSystem system;
+        system.header.stamp = this->get_clock()->now();
+        system.operator_location_type =
+            mavros_msgs::msg::OpenDroneIDSystem::LOCATION_TYPE_TAKEOFF; // TODO dynamic operator location
+        system.classification_type =
+            mavros_msgs::msg::OpenDroneIDSystem::CLASSIFICATION_TYPE_UNDECLARED;
+        system.operator_latitude = operator_latitude * 1E7;
+        system.operator_longitude = operator_longitude * 1E7;
+        system.operator_altitude_geo = operator_altitude_geo;
+        odid_system_pub_->publish(system);
+
+        init_remote_id_message_sent_ = true;
+    }
+
+    // SystemUpdate
+    mavros_msgs::msg::OpenDroneIDSystemUpdate system_update;
+    system_update.header.stamp = this->get_clock()->now();
+    system_update.operator_latitude = operator_latitude * 1E7;
+    system_update.operator_longitude = operator_longitude * 1E7;
+    system_update.operator_altitude_geo = operator_altitude_geo;
+    if (timestamp > last_rid_updated_timestamp_) {
+        last_rid_updated_timestamp_ = timestamp;
+    }
+    odid_system_update_pub_->publish(system_update);
+}
+
 // Publish the ODID messages that require updates
 void TaskManager::odidTimerCallback() {
 
     // Self ID
-    mavros_msgs::msg::SelfID self_id;
+    mavros_msgs::msg::OpenDroneIDSelfID self_id;
     self_id.header.stamp = this->get_clock()->now();
-    self_id.description_type = mavros_msgs::msg::SelfID::MAV_ODID_DESC_TYPE_TEXT;
+    self_id.description_type = mavros_msgs::msg::OpenDroneIDSelfID::DESC_TYPE_TEXT;
     self_id.description = "FLIGHT";
     odid_self_id_pub_->publish(self_id);
 }
 
 bool TaskManager::pauseOperations() {
+    if (current_task_ == Task::PAUSE) {
+        RCLCPP_WARN(this->get_logger(), "Already in PAUSE task, not pausing again");
+        return false;
+    }
+    RCLCPP_INFO(this->get_logger(), "Pausing operations");
+    path_manager_cancel_pub_->publish(home_pos_);
+    if (current_task_ != Task::MANUAL_FLIGHT) {
+        startPause();
+    }
+    else {
+        updateCurrentTask(Task::PAUSE);
+    }
 
-    // TODO figure out how to pause and restart
+    // TODO decide how to save state for restart
     return true;
 }
 
@@ -876,7 +1286,6 @@ void TaskManager::checkArmStatus() {
                                    // full end of flight
             stopRecording();
         }
-        pauseOperations();
         is_armed_ = false; // Reset so can restart if another arming
     }
 }
@@ -924,6 +1333,13 @@ void TaskManager::startRecording() {
         }
     }
 
+    // Start pcl recording if enabled
+    if (save_laz_) {
+        std_msgs::msg::String msg;
+        msg.data = std::to_string(home_elevation_) + "_offset_" + flight_directory;
+        laz_save_pub_->publish(msg);
+    }
+
     auto msg = std_msgs::msg::String();
     msg.data = flight_directory;
     trigger_recording_pub_->publish(msg);
@@ -959,6 +1375,12 @@ void TaskManager::stopRecording() {
         }
     }
 
+    if (save_laz_) {
+        std_msgs::msg::String msg;
+        msg.data = "";
+        laz_save_pub_->publish(msg);
+    }
+
     recording_ = false;
 }
 
@@ -974,12 +1396,8 @@ std::string TaskManager::getTaskString(Task task) {
         return "MANUAL_FLIGHT";
     case Task::PAUSE:
         return "PAUSE";
-    case Task::LAWNMOWER:
-        return "LAWNMOWER";
-    case Task::TRAIL_FOLLOW:
-        return "TRAIL_FOLLOW";
-    case Task::SETPOINT:
-        return "SETPOINT";
+    case Task::MISSION:
+        return "MISSION";
     case Task::RTL_88:
         return "RTL_88";
     case Task::TAKING_OFF:
@@ -992,6 +1410,19 @@ std::string TaskManager::getTaskString(Task task) {
         return "COMPLETE";
     default:
         return "unknown";
+    }
+}
+
+TaskManager::MissionType TaskManager::getMissionType(std::string mission_type) {
+    if (mission_type == "TRAIL_FOLLOW") {
+        return MissionType::TRAIL_FOLLOW;
+    } else if (mission_type == "LAWNMOWER") {
+        return MissionType::LAWNMOWER;
+    } else if (mission_type == "SETPOINT") {
+        return MissionType::SETPOINT;
+    } else {
+        RCLCPP_WARN(this->get_logger(), "Unknown mission type: %s", mission_type.c_str());
+        return MissionType::NONE;
     }
 }
 
@@ -1052,6 +1483,230 @@ void TaskManager::goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr 
     goal_ = *msg;
 }
 
+void TaskManager::missionCallback(const std_msgs::msg::String::SharedPtr msg) {
+    RCLCPP_INFO(this->get_logger(), "Received mission: %s", msg->data.c_str());
+    publishLog(LogLevel::INFO, "Received mission: " + json::parse(msg->data).dump(2));
+    if (current_task_ == Task::MANUAL_FLIGHT || current_task_ == Task::MISSION ){
+        json mission_json = json::parse(msg->data);
+        RCLCPP_INFO(this->get_logger(), "Accepting new mission");
+        publishLog(LogLevel::INFO, "Accepting new mission: " + msg->data);
+        parseMission(mission_json);
+        startMission();
+    }
+    else if (current_task_ == Task::READY) {
+        json mission_json = json::parse(msg->data);
+        RCLCPP_INFO(this->get_logger(), "Preparing for mission");
+        parseMission(mission_json);
+    }
+    else {
+        RCLCPP_WARN(this->get_logger(), "Cannot switch to mission from current task: %s",
+                    getTaskString(current_task_).c_str());
+        publishLog(LogLevel::WARN, "Cannot switch to mission from current task: " +
+                   getTaskString(current_task_));
+        return;
+    }
+}
+
+void TaskManager::toggleCallback(const std_msgs::msg::String::SharedPtr msg) {
+    json toggle_json = json::parse(msg->data);
+    if (!toggle_json.contains("module_name") || !toggle_json.contains("active")) {
+        RCLCPP_ERROR(this->get_logger(), "Invalid toggle message format received from frontend");
+        return;
+    }
+
+    std::string module_name = toggle_json["module_name"];
+    if (perception_modules_.find(module_name) == perception_modules_.end()) {
+        RCLCPP_ERROR(this->get_logger(), "Unknown perception module: %s. Not toggling.", module_name.c_str());
+        return;
+    }
+    bool active = toggle_json["active"];
+
+    RCLCPP_INFO(this->get_logger(), "Toggling local param for module '%s' %s",
+                module_name.c_str(), active ? "ON" : "OFF");
+
+    std::string param_name = "/task_manager/" + perception_modules_[module_name].node_name + "/set_node_active";
+
+    try {
+        rclcpp::Parameter param(param_name, active);
+        this->set_parameter(param);
+        perception_modules_[module_name].is_active = active;
+        checkMissions(true); // Recheck missions after toggling
+    } catch (const rclcpp::exceptions::ParameterNotDeclaredException &e) {
+        RCLCPP_ERROR(this->get_logger(),
+                     "Parameter '%s' not declared. Make sure it exists.", param_name.c_str());
+    } catch (const std::exception &e) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to set param: %s", e.what());
+    }
+}
+
+void TaskManager::emergencyCallback(const std_msgs::msg::String::SharedPtr msg) {
+    RCLCPP_INFO(this->get_logger(), "Received emergency message: %s", msg->data.c_str());
+    publishLog(LogLevel::ERROR, "Received emergency message: " + msg->data);
+    TaskManager::EmergencyType emergency_type = getEmergencyType(msg->data);
+    switch (emergency_type)
+    {
+    case EmergencyType::LAND:
+        RCLCPP_ERROR(this->get_logger(), "Emergency land requested");
+        pauseOperations();
+        startFailsafeLanding();
+        break;
+    case EmergencyType::E_PAUSE:  // Emergency pause
+        RCLCPP_INFO(this->get_logger(), "Emergency pause requested");
+        if (current_task_ != Task::PAUSE) {
+            pauseOperations();
+        } else {
+            RCLCPP_WARN(this->get_logger(), "Already in PAUSE task, ignoring request");
+        }
+        break;
+    case EmergencyType::RTL:
+        RCLCPP_INFO(this->get_logger(), "Emergency RTL requested");
+        if (current_task_ != Task::RTL_88 && current_task_ != Task::LANDING &&
+            current_task_ != Task::COMPLETE) {
+            startRtl88();
+        } else {
+            RCLCPP_WARN(this->get_logger(), "Already in RTL task, ignoring request");
+        }
+        break;
+    
+    default:
+        break;
+    }
+}
+
+bool TaskManager::parseMission(json mission_json) {
+    if (!mission_json.contains("type")) {
+        RCLCPP_ERROR(this->get_logger(), "Mission JSON missing 'mission.type'");
+        return false;
+    }
+
+    std::string type = mission_json["type"];
+    std::string file_name = type;
+    std::transform(file_name.begin(), file_name.end(), file_name.begin(), ::tolower);
+
+    // Load full mission definition from disk
+    std::string pkg_path = ament_index_cpp::get_package_share_directory("task_manager");
+    std::string mission_path = pkg_path + "/missions/" + file_name + ".json";
+
+    std::ifstream file(mission_path);
+    if (!file.is_open()) {
+        RCLCPP_ERROR(this->get_logger(), "Could not open mission file: %s", mission_path.c_str());
+        return false;
+    }
+
+    json mission_def;
+    try {
+        file >> mission_def;
+    } catch (const std::exception &e) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to parse mission file: %s", e.what());
+        return false;
+    }
+
+    std::string geometry_type;
+    if (mission_def.contains("requirements") && mission_def["requirements"].contains("input_geometry")) {
+        geometry_type = mission_def["requirements"]["input_geometry"].get<std::string>();
+    }
+
+    Mission mission;
+    mission.completed = false;
+
+    // Geometry validation
+    if (geometry_type == "polygon") {
+        if (!mission_json.contains("polygon") || !mission_json["polygon"].is_array()) {
+            RCLCPP_ERROR(this->get_logger(), "Mission '%s' requires a 'geometry' array", type.c_str());
+            return false;
+        }
+
+        for (const auto &pt : mission_json["polygon"]) {
+            if (!pt.contains("lat") || !pt.contains("lon")) {
+                RCLCPP_ERROR(this->get_logger(), "Each polygon point must have 'lat' and 'lon'");
+                return false;
+            }
+            geometry_msgs::msg::Point32 p;
+            double x,y;
+            elevation_manager_->llToMap(pt["lat"], pt["lon"], x, y);
+            p.x = x;
+            p.y = y;
+            p.z = target_altitude_;  // default altitude
+            mission.polygon.points.push_back(p);
+        }
+
+    } else if (geometry_type == "point") {
+        if (!mission_json.contains("setpoint")) {
+            RCLCPP_ERROR(this->get_logger(), "Mission '%s' requires a 'setpoint'", type.c_str());
+            return false;
+        }
+        const auto& sp = mission_json["setpoint"];
+        if (!sp.contains("lat") || !sp.contains("lon")) {
+            RCLCPP_ERROR(this->get_logger(), "Setpoint must include 'lat' and 'lon'");
+            return false;
+        }
+        double x,y;
+        elevation_manager_->llToMap(sp["lat"], sp["lon"], x, y);
+        mission.setpoint.x = x;
+        mission.setpoint.y = y;
+        mission.setpoint.z = target_altitude_;  // default altitude
+    } else if (!geometry_type.empty()) {
+        RCLCPP_WARN(this->get_logger(), "Unhandled geometry type: '%s'", geometry_type.c_str());
+        return false;
+    }
+
+    if (mission_json.contains("dem")) {
+        std::string dem_file = mission_json["dem"];
+        std::string dem_path = std::string(std::getenv("HOME")) + "/r88_public/dems/" + dem_file;
+        if (!std::filesystem::exists(dem_path)) {
+            RCLCPP_ERROR(this->get_logger(), "Could not find DEM file: %s", dem_path.c_str());
+            return false;
+        }
+        bool elev = elevation_manager_->elevationInitializer(dem_path);
+        if (!elev) {
+            RCLCPP_ERROR(this->get_logger(), "Found but could not load DEM file: %s", dem_path.c_str());
+        }
+        else {
+            if (elevation_manager_->getHomeElevation(home_elevation_)) {
+                RCLCPP_INFO(this->get_logger(), "Got home elevation : %f", home_elevation_);
+                publishTif();
+            } else {
+                RCLCPP_WARN(this->get_logger(), "No elevation, can only perform manual flight.");
+            }
+        }
+    }
+    else {
+        RCLCPP_WARN(this->get_logger(), "No DEM file in json, proceeding without elevation correction: %s", mission_json.dump(2).c_str());
+    }
+
+    if (mission_json.contains("save_laz")) {
+        save_laz_ = mission_json["save_laz"];
+    }
+
+    // Accept mission
+    mission.type = getMissionType(type);
+    current_mission_ = mission;
+    has_mission_ = true;
+    if (!is_armed_) {
+        needs_takeoff_ = true;
+    }
+    return true;
+}
+
+void TaskManager::startMission() {
+    switch (current_mission_.type) {
+        case MissionType::TRAIL_FOLLOW:
+            updateCurrentTask(Task::MISSION);
+            current_mission_.type = MissionType::TRAIL_FOLLOW;
+            break;
+        case MissionType::LAWNMOWER:
+            updateCurrentTask(Task::MISSION);
+            current_mission_.type = MissionType::LAWNMOWER;
+            break;
+        case MissionType::SETPOINT:
+            updateCurrentTask(Task::MISSION);
+            current_mission_.type = MissionType::SETPOINT;
+            break;
+        default:
+            RCLCPP_WARN(this->get_logger(), "Unknown mission type in startMission");
+    }
+}
+
 // TODO where should this live?
 void TaskManager::startTrailFollowing(bool start) {
     // Start trail goal enabled in pcl analysis
@@ -1078,8 +1733,7 @@ void TaskManager::startTrailFollowing(bool start) {
     auto result = client->async_send_request(request);
 }
 
-// TODO where should this live?
-void TaskManager::getLawnmowerPattern(
+bool TaskManager::getLawnmowerPattern(
     const geometry_msgs::msg::Polygon &polygon,
     std::vector<geometry_msgs::msg::PoseStamped> &lawnmower_points) {
     std::vector<lawnmower::Point> polygon_points;
@@ -1090,6 +1744,10 @@ void TaskManager::getLawnmowerPattern(
         polygon_points.push_back(pt);
     }
     std::vector<lawnmower::Point> points = lawnmower::generateLawnmowerPattern(polygon_points, 10);
+    if (points.empty()) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to generate lawnmower pattern");
+        return false;
+    }
     geometry_msgs::msg::PoseStamped pose_stamped;
     pose_stamped.header.frame_id = mavros_map_frame_;
     pose_stamped.header.stamp = this->get_clock()->now();
@@ -1100,8 +1758,9 @@ void TaskManager::getLawnmowerPattern(
         pose.position.y = points.at(ii).y;
         pose.position.z = target_altitude_;
         pose_stamped.pose = pose;
-        lawnmower_points.push_back(pose_stamped);
+        lawnmower_points_.push_back(pose_stamped);
     }
+    return true;
 }
 
 // TODO remove this once confirmed
@@ -1144,7 +1803,14 @@ void TaskManager::visualizeLawnmower() {
     marker_pub_->publish(markers_msg);
 }
 
-void TaskManager::getLawnmowerGoal() {
+bool TaskManager::getLawnmowerGoal() {
+    if (lawnmower_points_.empty()) {
+        bool success = getLawnmowerPattern(current_mission_.polygon, lawnmower_points_);
+        if (!success) {
+            RCLCPP_ERROR(this->get_logger(), "Failed to get lawnmower pattern");
+            return false;
+        }
+    }
     goal_ = lawnmower_points_.at(0);
 
     // Determine heading
@@ -1158,6 +1824,7 @@ void TaskManager::getLawnmowerGoal() {
     tf2::convert(setpoint_q, goal_.pose.orientation);
 
     lawnmower_points_.erase(lawnmower_points_.begin());
+    return true;
 }
 
 bool TaskManager::lawnmowerGoalComplete() {

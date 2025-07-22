@@ -1,0 +1,13 @@
+{
+  "mission": {
+    "name": "TRAIL_FOLLOW"
+  },
+  "requirements": {
+    "perception": {
+      "required": ["obstacle_avoidance", 
+                  "trail_follower"]
+    },
+    "input_geometry": "",
+    "slam": true
+  }
+}

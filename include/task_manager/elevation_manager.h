@@ -48,6 +48,7 @@ class ElevationManager {
         utm_zone_ = zone;
     }
 
+    bool elevationInitializer(std::string tif_name = "");
     void llToMap(const double lat, const double lon, double &px, double &py);
     void mapToLl(const double px, const double py, double &lat, double &lon);
 
@@ -75,8 +76,6 @@ class ElevationManager {
     int utm_zone_;
 
     bool elevation_init_;
-
-    bool elevationInitializer(const double utm_x, const double utm_y);
 
     // Tif handler
     bool initElevation(const std::string &tif_name, const double utm_x, const double utm_y);

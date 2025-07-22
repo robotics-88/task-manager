@@ -125,6 +125,9 @@ FlightControllerInterface::FlightControllerInterface()
     mavros_sys_status_subscriber_ = this->create_subscription<mavros_msgs::msg::SysStatus>(
         "/mavros/sys_status", state_qos,
         std::bind(&FlightControllerInterface::sysStatusCallback, this, _1));
+    mavros_speed_subscriber_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
+        "/mavros/global_position/raw/gps_vel", sensor_qos,
+        std::bind(&FlightControllerInterface::speedCallback, this, _1));
 
     vision_pose_publisher_ =
         this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/vision_pose/pose", 10);
@@ -153,8 +156,8 @@ FlightControllerInterface::FlightControllerInterface()
             // callbacks.
             std::thread([this]() {
                 RCLCPP_INFO(this->get_logger(),
-                            "Waiting 15s for Arducopter param fetch to complete");
-                rclcpp::sleep_for(15s);
+                            "Waiting 30s for Arducopter param fetch to complete");
+                rclcpp::sleep_for(30s);
                 initializeArducopter();
             }).detach();
         }
@@ -744,6 +747,11 @@ void FlightControllerInterface::statusTextCallback(
     }
 }
 
+void FlightControllerInterface::speedCallback(
+    const geometry_msgs::msg::TwistStamped::SharedPtr msg) {
+    current_speed_ = *msg;
+}
+
 bool FlightControllerInterface::setMode(std::string mode) {
     std::shared_ptr<rclcpp::Node> set_mode_node = rclcpp::Node::make_shared("set_mode_client");
     auto set_mode_client =
@@ -864,6 +872,18 @@ float FlightControllerInterface::calculateBatteryPercentage(float voltage) {
     }
 
     return battery_percentage;
+}
+
+float FlightControllerInterface::getHomeDistance() {
+    return std::sqrt(
+        std::pow(current_pose_.pose.position.x, 2) +
+        std::pow(current_pose_.pose.position.y, 2));
+}
+
+float FlightControllerInterface::getGroundSpeed() {
+    return std::sqrt(
+        std::pow(current_speed_.twist.linear.x, 2) +
+        std::pow(current_speed_.twist.linear.y, 2));
 }
 
 } // namespace flight_controller_interface

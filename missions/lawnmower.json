@@ -1,0 +1,13 @@
+{
+  "mission": {
+    "name": "LAWNMOWER"
+  },
+  "requirements": {
+    "perception": {
+      "required": [],
+      "optional": ["obstacle_avoidance"]
+    },
+    "input_geometry": "polygon",
+    "slam": false
+  }
+}
