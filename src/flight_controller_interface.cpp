@@ -156,8 +156,8 @@ FlightControllerInterface::FlightControllerInterface()
             // callbacks.
             std::thread([this]() {
                 RCLCPP_INFO(this->get_logger(),
-                            "Waiting 15s for Arducopter param fetch to complete");
-                rclcpp::sleep_for(15s);
+                            "Waiting 30s for Arducopter param fetch to complete");
+                rclcpp::sleep_for(30s);
                 initializeArducopter();
             }).detach();
         }
