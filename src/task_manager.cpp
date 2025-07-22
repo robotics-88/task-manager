@@ -813,6 +813,17 @@ void TaskManager::publishLog(LogLevel level, const std::string &message) {
     rest_log_pub_->publish(log_msg);
 }
 
+TaskManager::EmergencyType TaskManager::getEmergencyType(const std::string &emergency_str) {
+    if (emergency_str == "e-stop") {
+        return EmergencyType::LAND;
+    } else if (emergency_str == "rtl") {
+        return EmergencyType::RTL;
+    } else if (emergency_str == "pause") {
+        return EmergencyType::E_PAUSE;
+    }
+    return EmergencyType::E_PAUSE;  // Default to PAUSE
+}
+
 void TaskManager::checkHealth() {
     rclcpp::Time now = this->get_clock()->now();
 
@@ -1531,14 +1542,15 @@ void TaskManager::toggleCallback(const std_msgs::msg::String::SharedPtr msg) {
 void TaskManager::emergencyCallback(const std_msgs::msg::String::SharedPtr msg) {
     RCLCPP_INFO(this->get_logger(), "Received emergency message: %s", msg->data.c_str());
     publishLog(LogLevel::ERROR, "Received emergency message: " + msg->data);
-    switch (msg->data[0])  // Assuming first character indicates the emergency type
+    TaskManager::EmergencyType emergency_type = getEmergencyType(msg->data);
+    switch (emergency_type)
     {
-    case 'e':  // Emergency stop
-        RCLCPP_ERROR(this->get_logger(), "Emergency stop requested");
+    case EmergencyType::LAND:
+        RCLCPP_ERROR(this->get_logger(), "Emergency land requested");
         pauseOperations();
         startFailsafeLanding();
         break;
-    case 'p':  // Emergency pause
+    case EmergencyType::E_PAUSE:  // Emergency pause
         RCLCPP_INFO(this->get_logger(), "Emergency pause requested");
         if (current_task_ != Task::PAUSE) {
             pauseOperations();
@@ -1546,7 +1558,7 @@ void TaskManager::emergencyCallback(const std_msgs::msg::String::SharedPtr msg) 
             RCLCPP_WARN(this->get_logger(), "Already in PAUSE task, ignoring request");
         }
         break;
-    case 'r':  // Emergency rtl
+    case EmergencyType::RTL:
         RCLCPP_INFO(this->get_logger(), "Emergency RTL requested");
         if (current_task_ != Task::RTL_88 && current_task_ != Task::LANDING &&
             current_task_ != Task::COMPLETE) {

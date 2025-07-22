@@ -103,6 +103,12 @@ class TaskManager : public rclcpp::Node {
         ERROR
     };
 
+    enum EmergencyType {
+        LAND,
+        RTL,
+        E_PAUSE
+    };
+
     void runTaskManager();
 
     Task getCurrentTask();
@@ -339,6 +345,7 @@ class TaskManager : public rclcpp::Node {
     // Other methods
     void updateStatus();
     void publishLog(LogLevel level, const std::string &message);
+    EmergencyType getEmergencyType(const std::string &emergency_str);
     bool isBatteryOk();
     void checkHealth();
     void checkFailsafes();
