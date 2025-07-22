@@ -723,14 +723,14 @@ void TaskManager::loadPerceptionRegistry() {
         return;
     }
     std::ifstream f(perception_path_);
-    std::cout << "Loading perception registry from: " << perception_path_ << std::endl;
+    RCLCPP_INFO(this->get_logger(), "Loading perception registry from: %s", perception_path_.c_str());
     if (!f.is_open()) {
         RCLCPP_ERROR(this->get_logger(), "Failed to open perception registry file: %s",
                      perception_path_.c_str());
         return;
     }
     json perception_registry = json::parse(f);
-    std::cout << "Perception registry loaded successfully: " << perception_registry.dump(2) << std::endl;
+    RCLCPP_INFO(this->get_logger(), "Perception registry loaded successfully: %s", perception_registry.dump(2).c_str());
 
     // For each module in perception_registry, look up its node name and hardware requirements
     for (auto& [module_name, info] : perception_registry.items()) {
