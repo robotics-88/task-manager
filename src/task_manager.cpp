@@ -354,6 +354,9 @@ void TaskManager::runTaskManager() {
             updateCurrentTask(Task::READY);
         } else if (this->get_clock()->now() - last_preflight_check_log_stamp_ >
                    rclcpp::Duration::from_seconds(10.0)) {
+            publishLog(LogLevel::WARN,
+                "Preflight check failed, drone not ready to arm. Reasons: " +
+                flight_controller_interface_->getPreflightCheckReasons());
             RCLCPP_INFO(this->get_logger(), "Preflight check failed due to %s",
                         flight_controller_interface_->getPreflightCheckReasons().c_str());
             last_preflight_check_log_stamp_ = this->get_clock()->now();
