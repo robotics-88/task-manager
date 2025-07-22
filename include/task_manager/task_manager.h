@@ -336,7 +336,7 @@ class TaskManager : public rclcpp::Node {
     void startTrailFollowing(bool start);
 
     // Capabilities
-    void checkMissions(const bool &refresh = false);
+    void checkMissions(bool refresh = false);
     void loadPerceptionRegistry();
     MissionType getMissionType(std::string mission_type);
     void startMission();

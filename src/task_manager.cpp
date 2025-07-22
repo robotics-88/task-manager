@@ -554,7 +554,7 @@ TaskManager::Task TaskManager::getCurrentTask() {
     return current_task_;
 }
 
-void TaskManager::checkMissions(const bool &refresh)
+void TaskManager::checkMissions(bool refresh)
   {
     if (!perception_modules_loaded_) {
         RCLCPP_WARN(this->get_logger(), "Perception modules not loaded yet, cannot check missions");
