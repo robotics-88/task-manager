@@ -328,6 +328,7 @@ class TaskManager : public rclcpp::Node {
 
     // Task methods
     void updateCurrentTask(Task task);
+    void missionSwitch();
     void startTakeoff();
     void startRtl88();
     void startLanding();

@@ -411,39 +411,8 @@ void TaskManager::runTaskManager() {
     }
     case Task::MISSION: {
         // Handle mission tasks
-        if (current_mission_.type == MissionType::LAWNMOWER) {
-            // TODO generate lawnmower pattern from polygon
-            if (lawnmower_started_ && lawnmower_points_.empty()) {
-                RCLCPP_INFO(this->get_logger(), "Lawnmower complete, doing RTL_88");
-                startRtl88();
-            } else {
-                if (lawnmower_started_ && !lawnmowerGoalComplete()) {
-                    break;
-                } else {
-                    bool got_goal = getLawnmowerGoal();
-                    if (got_goal) {
-                        goal_pos_pub_->publish(goal_);
-                        lawnmower_started_ = true;
-                    }
-                }
-            }
-        } else if (current_mission_.type == MissionType::TRAIL_FOLLOW) {
-            // TODO
-        } else if (current_mission_.type == MissionType::SETPOINT) {
-            if (!setpoint_started_) {
-                goal_.pose.position = current_mission_.setpoint;
-                goal_pos_pub_->publish(goal_);
-                setpoint_started_ = true;
-            } else {
-                bool reached = decco_utilities::isInAcceptanceRadius(
-                    flight_controller_interface_->getCurrentLocalPosition().pose.position,
-                    goal_.pose.position, 3.0);
-                if (reached) {
-                    has_setpoint_ = false;
-                    setpoint_started_ = false;
-                    updateCurrentTask(Task::READY);
-                }
-            }
+        if (has_mission_) {
+            missionSwitch();
         } else {
             RCLCPP_WARN(this->get_logger(), "No mission set, returning to READY state");
             updateCurrentTask(Task::READY);
@@ -475,6 +444,48 @@ void TaskManager::runTaskManager() {
         break;
     }
     }
+}
+
+void TaskManager::missionSwitch() {
+    // Handle mission tasks
+    if (current_mission_.type == MissionType::LAWNMOWER) {
+        // TODO generate lawnmower pattern from polygon
+        if (lawnmower_started_ && lawnmower_points_.empty()) {
+            RCLCPP_INFO(this->get_logger(), "Lawnmower complete, doing RTL_88");
+            startRtl88();
+        } else {
+            if (lawnmower_started_ && !lawnmowerGoalComplete()) {
+                return;;
+            } else {
+                bool got_goal = getLawnmowerGoal();
+                if (got_goal) {
+                    goal_pos_pub_->publish(goal_);
+                    lawnmower_started_ = true;
+                }
+            }
+        }
+    } else if (current_mission_.type == MissionType::TRAIL_FOLLOW) {
+        // TODO
+    } else if (current_mission_.type == MissionType::SETPOINT) {
+        if (!setpoint_started_) {
+            goal_.pose.position = current_mission_.setpoint;
+            goal_pos_pub_->publish(goal_);
+            setpoint_started_ = true;
+        } else {
+            bool reached = decco_utilities::isInAcceptanceRadius(
+                flight_controller_interface_->getCurrentLocalPosition().pose.position,
+                goal_.pose.position, 3.0);
+            if (reached) {
+                has_setpoint_ = false;
+                setpoint_started_ = false;
+                updateCurrentTask(Task::READY);
+            }
+        }
+    } else {
+        RCLCPP_WARN(this->get_logger(), "Mission type unrecognized in missionSwitch, returning to READY state");
+        updateCurrentTask(Task::READY);
+    }
+
 }
 
 void TaskManager::startTakeoff() {
@@ -1680,6 +1691,10 @@ bool TaskManager::parseMission(json mission_json) {
 
     // Accept mission
     mission.type = getMissionType(type);
+    if (mission.type == MissionType::NONE) {
+        RCLCPP_ERROR(this->get_logger(), "Unknown mission type: %s", type.c_str());
+        return false;
+    }
     current_mission_ = mission;
     has_mission_ = true;
     if (!is_armed_) {
@@ -1689,22 +1704,11 @@ bool TaskManager::parseMission(json mission_json) {
 }
 
 void TaskManager::startMission() {
-    switch (current_mission_.type) {
-        case MissionType::TRAIL_FOLLOW:
-            updateCurrentTask(Task::MISSION);
-            current_mission_.type = MissionType::TRAIL_FOLLOW;
-            break;
-        case MissionType::LAWNMOWER:
-            updateCurrentTask(Task::MISSION);
-            current_mission_.type = MissionType::LAWNMOWER;
-            break;
-        case MissionType::SETPOINT:
-            updateCurrentTask(Task::MISSION);
-            current_mission_.type = MissionType::SETPOINT;
-            break;
-        default:
-            RCLCPP_WARN(this->get_logger(), "Unknown mission type in startMission");
+    if (!has_mission_) {
+        RCLCPP_ERROR(this->get_logger(), "No mission to start");
+        return;
     }
+    updateCurrentTask(Task::MISSION);
 }
 
 // TODO where should this live?
