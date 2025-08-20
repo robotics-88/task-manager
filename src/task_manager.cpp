@@ -1764,6 +1764,7 @@ bool TaskManager::getLawnmowerPattern(
         pose_stamped.pose = pose;
         lawnmower_points_.push_back(pose_stamped);
     }
+    visualizeLawnmower();
     return true;
 }
 
