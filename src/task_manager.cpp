@@ -481,6 +481,8 @@ void TaskManager::missionSwitch() {
                 updateCurrentTask(Task::READY);
             }
         }
+    } else if (current_mission_.type == MissionType::CHUMBO_DANCE) {
+        RCLCPP_INFO(this->get_logger(), "Chumbo Dance mission type starts automatically");
     } else {
         RCLCPP_WARN(this->get_logger(), "Mission type unrecognized in missionSwitch, returning to READY state");
         updateCurrentTask(Task::READY);
@@ -1431,6 +1433,8 @@ TaskManager::MissionType TaskManager::getMissionType(std::string mission_type) {
         return MissionType::LAWNMOWER;
     } else if (mission_type == "SETPOINT") {
         return MissionType::SETPOINT;
+    } else if (mission_type == "CHUMBO_DANCE") {
+        return MissionType::CHUMBO_DANCE;
     } else {
         RCLCPP_WARN(this->get_logger(), "Unknown mission type: %s", mission_type.c_str());
         return MissionType::NONE;

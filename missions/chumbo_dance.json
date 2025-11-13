@@ -1,0 +1,12 @@
+{
+  "mission": {
+    "name": "CHUMBO_DANCE"
+  },
+  "requirements": {
+    "perception": {
+      "required": ["chumbo_dance"]
+    },
+    "input_geometry": "",
+    "slam": false
+  }
+}

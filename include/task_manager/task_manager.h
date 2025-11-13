@@ -63,7 +63,8 @@ class TaskManager : public rclcpp::Node {
         NONE,
         LAWNMOWER,
         TRAIL_FOLLOW,
-        SETPOINT
+        SETPOINT,
+        CHUMBO_DANCE
     };
 
     struct Mission {
