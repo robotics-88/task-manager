@@ -403,7 +403,7 @@ void FlightControllerInterface::checkMsgRates() {
 
     std::lock_guard<std::mutex> lock(init_mutex_);
 
-    if (imu_count_ / msg_rate_timer_dt_ < imu_rate_ * 0.8) {
+    if (imu_count_ / msg_rate_timer_dt_ < imu_rate_ * 0.5) {
         if (drone_initialized_)
             RCLCPP_WARN(this->get_logger(), "Warning, IMU only sending at %f / %f hz",
                         (imu_count_ / msg_rate_timer_dt_), imu_rate_);
@@ -413,7 +413,7 @@ void FlightControllerInterface::checkMsgRates() {
     }
 
     // Use battery message as proxy for all generic message streams
-    if (battery_count_ / msg_rate_timer_dt_ < battery_rate_ * 0.8) {
+    if (battery_count_ / msg_rate_timer_dt_ < battery_rate_ * 0.5) {
         if (drone_initialized_)
             RCLCPP_WARN(this->get_logger(), "Warning, battery only sending at %f / %f hz",
                         (battery_count_ / msg_rate_timer_dt_), battery_rate_);
